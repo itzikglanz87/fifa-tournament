@@ -1,0 +1,731 @@
+<title>ארכיון טורניר פיפא</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&family=Secular+One&display=swap">
+<style>
+/* ============================================================
+   A committed single-world design: a night-match broadcast desk.
+   Every colour is painted explicitly, so the page holds on any host.
+   ============================================================ */
+:root{
+  --pitch:#070A0E; --panel:#0E141C; --panel2:#141C27; --panel3:#1C2633;
+  --line:#1E2937; --line2:#2B3948;
+  --ink:#EDF2F7; --ink2:#A3B2C2; --muted:#6B7C8F;
+  --gold:#F5C542; --gold2:#C9971F; --gold-dim:#3A2E12;
+  --pos:#4ADE80; --neg:#F87171;
+  --p0:#4B86FA; --p1:#689E2D; --p2:#169EAF; --p3:#CD711D; --p4:#AE61E9; --p5:#E54C7A;
+  --o1:#F0C55E; --o2:#CFA950; --o3:#AD8B42; --o4:#8A6E36; --o5:#65522B; --o6:#453A22;
+  --o1t:#2A1F05; --o2t:#2A1F05; --o3t:#221A05; --o4t:#F2E7D2; --o5t:#F2E7D2; --o6t:#E6DCC8;
+  --cut:10px;
+}
+*{box-sizing:border-box}
+body{
+  direction:rtl; margin:0; color:var(--ink);
+  background:
+    radial-gradient(1100px 520px at 70% -8%, #16222F 0%, rgba(22,34,47,0) 70%),
+    repeating-linear-gradient(115deg, rgba(255,255,255,.014) 0 38px, rgba(0,0,0,0) 38px 76px),
+    var(--pitch);
+  background-attachment:fixed;
+  font-family:"Heebo","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3{margin:0; font-weight:400; text-wrap:balance}
+p{margin:0}
+button,input,select{font:inherit; color:inherit}
+button{cursor:pointer; border:0; background:none}
+:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+.wrap{max-width:1240px; margin-inline:auto; padding-inline:16px}
+.disp{font-family:"Secular One","Heebo",sans-serif; font-weight:400; letter-spacing:-.005em}
+.lbl{font-size:10.5px; letter-spacing:.18em; color:var(--muted); font-weight:700}
+
+/* ---------- broadcast rail ---------- */
+.rail{background:linear-gradient(180deg,#0C131B 0%,#0A1017 100%); border-bottom:1px solid var(--line)}
+.rail::before{content:""; display:block; height:2px;
+  background:linear-gradient(to left,var(--p0),var(--p1),var(--p2),var(--p3),var(--p4),var(--p5))}
+.rail-in{display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding-block:14px 13px; justify-content:space-between}
+.mark{display:flex; align-items:center; gap:11px}
+.mark .glyph{width:38px; height:38px; flex:none; display:grid; place-items:center;
+  background:linear-gradient(145deg,var(--gold),var(--gold2)); color:#1A1305;
+  clip-path:polygon(50% 0,100% 26%,100% 74%,50% 100%,0 74%,0 26%);
+  font-family:"Secular One",sans-serif; font-size:17px; line-height:1}
+.mark h1{font-family:"Secular One",sans-serif; font-size:21px; line-height:1.1}
+.mark .sub{font-size:11px; letter-spacing:.14em; color:var(--muted); font-weight:700; margin-top:1px}
+.reign{display:flex; align-items:center; gap:12px; border:1px solid var(--gold-dim); background:#120E04;
+  padding:7px 13px 8px; clip-path:polygon(0 0,100% 0,100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.reign .lbl{color:var(--gold)}
+.reign .row{display:flex; gap:12px; align-items:center; margin-top:3px; flex-wrap:wrap}
+
+.seasonbar{display:flex; align-items:center; gap:9px}
+.seasonbar select{background:var(--panel2); border:1px solid var(--line2); color:var(--ink);
+  padding:7px 11px; font-weight:700; font-size:13.5px; max-width:210px}
+
+/* ---------- tabs ---------- */
+.tabbar{position:sticky; top:env(safe-area-inset-top,0px); z-index:40;
+  background:rgba(7,10,14,.93); backdrop-filter:blur(12px); border-bottom:1px solid var(--line)}
+.tabbar-in{display:flex; gap:0; overflow-x:auto; scrollbar-width:none}
+.tabbar-in::-webkit-scrollbar{display:none}
+.tab{padding:13px 16px 12px; font-weight:700; font-size:13.5px; letter-spacing:.02em; color:var(--muted);
+  white-space:nowrap; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .15s,background .15s}
+.tab:hover{color:var(--ink2); background:rgba(255,255,255,.03)}
+.tab[aria-selected="true"]{color:var(--pitch); background:var(--gold); border-bottom-color:var(--gold)}
+.tab .badge{display:inline-block; margin-inline-start:6px; font-size:10px; font-weight:800; padding:1px 6px;
+  border-radius:9px; background:var(--p2); color:#03181C; vertical-align:1px}
+
+main{padding-block:24px 60px}
+.view{display:flex; flex-direction:column; gap:28px}
+section.block{display:flex; flex-direction:column; gap:12px}
+.bhead{display:flex; align-items:baseline; justify-content:space-between; gap:12px 18px; flex-wrap:wrap;
+  border-bottom:1px solid var(--line); padding-bottom:8px}
+.bhead h2{font-family:"Secular One",sans-serif; font-size:19px}
+.bhead .note{font-size:12.5px; color:var(--muted); max-width:66ch; line-height:1.5}
+
+/* ---------- panels ---------- */
+.panel{background:var(--panel); border:1px solid var(--line);
+  clip-path:polygon(0 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%)}
+.panel.key{border-top:2px solid var(--gold)}
+
+/* ---------- stat strip ---------- */
+.strip4{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:1px; background:var(--line);
+  border:1px solid var(--line)}
+.stat{background:var(--panel); padding:13px 15px 14px}
+.stat .v{font-family:"Secular One",sans-serif; font-size:29px; line-height:1.05; margin-top:5px}
+.stat .s{font-size:12px; color:var(--ink2); margin-top:3px}
+
+/* ---------- plates ---------- */
+.plate{display:inline-flex; align-items:center; gap:6px; font-weight:700; white-space:nowrap}
+.dot{width:9px; height:9px; flex:none; background:var(--c); transform:skewX(-14deg)}
+.plate.lg{font-size:16px} .plate.lg .dot{width:11px; height:11px}
+.pface{width:21px; height:21px; border-radius:50%; flex:none; background-size:cover;
+  background-position:50% 45%; box-shadow:0 0 0 1.5px var(--c), 0 0 0 2.5px var(--panel)}
+.plate.big .pface{width:26px; height:26px}
+.club{display:inline-flex; align-items:center; gap:5px; color:var(--ink2); font-size:12px; font-weight:500; white-space:nowrap}
+.club .cdot{width:8px; height:8px; flex:none; border-radius:50%; background:var(--c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.28)}
+
+/* ---------- tables ---------- */
+.tscroll{overflow-x:auto; border:1px solid var(--line); background:var(--panel)}
+.tscroll.fit table{min-width:0; width:100%}
+table{border-collapse:collapse; width:100%; min-width:max-content; font-size:14px}
+th,td{padding:9px 12px; text-align:right; white-space:nowrap}
+thead th{font-size:10.5px; letter-spacing:.1em; color:var(--muted); font-weight:700;
+  background:var(--panel2); border-bottom:1px solid var(--line2)}
+th.sortable{cursor:pointer; user-select:none}
+th.sortable:hover{color:var(--ink)}
+th .car{color:var(--gold)}
+tbody tr{border-bottom:1px solid var(--line)}
+tbody tr:last-child{border-bottom:0}
+tbody tr:hover{background:var(--panel2)}
+td.rank{color:var(--muted); font-weight:800; width:1%}
+.pos{color:var(--pos)} .neg{color:var(--neg)}
+.g{color:var(--gold); font-weight:800}
+.mut{color:var(--muted)}
+td.strong{font-weight:800}
+tr.qual td.rank{color:var(--gold)}
+.ltr{direction:ltr; unicode-bidi:isolate; display:inline-block}
+
+/* ---------- squad cards ----------
+   A square portrait on top, then the rating, the name and six named stats.
+   Every number on the card can be tapped for a plain-language explanation. */
+.deck{display:grid; grid-template-columns:repeat(auto-fit,minmax(188px,1fr)); gap:14px}
+.fcard{position:relative; padding:2px; cursor:pointer; transition:transform .18s;
+  clip-path:polygon(0 0,100% 0,100% 100%,14px 100%,0 calc(100% - 14px));
+  background:linear-gradient(168deg,var(--t1) 0%,var(--t2) 46%,var(--t1) 100%)}
+.fcard:hover,.fcard:focus-visible{transform:translateY(-4px)}
+.fcard[aria-pressed="true"]{box-shadow:0 0 0 2px var(--gold)}
+.fcard .inner{height:100%; display:flex; flex-direction:column;
+  background:linear-gradient(168deg,rgba(255,255,255,.16) 0%,rgba(0,0,0,.05) 44%,rgba(0,0,0,.20) 100%);
+  clip-path:polygon(0 0,100% 0,100% 100%,13px 100%,0 calc(100% - 13px))}
+.fcard .pic{position:relative; aspect-ratio:1/1; overflow:hidden; background:rgba(0,0,0,.22)}
+.fcard .face{position:absolute; inset:0; background-size:cover; background-position:50% 50%}
+.fcard .ghost{position:absolute; inset:0; display:grid; place-items:center;
+  font-family:"Secular One",sans-serif; font-size:74px; color:var(--tink); opacity:.20}
+.fcard .pic::after{content:""; position:absolute; inset-inline:0; bottom:0; height:40%;
+  background:linear-gradient(to top,rgba(0,0,0,.66),rgba(0,0,0,0)); pointer-events:none}
+.fcard .form{position:absolute; bottom:5px; inset-inline:0; display:flex; justify-content:center; gap:3px; z-index:2}
+.fcard .form button{width:17px; height:17px; display:grid; place-items:center; padding:0; line-height:1;
+  font-size:9.5px; font-weight:800; background:rgba(0,0,0,.58); color:#F2F6FA; cursor:pointer}
+.fcard .form button:hover{background:rgba(0,0,0,.9); box-shadow:0 0 0 1px rgba(255,255,255,.8)}
+.fcard .form button.t{box-shadow:inset 0 0 0 1.5px var(--gold)}
+.fcard .body{padding:9px 11px 11px; display:flex; flex-direction:column; gap:7px}
+.fcard .top{display:flex; gap:9px; align-items:flex-start}
+.fcard .ovr{background:none; border:0; padding:0; text-align:start; cursor:pointer; color:var(--tink)}
+.fcard .ovr b{font-family:"Secular One",sans-serif; font-size:30px; font-weight:400; line-height:.95; display:block}
+.fcard .ovr span{font-size:10px; font-weight:800; letter-spacing:.08em; opacity:.85}
+.fcard .ovr:hover{opacity:.78}
+.fcard .badge{margin-inline-start:auto; display:flex; flex-direction:column; gap:4px; align-items:flex-end}
+.fcard .shield{width:21px; height:21px; border-radius:50%; background:var(--c);
+  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
+.fcard .cname{font-size:10px; color:var(--tink); opacity:.9; font-weight:700; letter-spacing:.03em}
+.fcard .pname{font-family:"Secular One",sans-serif; font-size:19px; text-align:center; color:var(--tink);
+  padding-top:6px; border-top:1px solid rgba(0,0,0,.3)}
+.fcard .grid6{display:grid; grid-template-columns:1fr 1fr; gap:5px}
+.fcard .s6{display:flex; flex-direction:column; align-items:flex-start; gap:1px; cursor:pointer;
+  background:rgba(0,0,0,.15); padding:4px 7px 5px; border:0; color:var(--tink); text-align:start}
+.fcard .s6:hover{background:rgba(0,0,0,.32)}
+.fcard .s6 span{font-size:9.5px; font-weight:700; opacity:.86; line-height:1.2}
+.fcard .s6 b{font-size:14.5px; font-weight:800; line-height:1.15}
+/* a pinned explanation never swallows the next click — it passes through and dismisses */
+.tip.pinned{pointer-events:none}
+.tip .hint{margin-top:6px; font-size:11px; color:var(--muted)}
+
+/* ---------- photo board ---------- */
+.pboard{display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:10px}
+.pslot{border:1px solid var(--line); background:var(--panel); padding:8px; display:flex;
+  flex-direction:column; gap:7px}
+.pslot .thumb{aspect-ratio:4/5; background-size:cover; background-position:50% 16%; border:1px solid var(--line2)}
+.pslot select{width:100%}
+.pslot .num{font-size:10.5px; letter-spacing:.14em; color:var(--muted); font-weight:700}
+
+/* ---------- chips / controls ---------- */
+.chips{display:flex; flex-wrap:wrap; gap:7px}
+.chip{border:1px solid var(--line2); background:var(--panel2); padding:6px 14px; font-weight:700; font-size:13.5px;
+  display:inline-flex; align-items:center; gap:7px; transition:.12s}
+.chip:hover{border-color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--gold); color:var(--pitch); border-color:var(--gold)}
+.chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--pitch)}
+.btn{background:var(--gold); color:#141005; font-weight:800; font-size:14px; padding:10px 20px;
+  clip-path:polygon(0 0,100% 0,100% 100%,10px 100%,0 calc(100% - 10px)); transition:filter .15s}
+.btn:hover{filter:brightness(1.1)}
+.btn:disabled{background:var(--panel3); color:var(--muted); cursor:default; filter:none}
+.btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line2); clip-path:none; font-weight:700}
+.btn.ghost:hover{border-color:var(--gold); color:var(--gold)}
+.btn.sm{font-size:12.5px; padding:6px 13px}
+.btn.danger:hover{color:var(--neg); border-color:var(--neg)}
+select,input[type="text"],input[type="number"]{background:var(--panel3); border:1px solid var(--line2);
+  color:var(--ink); padding:6px 9px; font-size:13.5px; font-weight:600}
+input[type="number"]{width:52px; text-align:center; font-weight:800; font-size:15px}
+.toggle{display:inline-flex; border:1px solid var(--line2); overflow:hidden; background:var(--panel2)}
+.toggle button{padding:6px 13px; font-size:12.5px; font-weight:700; color:var(--muted)}
+.toggle button[aria-pressed="true"]{background:var(--panel3); color:var(--gold)}
+label.check{display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--ink2); cursor:pointer}
+label.check input{accent-color:var(--gold); width:15px; height:15px}
+
+/* ---------- draw ceremony ---------- */
+.pots{display:grid; grid-template-columns:repeat(auto-fit,minmax(196px,1fr)); gap:10px}
+.pot{border:1px solid var(--line); background:var(--panel); padding:12px 14px; min-height:96px;
+  display:flex; flex-direction:column; gap:7px; position:relative; overflow:hidden}
+.pot .slot{font-family:"Secular One",sans-serif; font-size:12px; color:var(--muted); letter-spacing:.1em}
+.pot .who{font-family:"Secular One",sans-serif; font-size:23px; line-height:1.1; min-height:26px}
+.pot .got{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; min-height:20px}
+.pot.empty .who{color:var(--line2)}
+.pot .bar{position:absolute; inset-inline-start:0; top:0; bottom:0; width:3px; background:var(--c)}
+.pot.reveal{animation:pop .42s cubic-bezier(.2,1.5,.4,1)}
+.pot.rolling .who{color:var(--gold); opacity:.65}
+@keyframes pop{0%{transform:scale(.93); opacity:.25} 60%{transform:scale(1.02)} 100%{transform:scale(1); opacity:1}}
+.blocked{font-size:11.5px; color:var(--muted); display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.blocked s{color:var(--neg); opacity:.75; text-decoration-thickness:1px}
+
+.savebar{justify-content:space-between; font-size:12.5px}
+.savebar.warn b{color:var(--ink)}
+
+/* ---------- match rows ---------- */
+.matches{display:flex; flex-direction:column}
+.mrow{display:grid; grid-template-columns:26px 1fr auto 1fr; align-items:center; gap:10px;
+  padding:9px 13px; border-bottom:1px solid var(--line)}
+.mrow:last-child{border-bottom:0}
+.mrow:nth-child(even){background:rgba(255,255,255,.017)}
+.side{display:flex; flex-direction:column; gap:3px; min-width:0}
+.side.away{align-items:flex-end; text-align:left}
+.side .duo{display:flex; gap:10px; flex-wrap:wrap}
+.mn{color:var(--muted); font-weight:800; font-size:11.5px}
+.score{font-family:"Secular One",sans-serif; font-size:17px; padding:3px 12px; background:var(--panel3);
+  white-space:nowrap; direction:ltr; border:1px solid var(--line2); min-width:74px; text-align:center}
+.score.live{background:#12202B; border-color:#24506B; color:var(--ink)}
+.entry{display:flex; align-items:center; gap:5px; direction:ltr}
+.rowsave{width:30px; height:30px; display:grid; place-items:center; padding:0; line-height:1;
+  font-size:14px; font-weight:800; background:var(--panel3); border:1px solid var(--line2);
+  color:var(--ink2); margin-inline-start:4px; transition:.12s}
+.rowsave:hover{border-color:var(--gold); color:var(--gold)}
+.rowsave.busy{opacity:.55}
+.rowsave.done{background:#12331F; border-color:#2E6B4C; color:var(--pos)}
+.rowsave.bad{background:#2C1414; border-color:#6B2E2E; color:var(--neg)}
+.fade{opacity:.5}
+
+/* ---------- newsroom ---------- */
+.newsgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:12px}
+.story{background:var(--panel); border:1px solid var(--line); padding:14px 16px 12px;
+  display:flex; flex-direction:column; gap:9px}
+.story.hero{grid-column:1/-1; border-color:var(--gold); border-top-width:2px;
+  background:linear-gradient(150deg,#151104,var(--panel) 62%)}
+.stag{font-size:10px; letter-spacing:.18em; color:var(--gold); font-weight:800}
+.shead{font-family:"Secular One",sans-serif; font-size:17px; line-height:1.3}
+.story.hero .shead{font-size:22px}
+.sbody{font-size:13.5px; color:var(--ink2); line-height:1.6; display:flex; flex-direction:column; gap:8px}
+.sbody b{color:var(--ink)}
+.sfoot{display:flex; justify-content:flex-start; padding-top:3px}
+.qbar{display:flex; flex-direction:column; gap:6px}
+.qrow{display:grid; grid-template-columns:58px 1fr 42px; align-items:center; gap:9px; font-size:12.5px}
+.qtrack{height:14px; background:var(--panel3); overflow:hidden}
+.qfill{height:100%; background:var(--c)}
+.qval{text-align:left; font-weight:800; color:var(--ink)}
+.swing{display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12.5px}
+.swing span{white-space:nowrap}
+.up{color:var(--pos); font-weight:800}
+.down{color:var(--neg); font-weight:800}
+.newsbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+
+/* ---------- match odds ---------- */
+.fixture{border-bottom:1px solid var(--line)}
+.fixture:last-child{border-bottom:0}
+.fixture:nth-child(even){background:rgba(255,255,255,.017)}
+.fixture .mrow{border-bottom:0; background:none}
+.odds{display:flex; align-items:center; gap:10px; padding:0 13px 10px}
+.oddsbar{display:flex; flex:1; min-width:130px; height:17px; gap:2px; cursor:pointer; border:0; padding:0}
+.oddsbar i{display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800;
+  font-style:normal; overflow:hidden; min-width:0}
+.oddsbar .oh{background:#1C7C8C; color:#EAFBFF}
+.oddsbar .od{background:#39424B; color:#D6DEE6}
+.oddsbar .oa{background:#A8601A; color:#FFF3E4}
+.oddsbar:hover i{filter:brightness(1.15)}
+.odds .cap{font-size:10.5px; letter-spacing:.1em; color:var(--muted); font-weight:700; white-space:nowrap}
+.doneline{display:flex; align-items:center; gap:9px; padding:0 13px 10px; font-size:11.5px; color:var(--muted); flex-wrap:wrap}
+.doneline .ok{color:var(--pos); font-weight:800; white-space:nowrap}
+.doneline .ok.pend{color:var(--gold)}
+.doneline .grow{flex:1; min-width:120px}
+.entry input.filled{border-color:#2E6B4C; background:#12211A}
+.oddskey{display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11.5px; color:var(--muted);
+  padding:9px 13px; border-bottom:1px solid var(--line)}
+.oddskey b{font-weight:700}
+.oddskey i{display:inline-block; width:11px; height:11px; vertical-align:-1px; margin-inline-end:4px}
+.tip table{font-size:12px; margin-top:5px; width:100%}
+.tip table td{padding:1px 0; white-space:nowrap}
+.tip table td:last-child{text-align:left; font-weight:800}
+
+/* ---------- the club ring, in the draw briefing ---------- */
+.ringline{display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px}
+
+/* ---------- season awards ---------- */
+.awards{display:grid; grid-template-columns:repeat(auto-fit,minmax(214px,1fr)); gap:10px}
+.award{position:relative; padding:14px 15px 15px; display:flex; flex-direction:column; gap:6px;
+  background:linear-gradient(180deg,#141018 0%,#0D1017 100%); border:1px solid var(--line2)}
+.award.gold{background:linear-gradient(180deg,#1A1406,#100C03); border-color:var(--gold-dim)}
+.award.gold .lbl{color:var(--gold)}
+.award .who{display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:14px}
+.award .big{font-family:"Secular One",sans-serif; font-size:25px; line-height:1.05; color:var(--ink)}
+.award.gold .big{color:var(--gold); text-shadow:0 0 20px rgba(245,197,66,.35)}
+.award .sub{font-size:11.5px; color:var(--ink2); line-height:1.5}
+.award .cup2{position:absolute; inset-inline-end:11px; top:10px; font-size:16px; opacity:.5}
+
+/* ---------- the pre-tournament forecast ---------- */
+.fcverdict{margin-top:11px; padding:10px 13px; font-size:13px; line-height:1.6;
+  background:var(--panel2); border:1px solid var(--line2); color:var(--ink2)}
+.fcverdict b{color:var(--ink)}
+.fcverdict.hit{background:#0F2418; border-color:#2E6B4C; color:#C9F2D8}
+.fcverdict.miss{background:#1E1410; border-color:#6B4A2E; color:#F2DCC9}
+.calib td,.calib th{white-space:nowrap}
+.calib .bar{display:inline-block; height:9px; background:var(--gold); vertical-align:middle;
+  margin-inline-end:6px; min-width:2px}
+
+/* ---------- the rivalry card ---------- */
+.rivpick{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:12px}
+.rivpick select{background:var(--panel2); border:1px solid var(--line2); color:var(--ink);
+  padding:7px 10px; font-size:13px; font-weight:700}
+.rivpick .sw{font-size:12.5px}
+.rivgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px}
+.rivside{border:1px solid var(--line); background:var(--panel2); padding:13px 15px}
+.rivside h4{font-size:12px; letter-spacing:.14em; color:var(--muted); font-weight:700; margin:0 0 9px}
+.rivscore{display:flex; align-items:baseline; gap:10px; font-family:"Secular One",sans-serif;
+  font-size:26px; color:var(--ink); direction:ltr; justify-content:center}
+.rivscore i{font-style:normal; font-size:13px; color:var(--muted)}
+.rivrow{display:flex; justify-content:space-between; gap:10px; padding:5px 0; font-size:12.5px;
+  border-top:1px solid var(--line); color:var(--ink2)}
+.rivrow b{color:var(--ink)}
+.rivbar{display:flex; height:9px; margin:9px 0 3px; overflow:hidden; background:var(--panel3)}
+.rivbar i{display:block}
+.meets{display:flex; gap:6px; flex-wrap:wrap; margin-top:4px}
+.meet{border:1px solid var(--line); background:var(--panel2); padding:6px 9px; font-size:11.5px;
+  color:var(--ink2); display:flex; flex-direction:column; gap:2px; min-width:86px}
+.meet .s{font-family:"Secular One",sans-serif; font-size:15px; direction:ltr}
+.meet.w{border-color:#2E6B4C} .meet.w .s{color:var(--pos)}
+.meet.l{border-color:#6B2E2E} .meet.l .s{color:var(--neg)}
+.meet.d .s{color:var(--ink2)}
+
+/* ---------- chemistry ---------- */
+.chemrow{display:grid; grid-template-columns:minmax(150px,1fr) minmax(120px,2fr) 74px 58px;
+  align-items:center; gap:10px; padding:7px 2px; border-top:1px solid var(--line); font-size:12.5px}
+.chemrow:first-child{border-top:0}
+.chemrow .who{display:flex; gap:5px; align-items:center; flex-wrap:wrap}
+.cbar{position:relative; height:15px; background:var(--panel3); border:1px solid var(--line); direction:ltr}
+.cbar i{position:absolute; top:0; bottom:0; display:block}
+.cbar i.up{background:var(--pos); left:50%}
+.cbar i.dn{background:var(--neg); right:50%}
+.cbar .mid{position:absolute; top:-3px; bottom:-3px; left:50%; width:1px; background:var(--line2)}
+.cval{text-align:end; font-weight:800; font-variant-numeric:tabular-nums}
+.cval.up{color:var(--pos)} .cval.dn{color:var(--neg)}
+.cnote{font-size:11px; color:var(--muted); text-align:end}
+
+/* ---------- asking before something irreversible ---------- */
+.modalback{position:fixed; inset:0; z-index:200; padding:18px; display:grid; place-items:center;
+  background:rgba(3,6,10,.74); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px)}
+.modalcard{width:100%; max-width:430px; background:var(--panel); border:1px solid var(--line2);
+  box-shadow:0 26px 70px rgba(0,0,0,.8); padding:20px 20px 17px}
+.modalcard h3{font-family:"Secular One",sans-serif; font-size:18px; color:var(--ink)}
+.modalcard p{margin-top:9px; font-size:13.5px; line-height:1.6; color:var(--ink2)}
+.modalcard .warnstrip{margin-top:11px; padding:8px 11px; font-size:12.5px;
+  background:#2A1212; border:1px solid #7A3030; color:#FFD9D9}
+.modalrow{display:flex; gap:9px; margin-top:17px; flex-wrap:wrap}
+
+/* ---------- the tournament timeline ---------- */
+.tline{display:flex; gap:4px; overflow-x:auto; padding:4px 2px 8px; scrollbar-width:thin}
+.tnode{flex:none; width:52px; display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:6px 3px 5px; background:var(--panel2); border:1px solid var(--line); transition:.12s}
+.tnode:hover{border-color:var(--gold)}
+.tnode[aria-pressed="true"]{border-color:var(--gold); background:#161104}
+.tnode b{font-size:12.5px; font-weight:800; color:var(--ink)}
+.tnode .n{font-size:10px; color:var(--muted); font-weight:700}
+.tnode .sw{display:block; width:14px; background:linear-gradient(180deg,var(--gold),var(--gold2));
+  align-self:center; border-radius:2px 2px 0 0; opacity:.9}
+.tnode.zero .sw{background:var(--line2)}
+.tnode.future{background:transparent; border-style:dashed; opacity:.5; cursor:default}
+.tnode.future b{color:var(--muted)}
+.tlmatch{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px;
+  background:var(--panel2); border:1px solid var(--line); margin-bottom:9px; font-size:13px}
+.tlmatch .mn{width:22px; height:22px; flex:none; display:grid; place-items:center; font-size:11px;
+  font-weight:800; background:var(--panel3); color:var(--ink2)}
+.tlmatch .sc{font-family:"Secular One",sans-serif; font-size:17px; color:var(--gold)}
+.mvar{font-style:normal; font-size:9px; margin-inline-start:3px}
+.mvar.up{color:var(--pos)} .mvar.down{color:var(--neg)}
+.peakcard{display:block; width:100%; text-align:start; padding:11px 13px; margin-bottom:10px;
+  background:linear-gradient(180deg,#171206,#120E04); border:1px solid var(--gold-dim);
+  color:var(--ink2); font-size:13px; line-height:1.6; transition:.12s}
+.peakcard:hover{border-color:var(--gold)}
+.peakcard .lbl{display:block; color:var(--gold); margin-bottom:3px}
+.peakcard b{color:var(--ink)}
+
+/* ---------- a fixture that settles it ---------- */
+.gravity{display:flex; align-items:center; gap:8px; width:100%; text-align:start;
+  padding:7px 11px; font-size:12px; line-height:1.5; color:var(--ink2);
+  background:var(--panel2); border-top:1px solid var(--line)}
+.gravity:hover{color:var(--ink)}
+.gravity.hot{background:#20130A; color:#FFD9A8; border-top-color:#5A3818}
+.gravity .gk{flex:none; font-weight:800; letter-spacing:.04em}
+.gravity.hot .gk{color:var(--gold)}
+
+/* ---------- the ceremony ---------- */
+.podiumscene{position:relative; overflow:hidden; grid-column:1/-1; margin-top:12px;
+  min-height:330px; border:1px solid var(--gold); padding:18px 14px 20px;
+  background:
+    radial-gradient(85% 70% at 50% 108%, rgba(245,197,66,.20), rgba(245,197,66,0) 62%),
+    linear-gradient(180deg,#05090F 0%, #0A1320 52%, #0D1A12 100%)}
+.podiumscene .sky{position:absolute; inset:0; pointer-events:none}
+.fw{position:absolute; width:4px; height:4px; border-radius:50%; opacity:0;
+  animation:burst 3.2s ease-out infinite}
+@keyframes burst{
+  0%{opacity:0; transform:scale(.15)}
+  10%{opacity:1}
+  55%{opacity:.95}
+  100%{opacity:0; transform:scale(1.9)}}
+.confetti{position:absolute; inset:0; overflow:hidden; pointer-events:none}
+.confetti i{position:absolute; top:-16px; width:7px; height:12px; border-radius:1px;
+  animation:fall linear infinite}
+@keyframes fall{
+  0%{transform:translate3d(0,-20px,0) rotate(0deg); opacity:0}
+  8%{opacity:1}
+  100%{transform:translate3d(var(--dx,0px),360px,0) rotate(760deg); opacity:.9}}
+
+.podiumscene .ttl2{position:relative; z-index:3; text-align:center;
+  font-family:"Secular One",sans-serif; font-size:clamp(17px,3.6vw,23px); color:var(--gold);
+  text-shadow:0 0 26px rgba(245,197,66,.6)}
+.rostrum{position:relative; z-index:3; display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-end; margin-top:14px}
+.cup{width:62px; height:78px; filter:drop-shadow(0 0 22px rgba(245,197,66,.75));
+  animation:lift 3.4s ease-in-out infinite}
+@keyframes lift{0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)}}
+.standers{display:flex; align-items:flex-end; gap:26px; margin-top:-6px}
+.stander{display:flex; flex-direction:column; align-items:center; position:relative}
+.stander .head{width:40px; height:40px; border-radius:50%; background-size:cover; background-position:50% 40%;
+  box-shadow:0 0 0 3px var(--c), 0 0 26px rgba(245,197,66,.45)}
+.stander .torso{width:44px; height:38px; margin-top:-4px; border-radius:12px 12px 4px 4px;
+  background:var(--c); opacity:.88}
+.stander .arm{position:absolute; top:16px; width:8px; height:26px; border-radius:4px;
+  background:var(--c); opacity:.88}
+.stander .arm.l{inset-inline-start:-11px; transform:rotate(28deg)}
+.stander .arm.r{inset-inline-end:-11px; transform:rotate(-28deg)}
+.plinth{position:relative; z-index:3; width:min(300px,86%); height:62px; margin-inline:auto;
+  background:linear-gradient(180deg,#F3D06A 0 7px,#2A3442 7px);
+  border:1px solid rgba(255,255,255,.18); display:grid; place-items:center}
+.plinth span{font-family:"Secular One",sans-serif; font-size:30px; color:var(--gold);
+  text-shadow:0 0 18px rgba(245,197,66,.5)}
+.wnames{position:relative; z-index:3; display:flex; gap:20px; justify-content:center; flex-wrap:wrap;
+  margin-top:12px; font-size:12.5px; color:var(--ink2)}
+.wnames b{color:#fff; font-weight:800}
+@media (prefers-reduced-motion:reduce){
+  .fw,.confetti i,.cup{animation:none}
+  .fw{opacity:.9}
+}
+
+/* ---------- the final: a pitch of its own ---------- */
+.turf{
+  background:
+    radial-gradient(135% 85% at 50% -25%, rgba(255,255,255,.17), rgba(255,255,255,0) 58%),
+    repeating-linear-gradient(90deg, #1F6E35 0 46px, #1A5F2E 46px 92px);
+  box-shadow: inset 0 0 90px rgba(0,0,0,.55);
+  border:1px solid #0E3A1C;
+}
+.finalgate{position:relative; display:flex; flex-direction:column; align-items:center; gap:15px;
+  padding:34px 18px 30px; text-align:center; overflow:hidden}
+.finalgate .kicker{font-size:11px; letter-spacing:.22em; color:rgba(255,255,255,.72); font-weight:800}
+.finalgate h3{font-family:"Secular One",sans-serif; font-size:clamp(23px,5vw,34px); color:#fff;
+  text-shadow:0 3px 18px rgba(0,0,0,.65)}
+.finalgate .four{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+.finalgate .four i{width:44px; height:44px; border-radius:50%; background-size:cover; background-position:50% 42%;
+  box-shadow:0 0 0 2.5px var(--c), 0 8px 20px rgba(0,0,0,.55)}
+.btn.enter{font-size:16px; padding:13px 30px; box-shadow:0 10px 26px rgba(0,0,0,.45)}
+
+.finalstage{position:relative; overflow:hidden}
+.finalstage .midline{position:absolute; inset-inline:0; top:0; height:2px; background:rgba(255,255,255,.22)}
+.finalstage .arc{position:absolute; left:50%; top:-84px; width:168px; height:168px; margin-left:-84px;
+  border:2px solid rgba(255,255,255,.18); border-radius:50%}
+.walkout{position:relative; display:grid; grid-template-columns:1fr auto 1fr; align-items:end; gap:14px;
+  padding:26px 16px 24px; z-index:2}
+.file{display:flex; gap:14px; flex-wrap:wrap}
+.file.home{justify-content:flex-end}
+.file.away{justify-content:flex-start}
+.walker{display:flex; flex-direction:column; align-items:center; gap:5px}
+.walker .ph{width:56px; height:56px; border-radius:50%; background-size:cover; background-position:50% 42%;
+  box-shadow:0 0 0 3px var(--c), 0 12px 26px rgba(0,0,0,.55)}
+.walker .nm{font-family:"Secular One",sans-serif; font-size:14px; color:#fff; text-shadow:0 2px 9px rgba(0,0,0,.8)}
+.walker .cl{font-size:10.5px; color:rgba(255,255,255,.85); font-weight:600}
+.vs{font-family:"Secular One",sans-serif; font-size:clamp(20px,4vw,30px); color:#FFD86B;
+  text-shadow:0 0 24px rgba(245,197,66,.6); padding-bottom:16px; white-space:nowrap}
+/* ---- the entrance: lights, then people, then the title ---- */
+.finalstage .curtain,.finalstage .bloom,.finalstage .sweep{position:absolute; pointer-events:none}
+.finalstage .curtain{inset:0; z-index:4; opacity:0;
+  background:radial-gradient(125% 85% at 50% 0%, rgba(0,0,0,.5), rgba(0,0,0,.94) 72%)}
+.finalstage .bloom{inset-inline:-10%; top:-46%; height:105%; z-index:1; opacity:.5;
+  background:radial-gradient(52% 58% at 50% 56%, rgba(255,252,225,.55), rgba(255,252,225,0) 70%)}
+.finalstage .sweep{inset:0; z-index:3; opacity:0;
+  background:linear-gradient(104deg, transparent 34%, rgba(255,255,255,.22) 47%, transparent 61%)}
+
+.intro .curtain{animation:lightsUp 3.4s cubic-bezier(.4,0,.2,1) both}
+@keyframes lightsUp{
+  0%{opacity:1} 7%{opacity:.5} 11%{opacity:.95} 19%{opacity:.3} 25%{opacity:.85}
+  34%{opacity:.22} 62%{opacity:.07} 100%{opacity:0}}
+.intro .bloom{animation:bloomUp 4s ease-out both}
+@keyframes bloomUp{
+  0%{opacity:0} 8%{opacity:.4} 13%{opacity:.05} 22%{opacity:.7} 30%{opacity:.12}
+  72%{opacity:1} 100%{opacity:.62}}
+.intro .sweep{animation:sweepBy 2.6s 1.05s ease-in-out both}
+@keyframes sweepBy{
+  0%{opacity:0; transform:translateX(-55%)} 22%{opacity:1} 78%{opacity:1}
+  100%{opacity:0; transform:translateX(55%)}}
+
+.intro .file.home .walker{animation:inRight 1.5s cubic-bezier(.16,.9,.2,1) both}
+.intro .file.away .walker{animation:inLeft 1.5s cubic-bezier(.16,.9,.2,1) both}
+@keyframes inRight{
+  0%{opacity:0; transform:translateX(150px) scale(.66); filter:brightness(.35)}
+  58%{opacity:1; filter:brightness(1.65)}
+  100%{opacity:1; transform:none; filter:brightness(1)}}
+@keyframes inLeft{
+  0%{opacity:0; transform:translateX(-150px) scale(.66); filter:brightness(.35)}
+  58%{opacity:1; filter:brightness(1.65)}
+  100%{opacity:1; transform:none; filter:brightness(1)}}
+.intro .walker .ph{animation:phBloom 1.9s both}
+@keyframes phBloom{
+  0%{box-shadow:0 0 0 3px var(--c)}
+  55%{box-shadow:0 0 0 3px var(--c), 0 0 52px 14px rgba(255,255,255,.6)}
+  100%{box-shadow:0 0 0 3px var(--c), 0 12px 26px rgba(0,0,0,.55)}}
+.intro .walker .nm,.intro .walker .cl{animation:nameUp .8s both}
+@keyframes nameUp{from{opacity:0; transform:translateY(9px)} to{opacity:1; transform:none}}
+
+.intro .vs{animation:vsIgnite 1.8s 4.15s both}
+@keyframes vsIgnite{
+  0%{opacity:0; transform:scale(2.4); letter-spacing:.55em; filter:blur(12px)}
+  42%{opacity:1; filter:blur(0)}
+  66%{text-shadow:0 0 70px rgba(245,197,66,1), 0 0 140px rgba(245,197,66,.65)}
+  100%{opacity:1; transform:none; letter-spacing:.02em;
+       text-shadow:0 0 26px rgba(245,197,66,.65)}}
+
+.skipintro{position:absolute; inset-block-start:10px; inset-inline-end:12px; z-index:6;
+  background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.3); color:#fff;
+  font-size:11.5px; font-weight:700; padding:5px 12px; border-radius:999px}
+.skipintro:hover{background:rgba(0,0,0,.7)}
+.stageboard{position:relative; z-index:2; padding:0 14px 16px; transition:opacity .9s ease, transform .9s ease}
+.stageboard.pending{opacity:0; transform:translateY(26px) scale(.985); pointer-events:none}
+.bracket.onpitch .bteam,.bracket.onpitch .bcore,.bracket.onpitch .dugout{
+  background:rgba(7,16,11,.74); backdrop-filter:blur(3px); border-color:rgba(255,255,255,.16)}
+.bracket.onpitch .bteam.win{background:linear-gradient(150deg,rgba(40,29,5,.9),rgba(7,16,11,.8) 72%);
+  border-color:var(--gold)}
+.bracket.onpitch::before{background:rgba(255,255,255,.22)}
+.bracket.onpitch .bcore{border-inline-color:rgba(245,197,66,.45)}
+.replay{background:none; border:0; color:rgba(255,255,255,.7); font-size:11.5px; font-weight:700;
+  text-decoration:underline; padding:0 14px 14px; position:relative; z-index:2}
+.replay:hover{color:#fff}
+
+/* ---------- the bench, drawn as a bench ---------- */
+.dugout{border:1px solid var(--line2); background:var(--panel); padding:12px 11px 10px;
+  display:flex; flex-direction:column; gap:8px}
+.dugout .seed{font-size:10px; letter-spacing:.14em; color:var(--muted); font-weight:800}
+.dscene{position:relative; padding-top:4px}
+.drail{position:absolute; inset-inline:4px; top:6px; height:6px; border-radius:3px;
+  background:linear-gradient(180deg,#5C4732,#33271A)}
+.dseats{position:relative; z-index:2; display:flex; gap:12px; justify-content:center; align-items:flex-end}
+.sitter{display:flex; flex-direction:column; align-items:center}
+.sitter .head{width:30px; height:30px; border-radius:50%; background-size:cover; background-position:50% 40%;
+  box-shadow:0 0 0 2px var(--c); filter:grayscale(.6) brightness(.92)}
+.sitter .torso{width:36px; height:24px; margin-top:-4px; border-radius:10px 10px 3px 3px;
+  background:var(--c); opacity:.7}
+.dplank{height:10px; border-radius:3px; margin-top:-2px;
+  background:linear-gradient(180deg,#8B6C48,#5A4429); box-shadow:0 2px 0 rgba(0,0,0,.45)}
+.dlegs{display:flex; justify-content:space-between; padding:0 12px}
+.dlegs i{width:7px; height:15px; border-radius:0 0 2px 2px; background:linear-gradient(180deg,#4B3927,#2B2116)}
+.dnames{display:flex; gap:12px; justify-content:center; font-size:10.5px; color:var(--muted); font-weight:700}
+.dnote{font-size:11px; color:var(--muted); line-height:1.45; text-align:center}
+.bracket.onpitch .dugout .dnote,.bracket.onpitch .dugout .dnames,.bracket.onpitch .dugout .seed{
+  color:rgba(255,255,255,.72)}
+
+@media (prefers-reduced-motion:reduce){
+  .intro .file .walker,.intro .vs,.intro .curtain,.intro .bloom,.intro .sweep,
+  .intro .walker .ph,.intro .walker .nm,.intro .walker .cl{animation:none}
+  .finalstage .curtain{opacity:0}
+  .stageboard.pending{opacity:1; transform:none; pointer-events:auto}
+}
+@media (max-width:660px){
+  .walkout{grid-template-columns:1fr; gap:10px; padding:20px 12px 18px}
+  .file.home,.file.away{justify-content:center}
+  .vs{padding:0; text-align:center}
+  .walker .ph{width:46px; height:46px}
+}
+
+/* ---------- the final, as a bracket ---------- */
+.bracket{position:relative; display:grid; gap:14px; align-items:stretch;
+  grid-template-columns:minmax(158px,1fr) minmax(290px,1.6fr) minmax(158px,1fr) minmax(112px,auto)}
+.bracket::before{content:""; position:absolute; inset-inline:0; top:50%; height:1px;
+  background:var(--line2); z-index:0}
+.bracket > *{position:relative; z-index:1}
+.bteam{background:var(--panel2); border:1px solid var(--line2); padding:12px 13px;
+  display:flex; flex-direction:column; gap:9px}
+.bteam .seed{font-size:10px; letter-spacing:.14em; color:var(--muted); font-weight:800}
+.bteam .one{display:flex; align-items:center; gap:8px}
+.bteam .one .club{margin-inline-start:auto}
+.bteam.win{border-color:var(--gold); background:linear-gradient(150deg,#1A1305,var(--panel2) 72%)}
+.bteam.win .seed{color:var(--gold)}
+.bteam .tot{font-family:"Secular One",sans-serif; font-size:25px; line-height:1; margin-top:2px}
+.bteam.win .tot{color:var(--gold)}
+.bcore{display:flex; flex-direction:column; gap:11px; background:var(--panel);
+  border:1px solid var(--line); border-inline:2px solid var(--gold-dim); padding:13px 14px}
+.bleg{display:flex; flex-direction:column; gap:8px; padding-bottom:11px; border-bottom:1px solid var(--line)}
+.bleg .lbl2{font-size:10.5px; letter-spacing:.12em; color:var(--muted); font-weight:800}
+.blegrow{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px}
+.blegrow .away{text-align:left}
+.bagg{display:flex; align-items:center; justify-content:center; gap:13px; flex-wrap:wrap}
+.bagg .lbl2{font-size:10.5px; letter-spacing:.12em; color:var(--muted); font-weight:800}
+.bagg .v{font-family:"Secular One",sans-serif; font-size:26px; direction:ltr; letter-spacing:.03em}
+.bench{border:1px dashed var(--line2); background:repeating-linear-gradient(135deg,
+  rgba(255,255,255,.018) 0 6px, rgba(0,0,0,0) 6px 12px), var(--panel);
+  padding:12px 11px; display:flex; flex-direction:column; gap:10px}
+.bench .seed{font-size:10px; letter-spacing:.14em; color:var(--muted); font-weight:800}
+.bench .one{display:flex; align-items:center; gap:8px; opacity:.62}
+.bench .one .pface{filter:grayscale(1)}
+.bench .note2{font-size:11px; color:var(--muted); line-height:1.45; margin-top:auto}
+@media (max-width:880px){
+  .bracket{grid-template-columns:1fr}
+  .bracket::before{display:none}
+}
+
+/* ---------- final ---------- */
+.finalbox{border:1px solid var(--gold); background:linear-gradient(140deg,#181203,#0D0F14 65%); padding:16px 18px;
+  display:flex; flex-wrap:wrap; gap:14px 22px; align-items:center; justify-content:space-between;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
+.finalbox .ttl{font-family:"Secular One",sans-serif; font-size:17px; color:var(--gold)}
+.finalbox .who{display:flex; gap:18px; flex-wrap:wrap; align-items:center}
+.tag{font-size:11.5px; font-weight:700; color:var(--gold); border:1px solid var(--gold-dim); padding:3px 11px}
+.duel{display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:center}
+.duelside{border:1px solid var(--line2); background:var(--panel2); padding:13px 15px; display:flex;
+  flex-direction:column; gap:8px; cursor:pointer; transition:.15s}
+.duelside:hover{border-color:var(--gold)}
+.duelside[aria-pressed="true"]{border-color:var(--gold); background:#161104}
+.duelside .cap{font-size:11px; letter-spacing:.12em; color:var(--muted); font-weight:700}
+
+/* ---------- tournament standings: fits the page, never scrolls sideways ---------- */
+.sttbl{min-width:0; width:100%; table-layout:auto; font-size:13.5px}
+.sttbl th,.sttbl td{padding:8px 7px}
+.sttbl td.rank{width:1%; text-align:center; padding-inline:7px}
+.sttbl .c-num,.sttbl th.c-num{text-align:center}
+.sttbl .crown{color:var(--gold); font-size:11px; margin-inline-start:3px}
+.sttbl tr.qual td.rank{color:var(--gold)}
+.sttbl .who{display:flex; align-items:center; gap:4px}
+.stlegend{display:flex; flex-wrap:wrap; gap:5px 16px; font-size:11.5px; color:var(--muted); padding-top:9px}
+.stlegend b{color:var(--ink2); font-weight:700}
+@media (max-width:600px){
+  .sttbl .cn{display:none}
+  .sttbl th,.sttbl td{padding:7px 4px; font-size:12.5px}
+  .sttbl td.rank{padding-inline:5px}
+}
+
+/* ---------- charts ---------- */
+.chart-card{background:var(--panel); border:1px solid var(--line); padding:14px 12px 8px}
+svg.chart{display:block; width:100%; height:auto}
+.legend{display:flex; flex-wrap:wrap; gap:6px 15px; padding:10px 4px 2px; font-size:12px; font-weight:600; color:var(--ink2)}
+.legend .li{display:inline-flex; align-items:center; gap:6px}
+.tip{position:fixed; z-index:80; pointer-events:none; background:#0B1119; border:1px solid var(--line2);
+  padding:9px 11px; font-size:12.5px; box-shadow:0 12px 34px rgba(0,0,0,.65); max-width:250px; line-height:1.45}
+.tip .th{font-weight:800; margin-bottom:4px; color:var(--gold)}
+.tip .tr{display:flex; gap:12px; justify-content:space-between}
+
+/* ---------- places bars ---------- */
+.dist{display:flex; flex-direction:column; gap:7px}
+.dist-row{display:grid; grid-template-columns:66px 1fr; align-items:center; gap:10px}
+.dist-bar{display:flex; height:23px; gap:2px; background:var(--panel3)}
+.dist-seg{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; min-width:2px}
+
+/* ---------- history strip ---------- */
+.hstrip{display:flex; flex-wrap:wrap; gap:3px}
+.cell{width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:800}
+.cell.miss{background:var(--panel3); color:var(--muted); opacity:.5}
+.cell.win{box-shadow:0 0 0 2px var(--gold)}
+
+/* ---------- tournament picker ---------- */
+.tgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(50px,1fr)); gap:5px}
+.tbtn{border:1px solid var(--line); background:var(--panel); padding:6px 2px 5px; display:flex;
+  flex-direction:column; align-items:center; gap:4px; font-weight:800; font-size:13px; transition:.12s}
+.tbtn:hover{border-color:var(--muted)}
+.tbtn[aria-pressed="true"]{background:var(--gold); color:var(--pitch); border-color:var(--gold)}
+.tbtn .duo{display:flex; gap:2px}
+.tbtn .duo i{width:7px; height:7px}
+.tbtn.new{border-color:var(--p2)}
+.nav-pair{display:flex; gap:6px}
+
+/* ---------- misc ---------- */
+.recs{display:grid; grid-template-columns:repeat(auto-fit,minmax(248px,1fr)); gap:10px}
+.rec{background:var(--panel); border:1px solid var(--line); padding:13px 15px; display:flex; flex-direction:column; gap:5px}
+.rec .v{font-family:"Secular One",sans-serif; font-size:22px; line-height:1.15}
+.rec .d{font-size:12.5px; color:var(--ink2); display:flex; gap:7px; flex-wrap:wrap; align-items:center}
+.matrix td.cellv{text-align:center; font-weight:800; width:66px}
+.matrix td.self{background:var(--panel3); color:var(--muted)}
+.ramp-key{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted); font-weight:600}
+.ramp-key i{width:24px; height:11px; display:inline-block}
+.cols2{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px}
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:8px; flex:1 1 400px}
+.kpi{background:var(--panel2); border:1px solid var(--line); padding:8px 11px}
+.kpi .v{font-size:20px; font-weight:800; line-height:1.2}
+.prof-head{display:flex; flex-wrap:wrap; align-items:center; gap:16px; justify-content:space-between;
+  padding:15px 16px; border:1px solid var(--line); background:var(--panel)}
+.prof-name{font-family:"Secular One",sans-serif; font-size:26px; line-height:1.1; display:flex; align-items:center; gap:10px}
+.prof-name i{width:15px; height:15px; background:var(--c); flex:none; transform:skewX(-14deg)}
+.notice{border:1px solid var(--line2); background:var(--panel2); padding:10px 14px; font-size:13px; color:var(--ink2);
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.notice b{color:var(--ink)}
+.notice.warn{border-color:#4A3A12; background:#150F03}
+.errbar{position:fixed; inset-inline:10px; bottom:10px; z-index:120; background:#2A1212;
+  border:1px solid #7A3030; color:#FFD9D9; padding:10px 13px; font-size:12.5px; line-height:1.5;
+  display:flex; gap:10px; align-items:flex-start; box-shadow:0 14px 40px rgba(0,0,0,.7);
+  max-width:640px; margin-inline:auto}
+.errbar code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; word-break:break-word}
+.errbar .x{margin-inline-start:auto; color:#FFD9D9; font-weight:800}
+
+footer{border-top:1px solid var(--line); padding-block:22px 6px; color:var(--muted); font-size:12px; line-height:1.6}
+
+@media (max-width:660px){
+  .mrow{grid-template-columns:18px 1fr auto 1fr; gap:6px; padding:8px 8px}
+  .mrow .club{font-size:11px}
+  .pface{width:18px; height:18px}
+  .score{font-size:15px; padding:2px 7px; min-width:62px}
+  th,td{padding:8px 9px; font-size:13.5px}
+  .dist-row{grid-template-columns:54px 1fr}
+  .cell{width:18px; height:18px; font-size:10px}
+  .deck{grid-template-columns:repeat(auto-fit,minmax(142px,1fr)); gap:10px}
+  .duel{grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>

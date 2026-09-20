@@ -1,0 +1,1651 @@
+
+/* ==========================================================================
+   OVERVIEW
+   ========================================================================== */
+/* ==========================================================================
+   Season awards — every one read straight off the recorded results
+   ========================================================================== */
+function awardCard(lbl, who, big, sub, gold) {
+  return el("div", "award" + (gold ? " gold" : ""),
+    '<div class="lbl">' + lbl + '</div><div class="who">' + who + "</div>" +
+    '<div class="big">' + big + '</div><div class="sub">' + sub + "</div>" +
+    (gold ? '<span class="cup2">🏆</span>' : ""));
+}
+
+function awardsBlock() {
+  const done = TSS.filter(t => t.done);
+  if (!done.length) return null;
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>פרסי העונה</h2><span class="note">' +
+    esc(SCOPE === "all" ? "כל העונות" : seasonById(SCOPE).name) + " · " + done.length +
+    " טורנירים. כל פרס מחושב מהתוצאות הגולמיות.</span></div>";
+  const g = el("div", "awards");
+  const cand = S.filter(s => s.g);
+  if (!cand.length) return null;
+  const best = (a, f) => a.reduce((x, y) => f(y) > f(x) ? y : x);
+
+  const sc = best(cand, s => s.gf);
+  g.appendChild(awardCard("מלך השערים", plate(sc.i, "lg"), nf(sc.gf),
+    f2(sc.gf / sc.g) + " שערים למשחק, ב־" + sc.g + " משחקים", true));
+
+  const wall = cand.reduce((x, y) => (y.ga / y.g) < (x.ga / x.g) ? y : x);
+  g.appendChild(awardCard("חומת ההגנה", plate(wall.i, "lg"), f2(wall.ga / wall.g),
+    "ספיגות למשחק · " + nf(wall.ga) + " בסך הכל", true));
+
+  const king = best(cand, s => s.titles);
+  g.appendChild(awardCard("מלך האליפויות", plate(king.i, "lg"), king.titles,
+    "מתוך " + king.app + " טורנירים · " + Math.round(100 * king.titles / king.app) + "% מהם", true));
+
+  const prs = Object.keys(PAIR).map(k => PAIR[k]).filter(x => x.g >= 8);
+  if (prs.length) {
+    const bp = prs.reduce((x, y) => (y.titles - x.titles || y.ppg - x.ppg) > 0 ? y : x);
+    g.appendChild(awardCard("הצמד של העונה",
+      plate(bp.a) + '<span class="mut">+</span>' + plate(bp.b),
+      bp.titles + " אליפויות", f2(bp.ppg) + " נק׳ למשחק ב־" + bp.g + " משחקים יחד", true));
+  }
+
+  /* the two halves of the season, so a turnaround has something to turn from */
+  if (done.length >= 6 && LOG) {
+    const cut = Math.floor(done.length / 2);
+    const A = {}, B = {};
+    done.slice(0, cut).forEach(t => { A[t.i] = 1; });
+    done.slice(cut).forEach(t => { B[t.i] = 1; });
+    const rate = (p, ids) => {
+      let n = 0, pts = 0;
+      LOG[p].forEach(e => { if (ids[e.ti]) { n++; pts += e.pts; } });
+      return { n, ppg: n ? pts / n : 0 };
+    };
+    const moves = cand.map(s => {
+      const a = rate(s.i, A), b = rate(s.i, B);
+      return { p: s.i, a, b, d: b.ppg - a.ppg };
+    }).filter(m => m.a.n >= 8 && m.b.n >= 8);
+    if (moves.length) {
+      const up = moves.reduce((x, y) => y.d > x.d ? y : x);
+      const dn = moves.reduce((x, y) => y.d < x.d ? y : x);
+      const half = (m, k) => f2(m[k].ppg) + " נק׳ למשחק";
+      g.appendChild(awardCard("המהפך של העונה", plate(up.p, "lg"), sgnF2(up.d),
+        "מחצית ראשונה " + half(up, "a") + " ← מחצית שנייה " + half(up, "b")));
+      g.appendChild(awardCard("האכזבה של העונה", plate(dn.p, "lg"), sgnF2(dn.d),
+        "מחצית ראשונה " + half(dn, "a") + " ← מחצית שנייה " + half(dn, "b")));
+    }
+  }
+
+  const iron = best(cand, s => s.app);
+  g.appendChild(awardCard("איש הברזל", plate(iron.i, "lg"), iron.app + " הופעות",
+    "מתוך " + done.length + " טורנירים בעונה"));
+
+  const clubs = TEAM.map((x, i) => ({ i, x })).filter(o => o.x.g >= 20);
+  if (clubs.length) {
+    const bc = clubs.reduce((x, y) => y.x.ppg > x.x.ppg ? y : x);
+    g.appendChild(awardCard("הקבוצה של העונה", clubTag(bc.i), f2(bc.x.ppg),
+      "נק׳ למשחק ב־" + bc.x.g + " הופעות על המגרש"));
+  }
+
+  sec.appendChild(g);
+  return sec;
+}
+
+/* ==========================================================================
+   The forecast made before a ball was kicked
+   ========================================================================== */
+const PRE = {};
+function preForecast(t) {
+  if (!MODEL || !MODEL.matches || !t.m.length) return null;
+  const k = t.i + ":" + t.d.map(x => x.join(".")).join(",");
+  if (PRE[k]) return PRE[k];
+  const sim = simulate(snapshotAt(t, 0), 2500, null, (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0);
+  if (!sim) return null;
+  if (Object.keys(PRE).length > 80) for (const x in PRE) delete PRE[x];
+  PRE[k] = sim;
+  return sim;
+}
+
+function forecastBlock(t) {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>תחזית לפני הטורניר</h2><span class="note">' +
+    (t.done ? "מה המודל היה אומר על ההגרלה הזאת לפני המשחק הראשון — ומה קרה בפועל."
+            : "על סמך ההגרלה בלבד, לפני שנרשמה תוצאה אחת.") + "</span></div>";
+  const host = el("div");
+  host.appendChild(el("div", "mut", "מחשב…"));
+  sec.appendChild(host);
+  setTimeout(() => step("forecast", () => {
+    const sim = preForecast(t);
+    host.innerHTML = "";
+    if (!sim) { host.appendChild(el("div", "mut", "אין עדיין מספיק היסטוריה לתחזית.")); return; }
+    const rows = t.players.slice().sort((a, b) => sim[b].title - sim[a].title);
+    const bar = el("div", "qbar");
+    rows.forEach(p => {
+      bar.appendChild(el("div", "qrow",
+        "<span>" + plate(p) + "</span>" +
+        '<span class="qtrack"><span class="qfill" style="--c:' + PC(p) + ";width:" +
+          Math.max(1, pct(sim[p].title)) + '%"></span></span>' +
+        '<span class="qval">' + pct(sim[p].title) + "%</span>"));
+    });
+    host.appendChild(bar);
+    host.appendChild(el("div", "stlegend",
+      '<span>הפס הוא <b>הסיכוי להרים את הגביע</b></span>' +
+      rows.slice(0, 3).map(p => "<span>" + esc(P[p]) + " · גמר " + pct(sim[p].top4) + "%</span>").join("")));
+    if (t.done && t.c.length === 2) {
+      const fav = rows[0], hit = t.c.indexOf(fav) >= 0;
+      const pc = t.c.map(p => pct(sim[p].title));
+      host.appendChild(el("div", "fcverdict " + (hit ? "hit" : "miss"),
+        "<b>" + esc(P[t.c[0]]) + " ו" + esc(P[t.c[1]]) + "</b> לקחו את הטורניר. " +
+        "המודל נתן להם <b><span class=\"ltr\">" + pc[0] + "%</span></b> ו־<b><span class=\"ltr\">" +
+        pc[1] + "%</span></b> מראש" +
+        (hit ? ", והפייבוריט " + esc(P[fav]) + " עמד בציפיות."
+             : ". הפייבוריט היה " + esc(P[fav]) + " עם " + pct(sim[fav].title) + "% — והוא לא הרים.")));
+    }
+  }), 0);
+  return sec;
+}
+
+/* How good is that forecast, measured against every tournament that ended. */
+function modelScoreBlock() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>כמה המודל צדק</h2><span class="note">' +
+    'התחזית שלפני כל טורניר, מול מי שבאמת הרים. שימו לב: המודל מכויל על כל המשחקים שנרשמו, ' +
+    'כולל אלה של אותו טורניר — ולכן זו בחינה בדיעבד. רק הטורניר החי הוא תחזית אמיתית.</span></div>';
+  const host = el("div");
+  host.appendChild(el("div", "mut", "מריץ את התחזיות…"));
+  sec.appendChild(host);
+  setTimeout(() => step("modelscore", () => {
+    const done = TSS.filter(t => t.done && t.c && t.c.length === 2);
+    const rows = [], buckets = [[0, .15], [.15, .3], [.3, .45], [.45, 1.01]];
+    const acc = buckets.map(() => ({ n: 0, sum: 0, hit: 0 }));
+    let favHit = 0, champSum = 0, baseSum = 0, n = 0;
+    done.forEach(t => {
+      const sim = preForecast(t);
+      if (!sim) return;
+      n++;
+      const ranked = t.players.slice().sort((a, b) => sim[b].title - sim[a].title);
+      if (t.c.indexOf(ranked[0]) >= 0) favHit++;
+      champSum += (sim[t.c[0]].title + sim[t.c[1]].title) / 2;
+      baseSum += 2 / t.size;
+      t.players.forEach(p => {
+        const v = sim[p].title, bi = buckets.findIndex(b => v >= b[0] && v < b[1]);
+        if (bi < 0) return;
+        acc[bi].n++; acc[bi].sum += v; acc[bi].hit += t.c.indexOf(p) >= 0 ? 1 : 0;
+      });
+      rows.push({ t, fav: ranked[0], hit: t.c.indexOf(ranked[0]) >= 0 });
+    });
+    host.innerHTML = "";
+    if (!n) { host.appendChild(el("div", "mut", "אין עדיין טורנירים שהסתיימו.")); return; }
+    /* how far the buckets sit from what actually happened, weighted by size */
+    let calErr = 0, calN = 0;
+    acc.forEach(a => { if (a.n) { calErr += a.n * Math.abs(a.sum / a.n - a.hit / a.n); calN += a.n; } });
+    calErr = calN ? calErr / calN : 0;
+    const strip = el("div", "strip4");
+    [["הפייבוריט הרים", Math.round(100 * favHit / n) + "%", favHit + " מתוך " + n + " טורנירים"],
+     ["הסיכוי שניתן לאלופים", Math.round(100 * champSum / n) + "%",
+      "מול " + Math.round(100 * baseSum / n) + "% אם היה מנחש באקראי"],
+     ["דיוק הכיול", Math.round(100 * calErr) + " נק׳ אחוז",
+      "פער ממוצע בין מה שנחזה למה שקרה — נמוך יותר, מכויל טוב יותר"]
+    ].forEach(([k, v, s]) => strip.appendChild(el("div", "stat",
+      '<div class="lbl">' + k + '</div><div class="v">' + v + '</div><div class="s">' + esc(s) + "</div>")));
+    host.appendChild(strip);
+
+    const box = el("div", "tscroll fit");
+    const tb = el("table", "calib");
+    tb.innerHTML = '<thead><tr><th>טווח התחזית</th><th>מקרים</th><th>ממוצע שנחזה</th>' +
+      "<th>קרה בפועל</th></tr></thead>";
+    const bd = el("tbody");
+    const lbl = ["עד 15%", "15–30%", "30–45%", "מעל 45%"];
+    acc.forEach((a, i) => {
+      if (!a.n) return;
+      const predicted = a.sum / a.n, actual = a.hit / a.n;
+      const tr = el("tr");
+      tr.innerHTML = "<td>" + lbl[i] + '</td><td class="c-num">' + a.n +
+        '</td><td class="c-num">' + Math.round(100 * predicted) + "%</td>" +
+        '<td class="c-num strong"><span class="bar" style="width:' +
+        Math.round(70 * actual) + 'px"></span>' + Math.round(100 * actual) + "%</td>";
+      bd.appendChild(tr);
+    });
+    tb.appendChild(bd); box.appendChild(tb);
+    host.appendChild(box);
+    host.appendChild(el("div", "stlegend",
+      '<span>כל שורה: כל המקרים שבהם המודל נתן לשחקן סיכוי בטווח הזה, ' +
+      'וכמה מהם באמת הסתיימו באליפות. ככל ששתי העמודות האחרונות קרובות, הכיול טוב יותר.</span>'));
+  }), 0);
+  return sec;
+}
+
+/* ==========================================================================
+   All-time honours — every season, never scoped
+   ========================================================================== */
+function allTimeBlock() {
+  const done = TS.filter(t => t.done && t.c && t.c.length === 2);
+  if (!done.length) return null;
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>אלופי כל הזמנים</h2><span class="note">' +
+    'על פני כל העונות, בלי קשר לעונה שנבחרה למעלה. ' + done.length + " טורנירים שהסתיימו.</span></div>";
+  const rows = P.map((nm, p) => ({ p, app: 0, finals: 0, titles: 0, wins: [] }));
+  const clubT = {};
+  done.forEach(t => {
+    t.players.forEach(x => rows[x].app++);
+    t.table.slice(0, 4).forEach(x => rows[x].finals++);
+    t.c.forEach(x => {
+      rows[x].titles++;
+      rows[x].wins.push(t.num);
+      clubT[t.teamOf[x]] = (clubT[t.teamOf[x]] || 0) + 1;
+    });
+  });
+  makeTable(sec, [
+    { label: "#", key: "rk", sortable: false, cls: () => "rank", val: () => "", render: (r, i) => i + 1 },
+    { label: "שחקן", key: "n", val: r => P[r.p], render: r => plate(r.p) },
+    { label: "אליפויות", key: "t", val: r => r.titles, cls: () => "strong",
+      render: r => '<span class="g">' + r.titles + "</span>" },
+    { label: "גמרים", key: "f", val: r => r.finals },
+    { label: "הופעות", key: "a", val: r => r.app },
+    { label: "אחוז אליפות", key: "rate", val: r => r.app ? r.titles / r.app : 0,
+      render: r => r.app ? Math.round(100 * r.titles / r.app) + "%" : "—" },
+    { label: "המרה מגמר לגביע", key: "cv", val: r => r.finals ? r.titles / r.finals : 0,
+      render: r => r.finals ? Math.round(100 * r.titles / r.finals) + "%" : "—" }
+  ], rows.filter(r => r.app), { sort: "t" });
+
+  const cl = Object.keys(clubT).map(k => ({ c: Number(k), n: clubT[k] })).sort((a, b) => b.n - a.n);
+  const g = el("div", "recs");
+  g.style.marginTop = "12px";
+  cl.slice(0, 4).forEach(o => g.appendChild(el("div", "rec",
+    '<div class="lbl">' + o.n + " אליפויות</div>" +
+    '<div class="d" style="font-size:15px">' + clubTag(o.c) + "</div>")));
+  sec.appendChild(g);
+  sec.appendChild(el("div", "stlegend",
+    '<span>כל אליפות נזקפת ל<b>שתי</b> הקבוצות של הזוג הזוכה, ולכן סכום אליפויות הקבוצות הוא כפול ממספר הטורנירים.</span>' +
+    '<span>בגיליון המקורי מניין הקבוצות שגוי ב־4: שמות של ברצלונה, פסז וליברפול נשמרו בחלק מהטורנירים עם רווח בסוף, ' +
+    'והנוסחאות ספרו אותם כשורות נפרדות. כאן השמות מנוקים לפני הספירה.</span>'));
+  return sec;
+}
+
+function viewOverview(root) {
+  root.innerHTML = "";
+  const done = TSS.filter(t => t.done);
+  if (!done.length) { root.appendChild(emptySeason()); return; }
+
+  const b0 = el("section", "block");
+  const strip = el("div", "strip4");
+  [["טורנירים", nf(done.length), done.filter(t => t.size === 6).length + " בשישה · " + done.filter(t => t.size === 5).length + " בחמישה"],
+   ["משחקים", nf(totMatches), "כולם 2 נגד 2"],
+   ["שערים", nf(totGoals), f2(totGoals / totMatches) + " למשחק"],
+   ["תיקו", nf(drawnMatches), Math.round(100 * drawnMatches / totMatches) + "% מהמשחקים"],
+   ["גמרי 1–2", nf(done.filter(t => t.top2).length), "מול " + done.filter(t => !t.top2).length + " לצמד 3–4"]
+  ].forEach(([k, v, s]) => strip.appendChild(el("div", "stat",
+    '<div class="lbl">' + k + '</div><div class="v">' + v + '</div><div class="s">' + esc(s) + "</div>")));
+  b0.appendChild(strip);
+  root.appendChild(b0);
+
+  const aw = awardsBlock();
+  if (aw) root.appendChild(aw);
+
+  const b1 = el("section", "block");
+  const bh = el("div", "bhead");
+  bh.innerHTML = "<h2>הטבלה ההיסטורית</h2>";
+  const tg = el("div", "toggle");
+  const bRaw = el("button", null, "גולמי"), bNorm = el("button", null, "מנורמל ל־" + MAXAPP + " הופעות");
+  tg.append(bRaw, bNorm); bh.appendChild(tg);
+  b1.appendChild(bh);
+  const noteP = el("p", null, "שחקנים החסירו טורנירים, ולכן התצוגה המנורמלת מכפילה כל נתון ביחס " + MAXAPP +
+    " חלקי מספר ההופעות — כפי שנעשה בגיליון המקורי.");
+  noteP.style.cssText = "font-size:12.5px;color:var(--muted);max-width:72ch";
+  b1.appendChild(noteP);
+  const host = el("div"); b1.appendChild(host);
+  let norm = false;
+  const nv = (r, k) => norm ? r[k] * r.k : r[k];
+  const fmt = v => norm ? f1(v) : nf(v);
+  function build() {
+    host.innerHTML = "";
+    makeTable(host, [
+      { label: "#", key: "rk", sortable: false, cls: () => "rank", val: () => "", render: (r, i) => i + 1 },
+      { label: "שחקן", key: "name", val: r => P[r.i], render: r => plate(r.i) },
+      { label: "דירוג", key: "ovr", val: r => r.ovr, render: r => '<b style="color:var(--gold)">' + r.ovr + "</b>" },
+      { label: "הופעות", key: "app", val: r => r.app },
+      { label: "אליפויות", key: "titles", val: r => r.titles, render: r => '<span class="g">' + r.titles + "</span>" },
+      { label: "גמרים", key: "finals", val: r => r.finals },
+      { label: "משחקים", key: "g", val: r => nv(r, "g"), render: r => fmt(nv(r, "g")) },
+      { label: "נצחונות", key: "w", val: r => nv(r, "w"), render: r => fmt(nv(r, "w")) },
+      { label: "תיקו", key: "dr", val: r => nv(r, "dr"), render: r => fmt(nv(r, "dr")) },
+      { label: "הפסדים", key: "l", val: r => nv(r, "l"), render: r => fmt(nv(r, "l")) },
+      { label: "זכות", key: "gf", val: r => nv(r, "gf"), render: r => fmt(nv(r, "gf")) },
+      { label: "חובה", key: "ga", val: r => nv(r, "ga"), render: r => fmt(nv(r, "ga")) },
+      { label: "הפרש", key: "gd", val: r => nv(r, "gd"), cls: r => r.gd > 0 ? "pos" : r.gd < 0 ? "neg" : "",
+        render: r => norm ? sgn1(r.gd * r.k) : sgn(r.gd) },
+      { label: "נקודות", key: "pts", val: r => nv(r, "pts"), cls: () => "strong", render: r => fmt(nv(r, "pts")) },
+      { label: "נק׳/משחק", key: "ppg", val: r => r.ppg, render: r => f2(r.ppg) }
+    ], S, { sort: "pts" });
+  }
+  const set = v => { norm = v; bRaw.setAttribute("aria-pressed", String(!v)); bNorm.setAttribute("aria-pressed", String(v)); build(); };
+  bRaw.onclick = () => set(false); bNorm.onclick = () => set(true);
+  set(false);
+  root.appendChild(b1);
+
+  const b2 = el("section", "block");
+  b2.innerHTML = '<div class="bhead"><h2>מרוץ האליפויות</h2><span class="note">אליפויות מצטברות. ציר הזמן נקרא מימין לשמאל.</span></div>';
+  b2.appendChild(titleRace());
+  root.appendChild(b2);
+
+  const b3 = el("section", "block");
+  b3.innerHTML = '<div class="bhead"><h2>התפלגות מקומות</h2><span class="note">בכמה טורנירים סיים כל שחקן בכל מקום.</span></div>';
+  b3.appendChild(placesChart());
+  root.appendChild(b3);
+
+  root.appendChild(modelScoreBlock());
+  const at = allTimeBlock();
+  if (at) root.appendChild(at);
+
+  if (YEARS && YEARS.length) {
+    const b4 = el("section", "block");
+    b4.innerHTML = '<div class="bhead"><h2>לפי שנה</h2><span class="note">הדירוג השנתי כפי שנשמר בגיליון «כל השנים». הגיליון לא מגדיר מה סופר הטור «מספר».</span></div>';
+    const grid = el("div", "cols2");
+    YEARS.forEach(y => {
+      const c = el("div", "tscroll fit");
+      let h = "<table><thead><tr><th>" + y.year + "</th><th>שחקן</th><th>מספר</th></tr></thead><tbody>";
+      y.rows.forEach((r, i) => {
+        const pi = P.indexOf(r.player);
+        h += '<tr><td class="rank">' + (i + 1) + "</td><td>" + (pi >= 0 ? plate(pi) : esc(r.player)) + '</td><td class="strong">' + r.value + "</td></tr>";
+      });
+      c.innerHTML = h + "</tbody></table>";
+      grid.appendChild(c);
+    });
+    b4.appendChild(grid);
+    root.appendChild(b4);
+  }
+}
+
+function titleRace() {
+  const done = TSS.filter(t => t.done);
+  const n = done.length;
+  const W = 980, H = 330, mT = 16, mB = 30, mL = 122, mR = 42;
+  const cum = Array.from({ length: NP }, () => [0]);
+  done.forEach(t => { for (let p = 0; p < NP; p++) cum[p].push(cum[p][cum[p].length - 1] + (t.c.includes(p) ? 1 : 0)); });
+  const maxY = Math.max(1, ...cum.map(a => a[a.length - 1]));
+  const x = i => W - mR - (i / n) * (W - mL - mR);
+  const y = v => H - mB - (v / maxY) * (H - mT - mB);
+
+  const card = el("div", "chart-card");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("class", "chart");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "אליפויות מצטברות לכל שחקן");
+  let g = "";
+  const step = maxY > 20 ? 5 : maxY > 8 ? 3 : 1;
+  for (let v = 0; v <= maxY; v += step) {
+    g += '<line x1="' + mL + '" x2="' + (W - mR) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#1E2937" stroke-width="1"/>';
+    g += '<text x="' + (W - mR + 9) + '" y="' + (y(v) + 4) + '" fill="#6B7C8F" font-size="12" font-weight="700">' + v + "</text>";
+  }
+  [1, 10, 20, 30, 40, n].filter((v, i, a) => v <= n && v >= 1 && a.indexOf(v) === i).forEach(t =>
+    g += '<text x="' + x(t) + '" y="' + (H - 9) + '" fill="#6B7C8F" font-size="12" text-anchor="middle">' + t + "</text>");
+  g += '<line x1="' + mL + '" x2="' + (W - mR) + '" y1="' + (H - mB) + '" y2="' + (H - mB) + '" stroke="#2B3948"/>';
+  ORDER.slice().sort((a, b) => cum[a][n] - cum[b][n]).forEach(p => {
+    const d = cum[p].map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+    g += '<path d="' + d + '" fill="none" stroke="' + PC(p) + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  const lab = ORDER.map(p => ({ p, v: cum[p][n], y: y(cum[p][n]) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < lab.length; i++) if (lab[i].y - lab[i - 1].y < 18) lab[i].y = lab[i - 1].y + 18;
+  lab.forEach(o => {
+    g += '<circle cx="' + x(n) + '" cy="' + y(o.v) + '" r="3.4" fill="' + PC(o.p) + '"/>';
+    g += '<text x="' + (mL - 10) + '" y="' + (o.y + 4) + '" fill="' + PC(o.p) + '" font-size="13" font-weight="800" text-anchor="end">' + esc(P[o.p]) + " " + o.v + "</text>";
+  });
+  g += '<line class="cross" x1="0" x2="0" y1="' + mT + '" y2="' + (H - mB) + '" stroke="#6B7C8F" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>';
+  svg.innerHTML = g;
+  card.appendChild(svg);
+  const cross = svg.querySelector(".cross");
+  svg.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    let i = Math.max(0, Math.min(n, Math.round(((W - mR - px) / (W - mL - mR)) * n)));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", "1");
+    showTip('<div class="th">' + (i === 0 ? "לפני טורניר 1" : "אחרי טורניר " + done[i - 1].num) + "</div>" +
+      ORDER.map(p => ({ p, v: cum[p][i] })).sort((a, b) => b.v - a.v)
+        .map(o => '<div class="tr"><span>' + plate(o.p) + "</span><b>" + o.v + "</b></div>").join(""), ev.clientX, r.top + 10);
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("opacity", "0"); hideTip(); });
+  const lg = el("div", "legend");
+  lg.innerHTML = ORDER.map(p => '<span class="li" style="--c:' + PC(p) + '"><i class="dot"></i>' + esc(P[p]) + " · " + S[p].titles + "</span>").join("");
+  card.appendChild(lg);
+  return card;
+}
+
+function placesChart() {
+  const card = el("div", "chart-card");
+  const wrap = el("div", "dist");
+  S.slice().filter(s => s.app).sort((a, b) => a.avgPlace - b.avgPlace).forEach(s => {
+    const row = el("div", "dist-row");
+    row.innerHTML = '<div style="text-align:left">' + plate(s.i) + "</div>";
+    const bar = el("div", "dist-bar");
+    s.places.forEach((c, j) => {
+      if (!c) return;
+      const seg = el("div", "dist-seg");
+      seg.style.cssText = "flex:" + c + ";background:var(--o" + (j + 1) + ");color:var(--o" + (j + 1) + "t)";
+      seg.textContent = c >= 3 ? c : "";
+      seg.addEventListener("pointerenter", e => showTip('<div class="th">' + esc(P[s.i]) + '</div><div class="tr"><span>מקום ' + (j + 1) + "</span><b>" + c + " פעמים</b></div>", e.clientX, e.clientY));
+      seg.addEventListener("pointerleave", hideTip);
+      bar.appendChild(seg);
+    });
+    row.appendChild(bar); wrap.appendChild(row);
+  });
+  card.appendChild(wrap);
+  card.appendChild(el("div", "legend",
+    [1,2,3,4,5,6].map(j => '<span class="li"><i class="dot" style="background:var(--o' + j + ')"></i>מקום ' + j + "</span>").join("") +
+    '<span class="li mut">ממוין לפי מקום ממוצע</span>'));
+  return card;
+}
+
+/* ==========================================================================
+   PLAYERS — squad cards
+   ========================================================================== */
+let curPlayer = null;
+function viewPlayers(root) {
+  if (CARRY) { root.innerHTML = ""; root.appendChild(carryNotice()); withAgg(CARRY.agg, squadPage, root); return; }
+  root.innerHTML = "";
+  squadPage(root);
+}
+function carryNotice() {
+  const n = el("div", "notice warn");
+  n.innerHTML = "<b>" + esc(seasonById(SCOPE).name) + " טרם התחילה</b> " +
+    "הקלפים מציגים בינתיים את נתוני " + esc(CARRY.name) +
+    ". ברגע שיוזן הטורניר הראשון של העונה, הציונים יתחילו להיבנות מחדש מהמשחקים שלה.";
+  return n;
+}
+function squadPage(root) {
+  if (curPlayer == null || !S[curPlayer]) curPlayer = ORDER[0];
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>הסגל</h2><span class="note">לחיצה על כל מספר בקלף — הדירוג, שש המשבצות התחתונות ושמונת ריבועי הפורם — פותחת הסבר מה הוא מודד.</span></div>';
+  const deck = el("div", "deck");
+  ORDER.forEach(p => deck.appendChild(futCard(p)));
+  b.appendChild(deck);
+  root.appendChild(b);
+  if (Object.keys(PHOTOS).some(k => PHOTOMAP[k] == null)) root.appendChild(photoBoard());
+  root.appendChild(profile(curPlayer));
+}
+
+function futCard(p) {
+  const s = S[p], t = TIER[s.tier];
+  const lastClub = (() => { for (let i = TSS.length - 1; i >= 0; i--) { const x = TSS[i]; if (x.done && x.teamOf[p] != null) return CLUBS[x.teamOf[p]]; } return "—"; })();
+  const face = photoOf(p);
+  const c = el("div", "fcard");
+  c.setAttribute("role", "button");
+  c.tabIndex = 0;
+  c.setAttribute("aria-pressed", String(p === curPlayer));
+  c.style.cssText = "--t1:" + t.t1 + ";--t2:" + t.t2 + ";--tink:" + t.ink + ";--c:" + clubCol(lastClub);
+  const pick = () => { curPlayer = p; go("players"); };
+  c.onclick = pick;
+  c.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+
+  const inner = el("div", "inner");
+
+  const pic = el("div", "pic");
+  if (face) {
+    const f = el("span", "face");
+    f.style.backgroundImage = "url(" + face + ")";
+    pic.appendChild(f);
+  } else {
+    pic.appendChild(el("span", "ghost", esc(P[p].slice(0, 1))));
+  }
+  pic.appendChild(formPips(p));
+  inner.appendChild(pic);
+
+  const body = el("div", "body");
+  const top = el("div", "top");
+  const ovr = el("button", "ovr", "<b>" + s.ovr + "</b><span>" + esc(s.role) + "</span>");
+  ovr.onclick = e => pinTip(
+    '<div class="th">דירוג ' + s.ovr + " · " + esc(P[p]) + "</div>" + OVR_WHY +
+    '<div class="hint">' + esc(s.role) + " — " + (s.role === "התקפה"
+      ? "כובש יותר משהוא סופג." : "סופג יותר משהוא כובש.") + "</div>", e);
+  top.appendChild(ovr);
+  top.insertAdjacentHTML("beforeend",
+    '<div class="badge"><i class="shield"></i><span class="cname">' + esc(lastClub) + "</span></div>");
+  body.appendChild(top);
+  body.appendChild(el("div", "pname", esc(P[p])));
+
+  const grid = el("div", "grid6");
+  CARD_STATS.forEach(st => {
+    const cell = el("button", "s6", "<span>" + esc(st.label) + "</span><b>" + st.val(s) + "</b>");
+    cell.onclick = e => pinTip('<div class="th">' + esc(st.label) + " · " + esc(P[p]) + "</div>" +
+      esc(st.why) + '<div class="hint">הערך שלו: ' + st.val(s) + "</div>", e);
+    grid.appendChild(cell);
+  });
+  body.appendChild(grid);
+
+  inner.appendChild(body);
+  c.appendChild(inner);
+  return c;
+}
+
+/* Full names, not abbreviations — and each one explains itself when tapped. */
+const CARD_STATS = [
+  { label: "אליפויות", val: s => s.titles,
+    why: "בכמה טורנירים הרים את הגביע. בכל טורניר יש שני אלופים — שני חברי הצמד שניצח בגמר." },
+  { label: "עליות לגמר", val: s => s.finals,
+    why: "בכמה טורנירים סיים בארבעה הראשונים בטבלה ולכן עלה לגמר." },
+  { label: "נקודות למשחק", val: s => f2(s.ppg),
+    why: "ממוצע הנקודות שאסף במשחק ליגה בודד: ניצחון 3, תיקו 1, הפסד 0." },
+  { label: "מקום ממוצע", val: s => f1(s.avgPlace),
+    why: "ממוצע המקום שבו סיים את טבלת הטורניר, על פני כל הופעותיו. נמוך יותר — טוב יותר." },
+  { label: "שערים למשחק", val: s => f2(s.gf / Math.max(1, s.g)),
+    why: "כמה שערים כבש הצמד שלו בממוצע במשחק." },
+  { label: "ספיגות למשחק", val: s => f2(s.ga / Math.max(1, s.g)),
+    why: "כמה שערים ספג הצמד שלו בממוצע במשחק." }
+];
+const OVR_WHY = "הדירוג הכולל. נבנה מארבעה מדדי קריירה, שכל אחד מהם מנורמל בין ששת השחקנים " +
+  "ואז משוקלל: נקודות למשחק 34%, אחוז אליפויות 30%, הפרש שערים למשחק 20% ואחוז עלייה לגמר 16%. " +
+  "התוצאה נפרסת על סולם 62 עד 93.";
+
+/* the last eight tournaments this player took part in, newest on the left */
+function formPips(p) {
+  const wrap = el("span", "form");
+  const last = TSS.filter(t => t.done && perT[p][t.i]).slice(-8);
+  last.forEach(t => {
+    const l = perT[p][t.i];
+    const b = el("button", l.champ ? "t" : "", String(l.place));
+    b.onclick = e => pinTip(
+      '<div class="th">טורניר ' + t.num + (l.champ ? " · אלוף" : "") + "</div>" +
+      '<div class="tr"><span>מקום בטבלה</span><b>' + l.place + " מתוך " + l.size + "</b></div>" +
+      '<div class="tr"><span>קבוצה</span><b>' + esc(CLUBS[l.club]) + "</b></div>" +
+      '<div class="tr"><span>נקודות</span><b>' + l.pts + " מתוך " + (l.g * 3) + "</b></div>" +
+      '<div class="tr"><span>מאזן</span><b>' + l.w + " נצחונות, " + l.dr + " תיקו, " + l.l + " הפסדים</b></div>" +
+      '<div class="tr"><span>שערים</span><b>' + scoreTxt(l.gf, l.ga) + "</b></div>" +
+      '<div class="hint">שמונת הריבועים הם שמונת הטורנירים האחרונים של השחקן, מימין לשמאל. ' +
+      "המספר הוא המקום שבו סיים, ומסגרת זהב מסמנת אליפות.</div>", e);
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+/* Points per match over a rolling window, so form reads rather than the
+   career average that barely moves after fifty tournaments. */
+function formChart(p) {
+  const log = LOG[p];
+  const WIN = 20;
+  if (log.length < WIN + 4) return null;
+  const W = 980, H = 220, mT = 16, mB = 30, mL = 54, mR = 46;
+  const pts = [];
+  let run = 0;
+  for (let i = 0; i < log.length; i++) {
+    run += log[i].pts;
+    if (i >= WIN) run -= log[i - WIN].pts;
+    if (i >= WIN - 1) pts.push({ i, v: run / WIN, e: log[i] });
+  }
+  const all = LOG.reduce((a, l) => a + l.reduce((x, e) => x + e.pts, 0), 0) /
+              Math.max(1, LOG.reduce((a, l) => a + l.length, 0));
+  const lo = Math.min(all, ...pts.map(o => o.v)) - 0.12;
+  const hi = Math.max(all, ...pts.map(o => o.v)) + 0.12;
+  const n = pts.length;
+  const x = j => W - mR - (j / Math.max(1, n - 1)) * (W - mL - mR);
+  const y = v => H - mB - ((v - lo) / (hi - lo || 1)) * (H - mT - mB);
+
+  const card = el("div", "chart-card");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("class", "chart");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "כושר של " + P[p] + " לאורך הקריירה");
+  let g = "";
+  for (let v = Math.ceil(lo * 4) / 4; v <= hi; v += 0.25) {
+    g += '<line x1="' + mL + '" x2="' + (W - mR) + '" y1="' + y(v) + '" y2="' + y(v) +
+         '" stroke="#1E2937" stroke-width="1"/>' +
+         '<text x="' + (W - mR + 9) + '" y="' + (y(v) + 4) + '" fill="#6B7C8F" font-size="12" font-weight="700">' +
+         f2(v) + "</text>";
+  }
+  g += '<line x1="' + mL + '" x2="' + (W - mR) + '" y1="' + y(all) + '" y2="' + y(all) +
+       '" stroke="#6B7C8F" stroke-width="1.4" stroke-dasharray="6 4"/>' +
+       '<text x="' + (mL - 8) + '" y="' + (y(all) + 4) + '" fill="#6B7C8F" font-size="12" ' +
+       'font-weight="700" text-anchor="end">ממוצע הליגה</text>';
+  const d = pts.map((o, j) => (j ? "L" : "M") + x(j).toFixed(1) + " " + y(o.v).toFixed(1)).join(" ");
+  g += '<path d="' + d + '" fill="none" stroke="' + PC(p) + '" stroke-width="2.6" ' +
+       'stroke-linejoin="round" stroke-linecap="round"/>';
+  g += '<circle cx="' + x(n - 1) + '" cy="' + y(pts[n - 1].v) + '" r="4" fill="' + PC(p) + '"/>';
+  [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1].filter((v, i, a) => a.indexOf(v) === i).forEach(j =>
+    g += '<text x="' + x(j) + '" y="' + (H - 9) + '" fill="#6B7C8F" font-size="12" text-anchor="middle">' +
+         pts[j].e.num + "</text>");
+  g += '<line class="cross" x1="0" x2="0" y1="' + mT + '" y2="' + (H - mB) +
+       '" stroke="#6B7C8F" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>';
+  svg.innerHTML = g;
+  card.appendChild(svg);
+  const cross = svg.querySelector(".cross");
+  svg.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    const j = Math.max(0, Math.min(n - 1, Math.round(((W - mR - px) / (W - mL - mR)) * (n - 1))));
+    cross.setAttribute("x1", x(j)); cross.setAttribute("x2", x(j)); cross.setAttribute("opacity", "1");
+    showTip('<div class="th">טורניר ' + pts[j].e.num + " · משחק " + (pts[j].e.mi + 1) + "</div>" +
+      '<div class="tr"><span>ב־20 המשחקים האחרונים</span><b>' + f2(pts[j].v) + " נק׳ למשחק</b></div>" +
+      '<div class="tr"><span>ממוצע הליגה</span><b>' + f2(all) + "</b></div>",
+      ev.clientX, r.top + 10);
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("opacity", "0"); hideTip(); });
+  card.appendChild(el("div", "legend",
+    '<span class="li mut">כל נקודה על הקו היא ממוצע הנקודות ב־20 המשחקים שקדמו לה. ' +
+    'מימין לשמאל: מהטורניר הראשון ועד האחרון.</span>'));
+  return card;
+}
+
+/* Hebrew does not take a bare numeral for one. */
+function runWord(kind, n) {
+  if (!n) return "";
+  if (kind === "w") return n === 1 ? "ניצחון אחד" : n + " נצחונות";
+  if (kind === "l") return n === 1 ? "הפסד אחד" : n + " הפסדים";
+  return n === 1 ? "משחק אחד ללא הפסד" : n + " משחקים ללא הפסד";
+}
+/* A run that began and ended inside one tournament is one tournament. */
+function runSpan(r, short) {
+  if (!r.span) return "";
+  const a = r.span.from.num, b = r.span.to.num;
+  const lbl = short ? "ט׳ " : "טורניר ";
+  return a === b ? lbl + a : (short ? "ט׳ " : "טורנירים ") + a + "–" + b;
+}
+
+function splitCard(ttl, l) {
+  const w = l.filter(e => e.res === "w").length, d = l.filter(e => e.res === "d").length;
+  const ppg = l.length ? l.reduce((a, e) => a + e.pts, 0) / l.length : 0;
+  return el("div", "rec",
+    '<div class="lbl">' + ttl + '</div><div class="v">' + f2(ppg) + "</div>" +
+    '<div class="d mut">' + l.length + " משחקים · <span class=\"ltr\">" +
+    w + "-" + d + "-" + (l.length - w - d) + "</span></div>");
+}
+
+function profile(p) {
+  const s = S[p];
+  const box = el("div", "view");
+
+  const head = el("div", "prof-head");
+  head.innerHTML = '<div><div class="prof-name" style="--c:' + PC(p) + '"><i></i>' + esc(P[p]) + "</div>" +
+    '<div class="lbl" style="margin-top:4px">מקום ' + (ORDER.indexOf(p) + 1) + " בטבלה ההיסטורית · " + s.app + " הופעות</div></div>";
+  const k = el("div", "kpis");
+  [["אליפויות", s.titles], ["גמרים", s.finals], ["מקום ממוצע", f1(s.avgPlace)], ["נק׳/משחק", f2(s.ppg)],
+   ["אחוז נצחון", Math.round(100 * s.w / Math.max(1, s.g)) + "%"], ["דירוג קלף", s.ovr]
+  ].forEach(([a, v]) => k.appendChild(el("div", "kpi", '<div class="lbl">' + a + '</div><div class="v">' + v + "</div>")));
+  head.appendChild(k);
+  box.appendChild(head);
+
+  const strip = el("section", "block");
+  strip.innerHTML = '<div class="bhead"><h2>טורניר אחר טורניר</h2><span class="note">הצבע הוא המקום בטבלה, מסגרת זהב מסמנת אליפות, משבצת דהויה היא טורניר שהוחמץ.</span></div>';
+  const sc = el("div", "chart-card");
+  const row = el("div", "hstrip");
+  TSS.filter(t => t.done).forEach(t => {
+    const line = perT[p][t.i];
+    const c = el("div", "cell" + (line ? (line.champ ? " win" : "") : " miss"));
+    if (line) {
+      c.style.cssText = "background:var(--o" + line.place + ");color:var(--o" + line.place + "t);cursor:pointer";
+      c.textContent = line.place;
+      c.addEventListener("pointerenter", e => showTip('<div class="th">טורניר ' + t.num + (line.champ ? " · אלוף" : "") + "</div>" +
+        '<div class="tr"><span>מקום</span><b>' + line.place + " מתוך " + line.size + "</b></div>" +
+        '<div class="tr"><span>קבוצה</span><b>' + esc(CLUBS[line.club]) + "</b></div>" +
+        '<div class="tr"><span>נקודות</span><b>' + line.pts + "</b></div>" +
+        '<div class="tr"><span>שערים</span><b>' + scoreTxt(line.gf, line.ga) + "</b></div>", e.clientX, e.clientY));
+      c.addEventListener("click", () => { curT = t.i; go("tournaments"); });
+    } else {
+      c.textContent = "–";
+      c.addEventListener("pointerenter", e => showTip("טורניר " + t.num + " · לא השתתף", e.clientX, e.clientY));
+    }
+    c.addEventListener("pointerleave", hideTip);
+    row.appendChild(c);
+  });
+  sc.appendChild(row);
+  sc.appendChild(el("div", "legend",
+    [1,2,3,4,5,6].map(j => '<span class="li"><i class="dot" style="background:var(--o' + j + ')"></i>' + j + "</span>").join("") +
+    '<span class="li"><i class="dot" style="background:transparent;box-shadow:0 0 0 2px var(--gold)"></i>אליפות</span>' +
+    '<span class="li mut">מימין לשמאל: טורניר 1 ואילך</span>'));
+  strip.appendChild(sc);
+  box.appendChild(strip);
+
+  const fc = formChart(p);
+  if (fc) {
+    const fb = el("section", "block");
+    fb.innerHTML = '<div class="bhead"><h2>עקומת כושר</h2><span class="note">' +
+      'נקודות למשחק בחלון נע של 20 משחקים, מול הממוצע של כל השחקנים יחד.</span></div>';
+    fb.appendChild(fc);
+    box.appendChild(fb);
+  }
+
+  /* home and away, runs, and the bottom of the table */
+  const log = LOG[p] || [];
+  if (log.length) {
+    const sb = el("section", "block");
+    sb.innerHTML = '<div class="bhead"><h2>בית, חוץ ורצפים</h2><span class="note">' +
+      'בכל משחק צמד אחד מארח: הוא משחק עם הקבוצה של אחד משני שחקניו, והצמד השני הוא האורח.</span></div>';
+    const g = el("div", "recs");
+    g.appendChild(splitCard("בבית", log.filter(e => e.home)));
+    g.appendChild(splitCard("בחוץ", log.filter(e => !e.home)));
+    const rw = longestRun(log, isW), ru = longestRun(log, isNL), rl = longestRun(log, isL);
+    const span = r => runSpan(r, false);
+    g.appendChild(el("div", "rec", '<div class="lbl">רצף נצחונות</div><div class="v">' + rw.n +
+      '</div><div class="d mut">' + span(rw) + "</div>"));
+    g.appendChild(el("div", "rec", '<div class="lbl">רצף ללא הפסד</div><div class="v">' + ru.n +
+      '</div><div class="d mut">' + span(ru) + "</div>"));
+    g.appendChild(el("div", "rec", '<div class="lbl">רצף הפסדים</div><div class="v">' + rl.n +
+      '</div><div class="d mut">' + span(rl) + "</div>"));
+    const cw = currentRun(log, isW), cu = currentRun(log, isNL), cl2 = currentRun(log, isL);
+    g.appendChild(el("div", "rec", '<div class="lbl">הרצף עכשיו</div><div class="v">' +
+      (cw ? runWord("w", cw) : cl2 ? runWord("l", cl2) : cu ? runWord("u", cu) : "—") +
+      '</div><div class="d mut">מאז המשחק האחרון שקטע אותו</div>'));
+    g.appendChild(el("div", "rec", '<div class="lbl">סיים אחרון</div><div class="v">' + s.last +
+      '</div><div class="d mut">מתוך ' + s.app + " טורנירים</div>"));
+    sb.appendChild(g);
+    box.appendChild(sb);
+  }
+
+  /* the partners he is worth most and least beside */
+  const myChem = Object.keys(CHEM).map(k => CHEM[k]).filter(c => (c.a === p || c.b === p) && c.g)
+    .sort((x, y) => y.d - x.d);
+  if (myChem.length) {
+    const cb = el("section", "block");
+    cb.innerHTML = '<div class="bhead"><h2>עם מי הוא עובד הכי טוב</h2><span class="note">' +
+      'ההפרש בין הנקודות למשחק של הצמד לבין מה ששני השחקנים מביאים כשהם לא יחד. ★ מעבר לרעש.</span></div>';
+    const g = el("div", "recs");
+    const card = (ttl, c) => {
+      const o = c.a === p ? c.b : c.a;
+      return el("div", "rec",
+        '<div class="lbl">' + ttl + '</div>' +
+        '<div class="d" style="font-size:15px">' + plate(o, "lg") + "</div>" +
+        '<div class="v ' + (c.d >= 0 ? "pos" : "neg") + '">' + sgnF2(c.d) + (c.solid ? " ★" : "") + "</div>" +
+        '<div class="d mut">' + f2(c.act) + " יחד מול " + f2(c.exp) + " לחוד · " + c.g + " משחקים</div>");
+    };
+    g.appendChild(card("השותף הכי מוצלח", myChem[0]));
+    g.appendChild(card("השותף הכי פחות מוצלח", myChem[myChem.length - 1]));
+    cb.appendChild(g);
+    box.appendChild(cb);
+  }
+
+  const cols = el("div", "cols2");
+  const pa = el("section", "block");
+  pa.innerHTML = '<div class="bhead"><h2>שותפים</h2><span class="note">כשהם באותה קבוצה</span></div>';
+  makeTable(pa, [
+    { label: "שותף", key: "n", val: r => P[r.o], render: r => plate(r.o) },
+    { label: "משחקים", key: "g", val: r => r.r.g },
+    { label: "נצ׳", key: "w", val: r => r.r.w },
+    { label: "תיקו", key: "d", val: r => r.r.dr },
+    { label: "הפ׳", key: "l", val: r => r.r.l },
+    { label: "נק׳/משחק", key: "ppg", val: r => r.r.ppg, cls: () => "strong", render: r => f2(r.r.ppg) },
+    { label: "כימיה", key: "ch", val: r => (CHEM[pairKey(r.r.a, r.r.b)] || { d: 0 }).d,
+      cls: r => ((CHEM[pairKey(r.r.a, r.r.b)] || { d: 0 }).d >= 0 ? "pos" : "neg"),
+      render: r => { const c = CHEM[pairKey(r.r.a, r.r.b)]; return c ? sgnF2(c.d) + (c.solid ? " ★" : "") : "—"; } },
+    { label: "אליפויות", key: "t", val: r => r.r.titles, render: r => r.r.titles ? '<span class="g">' + r.r.titles + "</span>" : '<span class="mut">0</span>' }
+  ], Object.values(PAIR).filter(x => x.a === p || x.b === p).map(x => ({ o: x.a === p ? x.b : x.a, r: x })), { sort: "ppg" });
+  cols.appendChild(pa);
+
+  const ri = el("section", "block");
+  ri.innerHTML = '<div class="bhead"><h2>יריבים</h2><span class="note">כשהם בצדדים מנוגדים</span></div>';
+  makeTable(ri, [
+    { label: "יריב", key: "n", val: r => P[r.o], render: r => plate(r.o) },
+    { label: "משחקים", key: "g", val: r => r.r.g },
+    { label: "נצ׳", key: "w", val: r => r.r.w },
+    { label: "תיקו", key: "d", val: r => r.r.dr },
+    { label: "הפ׳", key: "l", val: r => r.r.l },
+    { label: "אחוז נצחון", key: "pc", val: r => r.r.w / r.r.g, cls: () => "strong", render: r => Math.round(100 * r.r.w / r.r.g) + "%" },
+    { label: "שערים", key: "gd", val: r => r.r.gf - r.r.ga, cls: r => (r.r.gf - r.r.ga) > 0 ? "pos" : (r.r.gf - r.r.ga) < 0 ? "neg" : "", render: r => scoreTxt(r.r.gf, r.r.ga) }
+  ], P.map((_, o) => o).filter(o => o !== p && H2H[p][o].g).map(o => ({ o, r: H2H[p][o] })), { sort: "pc" });
+  cols.appendChild(ri);
+  box.appendChild(cols);
+
+  const cl = el("section", "block");
+  cl.innerHTML = '<div class="bhead"><h2>הקבוצות שהוגרלו לו</h2></div>';
+  const byClub = {};
+  TSS.filter(t => t.done).forEach(t => {
+    const line = perT[p][t.i]; if (!line) return;
+    const c = byClub[line.club] || (byClub[line.club] = { c: line.club, n: 0, titles: 0, pts: 0, g: 0, places: 0 });
+    c.n++; c.pts += line.pts; c.g += line.g; c.places += line.place; if (line.champ) c.titles++;
+  });
+  makeTable(cl, [
+    { label: "קבוצה", key: "n", val: r => CLUBS[r.c], render: r => clubTag(r.c) },
+    { label: "טורנירים", key: "cnt", val: r => r.n },
+    { label: "אליפויות", key: "t", val: r => r.titles, render: r => r.titles ? '<span class="g">' + r.titles + "</span>" : '<span class="mut">0</span>' },
+    { label: "מקום ממוצע", key: "ap", val: r => r.places / r.n, render: r => f1(r.places / r.n) },
+    { label: "נק׳/משחק", key: "ppg", val: r => r.pts / r.g, cls: () => "strong", render: r => f2(r.pts / r.g) }
+  ], Object.values(byClub), { sort: "cnt" });
+  box.appendChild(cl);
+  return box;
+}
+
+/* ==========================================================================
+   TOURNAMENTS
+   ========================================================================== */
+let curT = null;
+function viewTournaments(root) {
+  root.innerHTML = "";
+  if (!TSS.length) { root.appendChild(emptySeason()); return; }
+  if (curT == null || !TSS.some(t => t.i === curT)) curT = TSS[TSS.length - 1].i;
+  const pick = el("section", "block");
+  const ph = el("div", "bhead");
+  ph.innerHTML = "<h2>בחירת טורניר</h2>";
+  const nav = el("div", "nav-pair");
+  const bPrev = el("button", "btn ghost sm", "‹ הקודם"), bNext = el("button", "btn ghost sm", "הבא ›");
+  nav.append(bNext, bPrev); ph.appendChild(nav); pick.appendChild(ph);
+  const grid = el("div", "tgrid");
+  TSS.forEach(t => {
+    const b = el("button", "tbtn" + (t.live ? " new" : ""));
+    b.innerHTML = t.num + '<span class="duo">' + (t.done ? t.c.map(p => '<i style="background:' + PC(p) + '"></i>').join("") : '<i style="background:var(--line2)"></i>') + "</span>";
+    b.title = t.done ? "אלופים: " + t.c.map(p => P[p]).join(" ו") : "בעיצומו";
+    b.setAttribute("aria-pressed", String(t.i === curT));
+    b.onclick = () => { curT = t.i; viewTournaments(root); };
+    grid.appendChild(b);
+  });
+  pick.appendChild(grid);
+  root.appendChild(pick);
+  const idx = TSS.findIndex(t => t.i === curT);
+  bPrev.disabled = idx <= 0; bNext.disabled = idx >= TSS.length - 1;
+  bPrev.onclick = () => { curT = TSS[idx - 1].i; viewTournaments(root); };
+  bNext.onclick = () => { curT = TSS[idx + 1].i; viewTournaments(root); };
+  root.appendChild(tournamentDetail(TSS[idx]));
+}
+
+function tournamentDetail(t) {
+  const box = el("div", "view");
+  if (t.done) {
+    const fin = el("div", "finalbox");
+    fin.innerHTML = '<div class="ttl">אלופי טורניר ' + t.num + "</div>" +
+      '<div class="who">' + t.c.map(p => '<span style="display:flex;flex-direction:column;gap:3px">' + plate(p, "lg") + clubTag(t.teamOf[p]) + "</span>").join("") + "</div>" +
+      '<div class="tag">' + (t.top2 ? "צמד 1–2 ניצח בגמר" : "צמד 3–4 הפתיע בגמר") + "</div>";
+    box.appendChild(fin);
+  } else {
+    const n = el("div", "notice warn");
+    n.innerHTML = "<b>טורניר בעיצומו</b> אפשר להזין תוצאות בלשונית «חדר הבקרה».";
+    box.appendChild(n);
+  }
+  box.appendChild(forecastBlock(t));
+
+  const st = el("section", "block");
+  st.innerHTML = '<div class="bhead"><h2>טבלת הטורניר</h2><span class="note">ארבעת הראשונים עולים לגמר: צמד 1–2 מול צמד 3–4.</span></div>';
+  st.appendChild(standingsTable(t));
+  box.appendChild(st);
+
+  if (t.m.some(m => m[6] != null && m[7] != null)) box.appendChild(timelineBlock(t));
+
+  const mb = el("section", "block");
+  mb.innerHTML = '<div class="bhead"><h2>' + t.m.length + ' משחקי הליגה</h2><span class="note">בכל משחק הצמד משחק עם הקבוצה של אחד משני השחקנים.</span></div>';
+  const mc = el("div", "panel matches");
+  if (t.m.some(m => m[6] == null || m[7] == null)) mc.appendChild(oddsKey());
+  t.m.forEach((m, idx) => {
+    const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+    const has = hg != null && ag != null;
+    const fx = el("div", "fixture");
+    const row = el("div", "mrow");
+    /* RTL puts the home side on the right, so the LTR score chip prints away first */
+    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+      '<div class="side' + (has && ag > hg ? " fade" : "") + '"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>" +
+      '<div class="score">' + (has ? ag + " – " + hg : "— – —") + "</div>" +
+      '<div class="side away' + (has && hg > ag ? " fade" : "") + '"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>";
+    fx.appendChild(row);
+    if (!has) { const o = oddsRow(m); if (o) fx.appendChild(o); }
+    mc.appendChild(fx);
+  });
+  mb.appendChild(mc);
+  box.appendChild(mb);
+  return box;
+}
+
+/* ==========================================================================
+   PAIRS / TEAMS / RECORDS
+   ========================================================================== */
+/* ---------- the rivalry card ---------- */
+let rivA = null, rivB = null;
+
+function meetings(a, b) {
+  return LOG[a].filter(e => e.opp.indexOf(b) >= 0);
+}
+
+function rivalryCard() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>כרטיס יריבות</h2>' +
+    '<span class="note">שני השחקנים משני הצדדים: מה קורה כשהם יריבים, ומה קורה כשהם באותו צמד.</span></div>';
+  const order = ORDER.filter(p => S[p].g);
+  if (order.length < 2) { sec.appendChild(el("div", "mut", "אין עדיין מספיק משחקים.")); return sec; }
+  if (order.indexOf(rivA) < 0) rivA = order[0];
+  if (order.indexOf(rivB) < 0 || rivB === rivA) rivB = order.filter(p => p !== rivA)[0];
+
+  const body = el("div");
+  const pick = el("div", "rivpick");
+  const mkSel = (cur, set) => {
+    const s = el("select");
+    order.forEach(p => { const o = el("option", "", esc(P[p])); o.value = String(p); s.appendChild(o); });
+    s.value = String(cur);
+    s.onchange = () => { set(Number(s.value)); draw(); };
+    return s;
+  };
+  const swap = el("button", "btn ghost sm sw", "החלף ⇄");
+  swap.onclick = () => { const x = rivA; rivA = rivB; rivB = x; draw(); };
+
+  function draw() {
+    if (rivA === rivB) rivB = order.filter(p => p !== rivA)[0];
+    pick.innerHTML = "";
+    pick.append(mkSel(rivA, v => { rivA = v; }), el("span", "mut", "מול"), mkSel(rivB, v => { rivB = v; }), swap);
+    body.innerHTML = "";
+
+    const a = rivA, b = rivB;
+    const h = H2H[a][b], pr = PAIR[pairKey(a, b)], ch = CHEM[pairKey(a, b)];
+    const met = meetings(a, b);
+    const grid = el("div", "rivgrid");
+
+    /* as opponents */
+    const opp = el("div", "rivside");
+    let oh = "<h4>כשהם יריבים</h4>";
+    if (!h || !h.g) oh += '<div class="mut">טרם נפגשו זה מול זה.</div>';
+    else {
+      const wp = h.w / h.g, dp = h.dr / h.g, lp = h.l / h.g;
+      oh += '<div class="rivscore">' + plate(a) + "<b>" + h.w + "</b><i>–</i><b>" + h.dr +
+        "</b><i>–</i><b>" + h.l + "</b>" + plate(b) + "</div>" +
+        '<div class="rivbar">' +
+          '<i style="flex:' + Math.max(wp, .02) + ';background:var(--pos)"></i>' +
+          '<i style="flex:' + Math.max(dp, .02) + ';background:var(--line2)"></i>' +
+          '<i style="flex:' + Math.max(lp, .02) + ';background:var(--neg)"></i></div>' +
+        '<div class="rivrow"><span>משחקים זה מול זה</span><b>' + h.g + "</b></div>" +
+        '<div class="rivrow"><span>אחוז נצחון ל' + esc(P[a]) + "</span><b>" + Math.round(wp * 100) + "%</b></div>" +
+        '<div class="rivrow"><span>שערים</span><b>' + scoreTxt(h.gf, h.ga) + "</b></div>" +
+        '<div class="rivrow"><span>הפרש</span><b>' + sgn(h.gf - h.ga) + "</b></div>";
+      const wins = met.filter(e => e.res === "w"), losses = met.filter(e => e.res === "l");
+      /* each side's heaviest blow is the biggest margin in ITS own favour */
+      const widest = (l, f) => l.length ? l.reduce((x, y) => f(y) > f(x) ? y : x) : null;
+      const bw = widest(wins, e => e.gf - e.ga), bl = widest(losses, e => e.ga - e.gf);
+      if (bw) oh += '<div class="rivrow"><span>הניצחון הגדול של ' + esc(P[a]) + "</span><b>" +
+        scoreTxt(bw.gf, bw.ga) + ' <span class="mut">טורניר ' + bw.num + "</span></b></div>";
+      if (bl) oh += '<div class="rivrow"><span>הניצחון הגדול של ' + esc(P[b]) + "</span><b>" +
+        scoreTxt(bl.ga, bl.gf) + ' <span class="mut">טורניר ' + bl.num + "</span></b></div>";
+    }
+    opp.innerHTML = oh;
+    grid.appendChild(opp);
+
+    /* as partners */
+    const tog = el("div", "rivside");
+    let th = "<h4>כשהם באותו צמד</h4>";
+    if (!pr || !pr.g) th += '<div class="mut">טרם שיחקו יחד.</div>';
+    else {
+      const wp = pr.w / pr.g, dp = pr.dr / pr.g, lp = pr.l / pr.g;
+      th += '<div class="rivscore">' + plate(a) + '<span class="mut">+</span>' + plate(b) + "</div>" +
+        '<div class="rivbar">' +
+          '<i style="flex:' + Math.max(wp, .02) + ';background:var(--pos)"></i>' +
+          '<i style="flex:' + Math.max(dp, .02) + ';background:var(--line2)"></i>' +
+          '<i style="flex:' + Math.max(lp, .02) + ';background:var(--neg)"></i></div>' +
+        '<div class="rivrow"><span>משחקים יחד</span><b>' + pr.g + "</b></div>" +
+        '<div class="rivrow"><span>מאזן</span><b><span class="ltr">' + pr.w + "-" + pr.dr + "-" + pr.l + "</span></b></div>" +
+        '<div class="rivrow"><span>נקודות למשחק</span><b>' + f2(pr.ppg) + "</b></div>" +
+        '<div class="rivrow"><span>שערים</span><b>' + scoreTxt(pr.gf, pr.ga) + "</b></div>" +
+        '<div class="rivrow"><span>אליפויות יחד</span><b>' + pr.titles + "</b></div>";
+      if (ch) th += '<div class="rivrow"><span>כימיה</span><b class="' + (ch.d >= 0 ? "pos" : "neg") + '">' +
+        sgnF2(ch.d) + ' <span class="mut">מול ' + f2(ch.exp) + " לחוד</span></b></div>";
+    }
+    tog.innerHTML = th;
+    grid.appendChild(tog);
+    body.appendChild(grid);
+
+    /* the last meetings, newest first */
+    if (met.length) {
+      const rc = el("section", "block");
+      rc.style.marginTop = "12px";
+      rc.innerHTML = '<div class="bhead"><h2>המפגשים האחרונים</h2><span class="note">מנקודת המבט של ' +
+        esc(P[a]) + ", החדש ביותר מימין.</span></div>";
+      const row = el("div", "meets");
+      met.slice(-12).reverse().forEach(e => {
+        row.appendChild(el("div", "meet " + e.res,
+          '<span class="s">' + e.gf + " – " + e.ga + "</span>" +
+          "<span>טורניר " + e.num + " · משחק " + (e.mi + 1) + "</span>" +
+          '<span class="mut">עם ' + esc(P[e.mate]) + "</span>"));
+      });
+      rc.appendChild(row);
+      body.appendChild(rc);
+    }
+  }
+  draw();
+  sec.append(pick, body);
+  return sec;
+}
+
+/* ---------- chemistry ---------- */
+function chemistryBlock() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>כימיה בין שחקנים</h2>' +
+    '<span class="note">נקודות למשחק של הצמד, מול מה ששני אותם שחקנים מביאים כשהם <b>לא</b> יחד. ' +
+    'ההפרש הוא הכימיה. ★ מסמן הפרש גדול מהרעש הסטטיסטי.</span></div>';
+  const rows = Object.keys(CHEM).map(k => CHEM[k]).filter(c => c.g).sort((x, y) => y.d - x.d);
+  if (!rows.length) { sec.appendChild(el("div", "mut", "אין עדיין מספיק משחקים.")); return sec; }
+  const scale = Math.max(0.1, ...rows.map(c => Math.abs(c.d)));
+  const host = el("div");
+  rows.forEach(c => {
+    const w = Math.round(100 * Math.abs(c.d) / scale / 2);
+    const r = el("div", "chemrow");
+    r.innerHTML =
+      '<span class="who">' + plate(c.a) + '<span class="mut">+</span>' + plate(c.b) + "</span>" +
+      '<span class="cbar"><span class="mid"></span>' +
+        (c.d >= 0 ? '<i class="up" style="width:' + w + '%"></i>'
+                  : '<i class="dn" style="width:' + w + '%"></i>') + "</span>" +
+      '<span class="cval ' + (c.d >= 0 ? "up" : "dn") + '">' + sgnF2(c.d) + (c.solid ? " ★" : "") + "</span>" +
+      '<span class="cnote"><span class="ltr">' + f2(c.act) + " / " + f2(c.exp) + "</span></span>";
+    r.title = P[c.a] + " + " + P[c.b] + ": " + f2(c.act) + " נק׳ למשחק יחד, " +
+      f2(c.exp) + " לחוד, מתוך " + c.g + " משחקים משותפים";
+    host.appendChild(r);
+  });
+  sec.appendChild(host);
+  sec.appendChild(el("div", "stlegend",
+    '<span>העמודה הימנית: <b>יחד / לחוד</b></span>' +
+    '<span><b style="color:var(--pos)">ירוק</b> הצמד טוב מסכום חלקיו</span>' +
+    '<span><b style="color:var(--neg)">אדום</b> הצמד פחות מסכום חלקיו</span>'));
+  return sec;
+}
+
+/* ---------- pair against pair ---------- */
+function duelBlock() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>צמד מול צמד</h2>' +
+    '<span class="note">כל אחד מ־45 העימותים האפשריים בין שני צמדים. המאזן נכתב מצד הצמד המוביל.</span></div>';
+  const seen = {}, rows = [];
+  Object.keys(DUEL).forEach(k => {
+    const d = DUEL[k];
+    const un = [d.x, d.y].slice().sort().join("~");
+    if (seen[un]) return;
+    seen[un] = 1;
+    /* read it from whichever side is ahead, so the table scans quickly */
+    const o = DUEL[d.y + "|" + d.x];
+    const lead = (d.w > d.l || (d.w === d.l && d.gf >= d.ga)) ? d : o;
+    const ids = s => s.split("-").map(Number);
+    rows.push({ x: ids(lead.x), y: ids(lead.y), g: lead.g, w: lead.w, dr: lead.dr, l: lead.l,
+                gf: lead.gf, ga: lead.ga, pts: lead.w * 3 + lead.dr });
+  });
+  if (!rows.length) { sec.appendChild(el("div", "mut", "אין עדיין מספיק משחקים.")); return sec; }
+  const duo = q => plate(q[0]) + '<span class="mut">+</span>' + plate(q[1]);
+  makeTable(sec, [
+    { label: "#", key: "rk", sortable: false, cls: () => "rank", val: () => "", render: (r, i) => i + 1 },
+    { label: "צמד", key: "n", val: r => P[r.x[0]] + P[r.x[1]], render: r => duo(r.x) },
+    { label: "יריב", key: "n2", val: r => P[r.y[0]] + P[r.y[1]], render: r => duo(r.y) },
+    { label: "מפגשים", key: "g", val: r => r.g },
+    { label: "נצ׳", key: "w", val: r => r.w },
+    { label: "תיקו", key: "dr", val: r => r.dr },
+    { label: "הפ׳", key: "l", val: r => r.l },
+    { label: "אחוז נצחון", key: "pc", val: r => r.w / r.g, cls: () => "strong",
+      render: r => Math.round(100 * r.w / r.g) + "%" },
+    { label: "שערים", key: "gd", val: r => r.gf - r.ga,
+      cls: r => (r.gf - r.ga) > 0 ? "pos" : (r.gf - r.ga) < 0 ? "neg" : "",
+      render: r => scoreTxt(r.gf, r.ga) },
+    { label: "נק׳/מפגש", key: "ppg", val: r => r.pts / r.g, render: r => f2(r.pts / r.g) }
+  ], rows, { sort: "pc" });
+  return sec;
+}
+
+function viewPairs(root) {
+  root.innerHTML = "";
+  const list = Object.values(PAIR).sort((a, b) => b.ppg - a.ppg);
+  if (!list.length) { root.appendChild(emptySeason()); return; }
+  root.appendChild(rivalryCard());
+  root.appendChild(chemistryBlock());
+  const b1 = el("section", "block");
+  b1.innerHTML = '<div class="bhead"><h2>כל הצמדים</h2><span class="note">הרכב הזוגות מתחלף בכל משחק, כך שכל אחד מ־15 הצמדים האפשריים שיחק יחד עשרות פעמים.</span></div>';
+  makeTable(b1, [
+    { label: "#", key: "rk", sortable: false, cls: () => "rank", val: () => "", render: (r, i) => i + 1 },
+    { label: "צמד", key: "n", val: r => P[r.a] + P[r.b], render: r => plate(r.a) + ' <span class="mut">+</span> ' + plate(r.b) },
+    { label: "משחקים", key: "g", val: r => r.g },
+    { label: "נצ׳", key: "w", val: r => r.w },
+    { label: "תיקו", key: "dr", val: r => r.dr },
+    { label: "הפ׳", key: "l", val: r => r.l },
+    { label: "זכות", key: "gf", val: r => r.gf },
+    { label: "חובה", key: "ga", val: r => r.ga },
+    { label: "הפרש", key: "gd", val: r => r.gd, cls: r => r.gd > 0 ? "pos" : r.gd < 0 ? "neg" : "", render: r => sgn(r.gd) },
+    { label: "נקודות", key: "pts", val: r => r.pts },
+    { label: "נק׳/משחק", key: "ppg", val: r => r.ppg, cls: () => "strong", render: r => f2(r.ppg) },
+    { label: "אליפויות יחד", key: "t", val: r => r.titles, render: r => r.titles ? '<span class="g">' + r.titles + "</span>" : '<span class="mut">0</span>' }
+  ], list, { sort: "ppg" });
+  root.appendChild(b1);
+  root.appendChild(duelBlock());
+
+  const b2 = el("section", "block");
+  b2.innerHTML = '<div class="bhead"><h2>מפת נקודות למשחק</h2><span class="note">ככל שהתא בהיר יותר, הצמד חזק יותר.</span></div>';
+  const vals = list.map(x => x.ppg), lo = Math.min(...vals), hi = Math.max(...vals);
+  const step = v => Math.min(5, Math.floor(((v - lo) / (hi - lo || 1)) * 6));
+  const card = el("div", "chart-card matrix");
+  const sc = el("div", "tscroll");
+  let html = "<table><thead><tr><th></th>" + ORDER.map(p => "<th>" + plate(p) + "</th>").join("") + "</tr></thead><tbody>";
+  ORDER.forEach(a => {
+    html += "<tr><td>" + plate(a) + "</td>";
+    ORDER.forEach(b => {
+      if (a === b) { html += '<td class="cellv self">—</td>'; return; }
+      const r = PAIR[pairKey(a, b)], s = 6 - step(r.ppg);
+      html += '<td class="cellv" style="background:var(--o' + s + ');color:var(--o' + s + 't)" title="' + esc(P[a]) + " + " + esc(P[b]) + " · " + r.g + ' משחקים">' + f2(r.ppg) + "</td>";
+    });
+    html += "</tr>";
+  });
+  sc.innerHTML = html + "</tbody></table>";
+  card.appendChild(sc);
+  card.appendChild(el("div", "legend", '<span class="ramp-key">' + f2(lo) + " " +
+    [6,5,4,3,2,1].map(j => '<i style="background:var(--o' + j + ')"></i>').join("") + " " + f2(hi) + " נק׳ למשחק</span>"));
+  b2.appendChild(card);
+  root.appendChild(b2);
+
+  const b3 = el("section", "block");
+  b3.innerHTML = '<div class="bhead"><h2>צמדי הגמר שניצחו</h2></div>';
+  const gr = el("div", "recs");
+  list.filter(x => x.titles).sort((a, b) => b.titles - a.titles).forEach(x => {
+    const ts = TSS.filter(t => t.done && t.c.includes(x.a) && t.c.includes(x.b)).map(t => t.num);
+    gr.appendChild(el("div", "rec",
+      '<div class="lbl">' + x.titles + " אליפויות יחד</div>" +
+      '<div class="d" style="font-size:15px">' + plate(x.a, "lg") + '<span class="mut">+</span>' + plate(x.b, "lg") + "</div>" +
+      '<div class="d mut">טורנירים ' + ts.join(", ") + "</div>"));
+  });
+  b3.appendChild(gr);
+  root.appendChild(b3);
+}
+
+function viewTeams(root) {
+  root.innerHTML = "";
+  if (!TSS.some(t => t.done)) { root.appendChild(emptySeason()); return; }
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>הקבוצות שבהגרלה</h2><span class="note">«הוגרלה» — כמה פעמים קבוצה נפלה בגורל לשחקן. «שימוש במשחק» — כמה פעמים צמד בחר לשחק דווקא איתה.</span></div>';
+  makeTable(b, [
+    { label: "#", key: "rk", sortable: false, cls: () => "rank", val: () => "", render: (r, i) => i + 1 },
+    { label: "קבוצה", key: "n", val: r => r.name, render: r => clubTag(CLUBS.indexOf(r.name)) },
+    { label: "הוגרלה", key: "drawn", val: r => r.drawn },
+    { label: "אליפויות", key: "titles", val: r => r.titles, render: r => r.titles ? '<span class="g">' + r.titles + "</span>" : '<span class="mut">0</span>' },
+    { label: "גמרים", key: "finals", val: r => r.finals },
+    { label: "שימוש במשחק", key: "g", val: r => r.g },
+    { label: "נצ׳", key: "w", val: r => r.w },
+    { label: "תיקו", key: "dr", val: r => r.dr },
+    { label: "הפ׳", key: "l", val: r => r.l },
+    { label: "הפרש", key: "gd", val: r => r.gd, cls: r => r.gd > 0 ? "pos" : r.gd < 0 ? "neg" : "", render: r => sgn(r.gd) },
+    { label: "נק׳/משחק", key: "ppg", val: r => r.ppg, cls: () => "strong", render: r => r.g ? f2(r.ppg) : "—" }
+  ], TEAM.filter(t => t.drawn || t.g), { sort: "titles" });
+  root.appendChild(b);
+
+  const nat = ["צרפת","פורטוגל","ברזיל","אנגליה","ספרד","ארגנטינה","גרמניה"];
+  const natT = TSS.filter(t => t.done && t.d.some(([, c]) => nat.includes(CLUBS[c])));
+  if (natT.length) {
+    const b2 = el("section", "block");
+    b2.innerHTML = '<div class="bhead"><h2>עידן הנבחרות</h2><span class="note">שלושה טורנירים שבהם קבוצות המועדון הוחלפו בנבחרות לאומיות.</span></div>';
+    const g = el("div", "recs");
+    natT.forEach(t => g.appendChild(el("div", "rec",
+      '<div class="lbl">טורניר ' + t.num + "</div>" +
+      '<div class="d">' + t.d.map(([p, c]) => '<span style="display:flex;gap:5px;align-items:center">' + plate(p) + clubTag(c) + "</span>").join("") + "</div>" +
+      '<div class="d" style="margin-top:4px">אלופים: ' + t.c.map(p => plate(p)).join(" + ") + "</div>")));
+    b2.appendChild(g);
+    root.appendChild(b2);
+  }
+}
+
+function viewRecords(root) {
+  root.innerHTML = "";
+  const lines = [], ms = [];
+  TSS.filter(t => t.done).forEach(t => {
+    t.players.forEach(p => lines.push(Object.assign({ p, t: t.num }, perT[p][t.i])));
+    t.m.forEach((m, i) => ms.push({ t: t.num, i: i + 1, m }));
+  });
+  if (!ms.length) { root.appendChild(emptySeason()); return; }
+  const best = (a, f) => a.reduce((x, y) => f(y) > f(x) ? y : x);
+  const worst = (a, f) => a.reduce((x, y) => f(y) < f(x) ? y : x);
+  const mBig = best(ms, x => Math.abs(x.m[6] - x.m[7])), mGoals = best(ms, x => x.m[6] + x.m[7]);
+  const duoA = m => '<span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + plate(m[0]) + plate(m[1]) + clubTag(m[2]) + "</span>";
+  const duoB = m => '<span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + plate(m[3]) + plate(m[4]) + clubTag(m[5]) + "</span>";
+
+  const b1 = el("section", "block");
+  b1.innerHTML = '<div class="bhead"><h2>שיאי משחק</h2></div>';
+  const g1 = el("div", "recs");
+  g1.appendChild(el("div", "rec",
+    '<div class="lbl">הניצחון הגדול ביותר</div><div class="v ltr">' + Math.max(mBig.m[6], mBig.m[7]) + " – " + Math.min(mBig.m[6], mBig.m[7]) + "</div>" +
+    '<div class="d">' + (mBig.m[6] > mBig.m[7] ? duoA(mBig.m) : duoB(mBig.m)) + "</div>" +
+    '<div class="d mut">טורניר ' + mBig.t + " · משחק " + mBig.i + "</div>"));
+  g1.appendChild(el("div", "rec",
+    '<div class="lbl">המשחק עתיר השערים</div><div class="v ltr">' + mGoals.m[7] + " – " + mGoals.m[6] + "</div>" +
+    '<div class="d">' + duoA(mGoals.m) + '</div><div class="d">' + duoB(mGoals.m) + "</div>" +
+    '<div class="d mut">טורניר ' + mGoals.t + " · " + (mGoals.m[6] + mGoals.m[7]) + " שערים</div>"));
+  g1.appendChild(el("div", "rec",
+    '<div class="lbl">0–0</div><div class="v">' + ms.filter(x => x.m[6] + x.m[7] === 0).length + "</div>" +
+    '<div class="d mut">משחקים ללא שערים מתוך ' + ms.length + "</div>"));
+  b1.appendChild(g1);
+  root.appendChild(b1);
+
+  const b2 = el("section", "block");
+  b2.innerHTML = '<div class="bhead"><h2>שיאי טורניר</h2><span class="note">ההישג הטוב והגרוע ביותר של שחקן בטבלת טורניר אחת.</span></div>';
+  const g2 = el("div", "recs");
+  const rec = (k, x, v) => el("div", "rec",
+    '<div class="lbl">' + k + '</div><div class="v ltr">' + v + "</div>" +
+    '<div class="d">' + plate(x.p, "lg") + clubTag(x.club) + "</div>" +
+    '<div class="d mut">טורניר ' + x.t + " · מקום " + x.place + " · " + scoreTxt(x.gf, x.ga) + "</div>");
+  g2.append(
+    rec("הכי הרבה נקודות", best(lines, x => x.pts), best(lines, x => x.pts).pts + " נק׳"),
+    rec("הכי מעט נקודות", worst(lines, x => x.pts), worst(lines, x => x.pts).pts + " נק׳"),
+    rec("הכי הרבה שערים", best(lines, x => x.gf), best(lines, x => x.gf).gf + " שערים"),
+    rec("הכי מעט שערים", worst(lines, x => x.gf), worst(lines, x => x.gf).gf + " שערים"),
+    rec("ההפרש הטוב ביותר", best(lines, x => x.gf - x.ga), sgn(best(lines, x => x.gf - x.ga).gf - best(lines, x => x.gf - x.ga).ga)),
+    rec("ההפרש הגרוע ביותר", worst(lines, x => x.gf - x.ga), sgn(worst(lines, x => x.gf - x.ga).gf - worst(lines, x => x.gf - x.ga).ga)));
+  b2.appendChild(g2);
+  root.appendChild(b2);
+
+  const b3 = el("section", "block");
+  b3.innerHTML = '<div class="bhead"><h2>רצפים</h2><span class="note">אליפויות רצופות ובצורת ארוכה, לפי סדר הטורנירים.</span></div>';
+  const g3 = el("div", "recs");
+  ORDER.forEach(p => {
+    let cur = 0, bs = 0, be = 0, dry = 0, bd = 0, de = 0;
+    TSS.filter(t => t.done).forEach(t => {
+      if (!t.players.includes(p)) return;
+      if (t.c.includes(p)) { cur++; dry = 0; if (cur > bs) { bs = cur; be = t.num; } }
+      else { cur = 0; dry++; if (dry > bd) { bd = dry; de = t.num; } }
+    });
+    g3.appendChild(el("div", "rec",
+      '<div class="lbl">' + esc(P[p]) + '</div><div class="v">' + bs + " ברצף</div>" +
+      '<div class="d mut">רצף האליפויות הארוך ביותר, עד טורניר ' + be + "</div>" +
+      '<div class="d mut">בצורת ארוכה ביותר: ' + bd + " טורנירים, עד " + de + "</div>"));
+  });
+  b3.appendChild(g3);
+  root.appendChild(b3);
+
+  /* runs measured match by match, not tournament by tournament */
+  if (LOG && LOG.some(l => l.length)) {
+    const bS = el("section", "block");
+    bS.innerHTML = '<div class="bhead"><h2>רצפים במשחקים</h2><span class="note">' +
+      'רצפים רצופים לאורך כל המשחקים של השחקן, חוצי טורנירים. הכתר מסמן את בעל השיא.</span></div>';
+    const rows = ORDER.filter(p => LOG[p].length).map(p => ({
+      p,
+      w: longestRun(LOG[p], isW),
+      u: longestRun(LOG[p], isNL),
+      l: longestRun(LOG[p], isL),
+      now: { w: currentRun(LOG[p], isW), l: currentRun(LOG[p], isL), u: currentRun(LOG[p], isNL) },
+      last: S[p].last, app: S[p].app
+    }));
+    const topW = Math.max(...rows.map(r => r.w.n)), topU = Math.max(...rows.map(r => r.u.n));
+    const topL = Math.max(...rows.map(r => r.l.n)), topLast = Math.max(...rows.map(r => r.last));
+    const crown = on => on ? ' <span class="crown">★</span>' : "";
+    const span = r => r.span ? '<span class="mut"> · ' + runSpan(r, true) + "</span>" : "";
+    makeTable(bS, [
+      { label: "שחקן", key: "n", val: r => P[r.p], render: r => plate(r.p) },
+      { label: "רצף נצחונות", key: "w", val: r => r.w.n, cls: () => "strong",
+        render: r => r.w.n + crown(r.w.n === topW) + span(r.w) },
+      { label: "רצף ללא הפסד", key: "u", val: r => r.u.n,
+        render: r => r.u.n + crown(r.u.n === topU) + span(r.u) },
+      { label: "רצף הפסדים", key: "l", val: r => r.l.n, cls: () => "neg",
+        render: r => r.l.n + crown(r.l.n === topL) + span(r.l) },
+      { label: "הרצף עכשיו", key: "c", sortable: false, val: () => 0,
+        render: r => r.now.w ? '<span class="pos">' + runWord("w", r.now.w) + "</span>"
+                  : r.now.l ? '<span class="neg">' + runWord("l", r.now.l) + "</span>"
+                  : r.now.u ? runWord("u", r.now.u) : "—" },
+      { label: "סיים אחרון", key: "last", val: r => r.last,
+        render: r => r.last + crown(r.last === topLast) + ' <span class="mut">מתוך ' + r.app + "</span>" }
+    ], rows, { sort: "w" });
+    root.appendChild(bS);
+  }
+
+  const b4 = el("section", "block");
+  b4.innerHTML = '<div class="bhead"><h2>אחד מול השני</h2><span class="note">אחוז הנצחונות של השחקן בשורה מול השחקן בעמודה.</span></div>';
+  const card = el("div", "chart-card matrix"), sc = el("div", "tscroll");
+  let html = "<table><thead><tr><th></th>" + ORDER.map(p => "<th>" + plate(p) + "</th>").join("") + "</tr></thead><tbody>";
+  ORDER.forEach(a => {
+    html += "<tr><td>" + plate(a) + "</td>";
+    ORDER.forEach(b => {
+      if (a === b) { html += '<td class="cellv self">—</td>'; return; }
+      const r = H2H[a][b], pc = r.w / r.g;
+      const s = Math.max(1, Math.min(6, 6 - Math.min(5, Math.floor(((pc - 0.28) / 0.22) * 6))));
+      html += '<td class="cellv" style="background:var(--o' + s + ');color:var(--o' + s + 't)" title="' +
+        r.w + " נצחונות, " + r.dr + " תיקו, " + r.l + " הפסדים מתוך " + r.g + '">' + Math.round(pc * 100) + "%</td>";
+    });
+    html += "</tr>";
+  });
+  sc.innerHTML = html + "</tbody></table>";
+  card.appendChild(sc);
+  card.appendChild(el("div", "legend", '<span class="ramp-key">נמוך ' +
+    [6,5,4,3,2,1].map(j => '<i style="background:var(--o' + j + ')"></i>').join("") + " גבוה</span>"));
+  b4.appendChild(card);
+  root.appendChild(b4);
+}
+
+/* ==========================================================================
+   NEWSROOM
+   ========================================================================== */
+/* Build every story once; the screen renders them and the snapshot serialises
+   them, so the two can never drift apart. */
+function newsItems(t) {
+  const played = t.m.filter(m => m[6] != null && m[7] != null).length;
+  const total = t.m.length;
+  const sim = simulate(t, 4000);
+  const nx = nextFixture(t), lp = lastPlayed(t);
+  const stand = t.table.map((p, i) => ({ p, place: i + 1, a: t.acc[p] }));
+  const items = [];
+
+  items.push(heroItem(t, sim, played, total, stand));
+
+  if (played < total) {
+    const rows = t.players.slice().sort((x, y) => sim[y].top4 - sim[x].top4);
+    items.push({
+      tag: "סיכויי עלייה", head: "מי עולה לארבעת הגדולים", hero: false,
+      body: '<div class="qbar">' + rows.map(p =>
+        '<div class="qrow"><span>' + plate(p) + "</span>" +
+        '<span class="qtrack"><span class="qfill" style="--c:' + PC(p) + ';width:' +
+        Math.max(1, Math.round(sim[p].top4 * 100)) + '%"></span></span>' +
+        '<span class="qval">' + Math.round(sim[p].top4 * 100) + "%</span></div>").join("") + "</div>" +
+        '<div class="swing">' + rows.map(p => "<span>" + esc(P[p]) +
+          " · אליפות " + Math.round(sim[p].title * 100) + "%</span>").join("") + "</div>",
+      plain: "📊 סיכויי עלייה לגמר\n" + rows.map(p =>
+        P[p] + ": " + Math.round(sim[p].top4 * 100) + "% (אליפות " + Math.round(sim[p].title * 100) + "%)").join("\n")
+    });
+  }
+
+  if (nx) {
+    const f = forecast(nx.m);
+    const inv = [nx.m[0], nx.m[1], nx.m[3], nx.m[4]];
+    const simH = simulate(t, 1500, "h"), simA = simulate(t, 1500, "a");
+    const swing = inv.map(p => {
+      const now = Math.round(sim[p].top4 * 100);
+      const ifH = Math.round(simH[p].top4 * 100), ifA = Math.round(simA[p].top4 * 100);
+      return "<span>" + plate(p) + " <b>" + now + "%</b> → <span class='up'>" + Math.max(ifH, ifA) +
+        "%</span> / <span class='down'>" + Math.min(ifH, ifA) + "%</span></span>";
+    }).join("");
+    items.push({
+      tag: "המשחק הבא", head: "משחק " + (nx.i + 1) + " מתוך " + total, hero: false,
+      body: "<div><b>" + esc(P[nx.m[0]]) + " ו" + esc(P[nx.m[1]]) + "</b> (" + esc(CLUBS[nx.m[2]]) +
+        ") נגד <b>" + esc(P[nx.m[3]]) + " ו" + esc(P[nx.m[4]]) + "</b> (" + esc(CLUBS[nx.m[5]]) + ")</div>" +
+        (f ? "<div>הסיכויים: <b>" + Math.round(f.w * 100) + "%</b> לבית, " + Math.round(f.d * 100) +
+          "% תיקו, <b>" + Math.round(f.l * 100) + "%</b> לחוץ · שערים צפויים " +
+          f.lh.toFixed(1) + "–" + f.la.toFixed(1) + "</div>" : "") +
+        "<div>סיכויי העלייה של המשתתפים, לפי התוצאה:</div>" +
+        '<div class="swing">' + swing + "</div>",
+      plain: "⚽ המשחק הבא · מספר " + (nx.i + 1) + "\n" +
+        P[nx.m[0]] + " ו" + P[nx.m[1]] + " (" + CLUBS[nx.m[2]] + ") נגד " +
+        P[nx.m[3]] + " ו" + P[nx.m[4]] + " (" + CLUBS[nx.m[5]] + ")" +
+        (f ? "\nסיכויים: " + Math.round(f.w * 100) + "% / " + Math.round(f.d * 100) + "% / " +
+          Math.round(f.l * 100) + "%" : "")
+    });
+  }
+
+  /* the fixture that settles it, if one of the remaining ones does */
+  const gv = played < total ? gravityOf(t) : null;
+  if (gv && gv.top && gv.top.spread >= 0.25) {
+    const g = gv.top, gm = t.m[g.i];
+    const ord = [{ o: "h", v: g.v[0] }, { o: "d", v: g.v[1] }, { o: "a", v: g.v[2] }]
+      .sort((a, b) => b.v - a.v);
+    const best = ord[0], worst = ord[ord.length - 1];
+    const bare = o => o === "d" ? "תיקו"
+      : o === "h" ? "ניצחון של " + P[gm[0]] + " ו" + P[gm[1]]
+                  : "ניצחון של " + P[gm[3]] + " ו" + P[gm[4]];
+    items.push({
+      tag: "משחק גורלי", hero: false,
+      head: "🔥 משחק " + (g.i + 1) + " מכריע את העלייה",
+      body: "<div><b>" + esc(P[gm[0]]) + " ו" + esc(P[gm[1]]) + "</b> (" + esc(CLUBS[gm[2]]) +
+        ") נגד <b>" + esc(P[gm[3]]) + " ו" + esc(P[gm[4]]) + "</b> (" + esc(CLUBS[gm[5]]) + ")</div>" +
+        "<div>" + plate(g.p) + " תלוי בתוצאה הזאת יותר מכולם: " + esc(bare(best.o)) +
+        ' מעלה אותו ל־<b class="ltr">' + pct(best.v) + "%</b> לגמר, " + esc(bare(worst.o)) +
+        ' מוריד אותו ל־<b class="ltr">' + pct(worst.v) + "%</b>.</div>" +
+        '<div class="swing">' + g.all.map(r => "<span>" + plate(r.p) + " " +
+          pct(Math.max(r.h, r.d, r.a)) + "% / " + pct(Math.min(r.h, r.d, r.a)) + "%</span>").join("") + "</div>",
+      plain: "🔥 משחק גורלי · מספר " + (g.i + 1) + "\n" +
+        P[gm[0]] + " ו" + P[gm[1]] + " נגד " + P[gm[3]] + " ו" + P[gm[4]] + "\n" +
+        P[g.p] + ": " + bare(best.o) + " → " + pct(best.v) + "% לגמר, " +
+        bare(worst.o) + " → " + pct(worst.v) + "%"
+    });
+  }
+
+  /* the match that moved the tournament most, once there is enough to compare */
+  const tlN = played >= 3 ? timelineOf(t) : null;
+  if (tlN && tlN.peak && tlN.peak.swing >= 0.08 && tlN.peak.mover != null) {
+    const sp = tlN.peak, pm = t.m[sp.k - 1], mp = sp.mover;
+    const b4 = tlN.stages[sp.k - 1].sim[mp].top4, af = sp.sim[mp].top4;
+    items.push({
+      tag: "רגע השיא", hero: false,
+      head: "המשחק ששינה את הטורניר",
+      body: "<div><b>משחק " + sp.k + "</b>: " + esc(P[pm[0]]) + " ו" + esc(P[pm[1]]) + " " +
+        scoreTxt(pm[6], pm[7]) + " " + esc(P[pm[3]]) + " ו" + esc(P[pm[4]]) + "</div>" +
+        "<div>" + plate(mp) + " " + (af >= b4 ? "קפץ" : "צנח") + ' מ־<b class="ltr">' + pct(b4) +
+        '%</b> ל־<b class="ltr">' + pct(af) + "%</b> סיכוי לעלות לגמר — התזוזה הגדולה בטורניר.</div>",
+      plain: "⚡ רגע השיא\nמשחק " + sp.k + ": " + P[pm[0]] + " ו" + P[pm[1]] + " " +
+        pm[6] + ":" + pm[7] + " " + P[pm[3]] + " ו" + P[pm[4]] + "\n" +
+        P[mp] + ": " + pct(b4) + "% ← " + pct(af) + "% לגמר"
+    });
+  }
+
+  if (lp) {
+    const m = lp.m;
+    const won = m[6] > m[7] ? [m[0], m[1]] : m[7] > m[6] ? [m[3], m[4]] : null;
+    items.push({
+      tag: "עדכון", hero: false,
+      head: won ? "ניצחון ל" + esc(P[won[0]]) + " ו" + esc(P[won[1]]) : "תיקו במשחק " + (lp.i + 1),
+      body: "<div>משחק " + (lp.i + 1) + ": <b>" + esc(P[m[0]]) + " ו" + esc(P[m[1]]) + "</b> " +
+        scoreTxt(m[6], m[7]) + " <b>" + esc(P[m[3]]) + " ו" + esc(P[m[4]]) + "</b></div>" +
+        "<div>" + (won ? "שלוש נקודות ל" + esc(P[won[0]]) + " ול" + esc(P[won[1]]) + "." : "נקודה לכל צמד.") + "</div>" +
+        '<div class="swing">' + [m[0], m[1], m[3], m[4]].map(p =>
+          "<span>" + plate(p) + " מקום " + t.place[p] + " · " + t.acc[p].pts + " נק׳</span>").join("") + "</div>",
+      plain: "🔔 תוצאה אחרונה\nמשחק " + (lp.i + 1) + ": " + P[m[0]] + " ו" + P[m[1]] +
+        " " + m[6] + ":" + m[7] + " " + P[m[3]] + " ו" + P[m[4]]
+    });
+  }
+
+  items.push({
+    tag: "הטבלה", hero: false,
+    head: played ? "המצב אחרי " + played + " משחקים" : "לפני הפתיחה",
+    body: '<div class="qbar">' + stand.map(r =>
+      '<div class="qrow" style="grid-template-columns:20px 1fr auto"><span class="mut">' + r.place +
+      "</span><span>" + plate(r.p) + " " + clubTag(t.teamOf[r.p]) + '</span><span class="qval">' +
+      r.a.pts + " נק׳ · " + sgn(r.a.gf - r.a.ga) + "</span></div>").join("") + "</div>" +
+      (played < total ? "<div>קו העלייה עובר אחרי המקום הרביעי.</div>" : ""),
+    plain: "🏆 הטבלה\n" + stand.map(r =>
+      r.place + ". " + P[r.p] + " (" + CLUBS[t.teamOf[r.p]] + ") — " + r.a.pts + " נק׳, " +
+      r.a.gf + ":" + r.a.ga).join("\n")
+  });
+
+  const q = clubQuality(t);
+  items.push({
+    tag: "ההגרלה", head: "מי יצא מרוצה מהקבוצה שלו", hero: false,
+    body: '<div class="qbar">' + q.map((c, i) =>
+      '<div class="qrow" style="grid-template-columns:20px 1fr auto"><span class="mut">' + (i + 1) +
+      "</span><span>" + plate(c.p) + " " + clubTag(c.ci) + '</span><span class="qval">' +
+      f2(c.ppg) + "</span></div>").join("") + "</div>" +
+      "<div>הדירוג הוא נקודות למשחק שהקבוצה הביאה לאורך ההיסטוריה, בכל הידיים שהחזיקו בה.</div>",
+    plain: "🎲 איכות ההגרלה\n" + q.map((c, i) =>
+      (i + 1) + ". " + P[c.p] + " — " + c.name + " (" + f2(c.ppg) + " נק׳ למשחק היסטורית)").join("\n")
+  });
+
+  return { items, played, total, sim, stand };
+}
+
+function heroItem(t, sim, played, total, stand) {
+  let tag = "הכותרת", head = "", body = "", plain = "";
+  if (t.done) {
+    tag = "סיום";
+    head = "אלופי טורניר " + t.num + ": " + esc(P[t.c[0]]) + " ו" + esc(P[t.c[1]]);
+    body = "<div>" + (t.top2 ? "צמד 1–2 עשה את העבודה בגמר." : "צמד 3–4 הפך את היוצרות בגמר.") +
+      " " + esc(P[stand[0].p]) + " סיים ראשון בטבלה עם " + stand[0].a.pts + " נקודות.</div>";
+    plain = "🏁 טורניר " + t.num + " הסתיים\nאלופים: " + P[t.c[0]] + " ו" + P[t.c[1]];
+  } else if (!played) {
+    const fav = t.players.slice().sort((a, b) => sim[b].title - sim[a].title)[0];
+    tag = "לפני הפתיחה";
+    head = esc(P[fav]) + " פותח כפייבוריט";
+    body = "<div>לפי " + nf(MODEL.matches) + " המשחקים שנרשמו עד היום, <b>" + esc(P[fav]) +
+      "</b> נכנס עם " + Math.round(sim[fav].title * 100) + "% לאליפות ו־" +
+      Math.round(sim[fav].top4 * 100) + "% לעלייה לגמר. " + total + " משחקים עד הגביע.</div>";
+    plain = "🎬 טורניר " + t.num + " נפתח\nפייבוריט: " + P[fav] + " (" +
+      Math.round(sim[fav].title * 100) + "% לאליפות)";
+  } else if (played === total) {
+    tag = "הגמר";
+    head = "הגמר נקבע: " + esc(P[stand[0].p]) + " ו" + esc(P[stand[1].p]) + " מול " +
+      esc(P[stand[2].p]) + " ו" + esc(P[stand[3].p]);
+    const lg = finalLegLambdas(t, t.table);
+    body = "<div>שלב הליגה נגמר. <b>" + esc(P[stand[0].p]) + "</b> סיים ראשון עם " +
+      stand[0].a.pts + " נקודות. הגמר הוא שני משחקים — " + esc(P[stand[2].p]) + " ו" +
+      esc(P[stand[3].p]) + " מארחים ראשונים" +
+      (lg[0] ? ", שערים צפויים " + lg[0][0].toFixed(1) + "–" + lg[0][1].toFixed(1) : "") + ".</div>";
+    plain = "🥊 הגמר\n" + P[stand[0].p] + " ו" + P[stand[1].p] + " מול " +
+      P[stand[2].p] + " ו" + P[stand[3].p];
+  } else {
+    const safest = t.players.slice().sort((a, b) => sim[b].top4 - sim[a].top4)[0];
+    const risk = t.players.slice().sort((a, b) => sim[a].top4 - sim[b].top4)[0];
+    const lead = stand[0], gap = stand[0].a.pts - stand[1].a.pts;
+    if (sim[safest].top4 > 0.985) {
+      head = esc(P[safest]) + " כבר בגמר";
+      body = "<div>אין תרחיש שמוציא את <b>" + esc(P[safest]) + "</b> מארבעת הראשונים. בקצה השני, <b>" +
+        esc(P[risk]) + "</b> יורד ל־" + Math.round(sim[risk].top4 * 100) + "%.</div>";
+    } else if (sim[risk].top4 < 0.05) {
+      head = esc(P[risk]) + " כמעט בחוץ";
+      body = "<div><b>" + esc(P[risk]) + "</b> נשאר עם " + Math.round(sim[risk].top4 * 100) +
+        "% בלבד לעלייה. במקום הראשון: <b>" + esc(P[lead.p]) + "</b> עם " + lead.a.pts + " נקודות.</div>";
+    } else {
+      head = gap >= 3 ? esc(P[lead.p]) + " בורח בפסגה" : "הפסגה צמודה — " + esc(P[lead.p]) + " בראש";
+      body = "<div><b>" + esc(P[lead.p]) + "</b> מוביל עם " + lead.a.pts + " נקודות" +
+        (gap ? ", " + gap + " מעל " + esc(P[stand[1].p]) : ", שווה נקודות עם " + esc(P[stand[1].p])) +
+        ". הכי קרוב ליציאה: <b>" + esc(P[risk]) + "</b> עם " + Math.round(sim[risk].top4 * 100) +
+        "% לעלייה.</div>";
+    }
+    plain = "📰 טורניר " + t.num + " · אחרי " + played + " מתוך " + total + "\n" +
+      P[lead.p] + " מוביל עם " + lead.a.pts + " נקודות";
+  }
+  return { tag: tag, head: head, body: body, plain: plain, hero: true };
+}
+
+const stripTags = h => String(h).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+
+function bulletinFor(t) {
+  const n = newsItems(t);
+  return {
+    headline: stripTags(n.items[0].head),
+    text: "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
+      n.items.map(i => i.plain).filter(Boolean).join("\n\n"),
+    played: n.played, total: n.total
+  };
+}
+
+/* the scheduled task reads this doc and delivers it — the page is the only
+   place that can compute it */
+let lastBulletin = "";
+function publishBulletin(t) {
+  if (!Store.db || !t || !MODEL || !MODEL.matches) return;
+  let b;
+  try { b = bulletinFor(t); } catch (e) { return; }
+  if (b.text === lastBulletin) return;      // nothing moved since the last write
+  lastBulletin = b.text;
+  try {
+    Store.db.doc("meta/newsroom").set({
+      i: t.i, num: t.num, season: seasonById(t.season).name,
+      played: b.played, total: b.total, done: !!t.done,
+      headline: b.headline, text: b.text, at: new Date().toISOString()
+    });
+  } catch (e) {}
+}
+
+function viewNews(root) {
+  root.innerHTML = "";
+  const open = TSS.filter(t => !t.done).slice(-1)[0];
+  const t = open || TSS.filter(t2 => t2.done).slice(-1)[0];
+  if (!t || !MODEL || !MODEL.matches) { root.appendChild(emptySeason()); return; }
+
+  const n = newsItems(t);
+  const head = el("section", "block");
+  head.innerHTML = '<div class="bhead"><h2>חדר חדשות</h2><span class="note">' +
+    "טורניר " + t.num + " · " + esc(seasonById(t.season).name) + " · " + n.played + " מתוך " + n.total +
+    " משחקים · הסיכויים מחושבים בהרצה של 4,000 סימולציות של שארית הטורניר.</span></div>";
+  const bar = el("div", "newsbar");
+  const all = el("button", "btn", "העתק את כל המהדורה");
+  bar.appendChild(all);
+  head.appendChild(bar);
+  root.appendChild(head);
+
+  const grid = el("div", "newsgrid");
+  n.items.forEach(it => grid.appendChild(story(it.tag, it.head, it.body, it.plain, it.hero)));
+  root.appendChild(grid);
+
+  const full = "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
+    n.items.map(i => i.plain).filter(Boolean).join("\n\n");
+  all.onclick = () => copyText(full, all);
+  publishBulletin(t);
+}
+
+/* ==========================================================================
+   Chrome + router
+   ========================================================================== */
+function emptySeason() {
+  const n = el("div", "notice warn");
+  n.innerHTML = "<b>" + esc(SCOPE === "all" ? "אין נתונים" : seasonById(SCOPE).name + " טרם התחילה") +
+    "</b> פתח טורניר ראשון בחדר הבקרה, או עבור לעונה אחרת בבורר שלמעלה.";
+  return n;
+}
+
+function setScope(v) {
+  SCOPE = v;
+  try { localStorage.setItem("fifa-scope", String(v)); } catch (e) {}
+  curT = null;
+  rebuild(); refreshChrome();
+  const cur = VIEWS.find(x => !document.getElementById("v-" + x[0]).hidden);
+  if (cur) cur[2](document.getElementById("v-" + cur[0]));
+}
+
+function refreshChrome() {
+  const done = TSS.filter(t => t.done);
+  document.querySelector(".mark .glyph").textContent = done.length;
+  document.getElementById("railSub").textContent =
+    (SCOPE === "all" ? "כל העונות" : seasonById(SCOPE).name) + " · " + nf(totMatches) + " משחקים";
+
+  const sp = document.getElementById("seasonPick");
+  sp.innerHTML = "";
+  sp.appendChild(el("span", "lbl", "עונה"));
+  const sel = el("select");
+  sel.id = "season-scope";
+  SEASONS.slice().sort((a, b) => a.id - b.id).forEach(sn => {
+    const o = el("option", null, esc(sn.name));
+    o.value = String(sn.id);
+    if (SCOPE === sn.id) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (SEASONS.length > 1) {
+    const o = el("option", null, "כל העונות");
+    o.value = "all";
+    if (SCOPE === "all") o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => setScope(sel.value === "all" ? "all" : Number(sel.value));
+  sp.appendChild(sel);
+
+  const r = document.getElementById("reign");
+  if (LAST) {
+    r.hidden = false;
+    r.innerHTML = '<div><div class="lbl">אלופי טורניר ' + LAST.num + "</div>" +
+      '<div class="row">' + LAST.c.map(p => '<span style="display:flex;flex-direction:column;gap:2px">' + plate(p, "lg") + clubTag(LAST.teamOf[p]) + "</span>").join("") + "</div></div>";
+  } else {
+    r.hidden = true;
+  }
+  const open = Object.values(LIVE).filter(t => !t.done && (SCOPE === "all" || t.season === SCOPE)).length;
+  const tab = document.getElementById("tab-live");
+  if (tab) tab.innerHTML = "חדר הבקרה" + (open ? '<span class="badge">' + open + "</span>" : "");
+  document.getElementById("foot").innerHTML =
+    "כל המספרים מחושבים מחדש מתוך " + nf(totMatches) + " תוצאות המשחקים הגולמיות של " +
+    (SCOPE === "all" ? "כל העונות" : esc(seasonById(SCOPE).name)) + ". " +
+    (Store.mode === "cloud" ? "טורנירים חדשים נשמרים באחסון המשותף של הדף." : "טורנירים חדשים נשמרים בדפדפן הזה בלבד.");
+}
+
+const VIEWS = [
+  ["live", "חדר הבקרה", viewLive],
+  ["news", "חדר חדשות", viewNews],
+  ["overview", "סיכום", viewOverview],
+  ["players", "שחקנים", viewPlayers],
+  ["tournaments", "טורנירים", viewTournaments],
+  ["pairs", "צמדים", viewPairs],
+  ["teams", "קבוצות", viewTeams],
+  ["records", "שיאים", viewRecords]
+];
+const tabsHost = document.getElementById("tabs");
+VIEWS.forEach(([id, label]) => {
+  const b = el("button", "tab", label);
+  b.setAttribute("role", "tab"); b.id = "tab-" + id;
+  b.onclick = () => go(id);
+  tabsHost.appendChild(b);
+});
+function go(id) {
+  VIEWS.forEach(([vid, , fn]) => {
+    const host = document.getElementById("v-" + vid), tab = document.getElementById("tab-" + vid);
+    const on = vid === id;
+    tab.setAttribute("aria-selected", String(on));
+    host.hidden = !on;
+    if (on) fn(host);
+  });
+  hideTip();
+  try { localStorage.setItem("fifa-tab", id); } catch (e) {}
+}
+
+/* boot: render from history at once, then fold in anything the store holds */
+try { const sc = localStorage.getItem("fifa-scope"); if (sc != null) SCOPE = sc === "all" ? "all" : Number(sc); } catch (e) {}
+Store.initLocal();          // whatever this browser already holds, immediately
+installFaceStyles();
+rebuild(); refreshChrome();
+let start = "overview";
+try { const v = localStorage.getItem("fifa-tab"); if (v && VIEWS.some(x => x[0] === v)) start = v; } catch (e) {}
+go(start);
+
+(async () => {
+  await Store.initCloud();
+  rebuild(); refreshChrome();
+  /* never redraw over a field the user is in the middle of filling */
+  const ae = document.activeElement;
+  const typing = ae && (ae.tagName === "INPUT" || ae.tagName === "SELECT" || ae.tagName === "TEXTAREA");
+  if (!typing) {
+    const cur = VIEWS.find(v => !document.getElementById("v-" + v[0]).hidden);
+    if (cur) cur[2](document.getElementById("v-" + cur[0]));
+  }
+  Store.paint();
+})();
+</script>

@@ -1,0 +1,2012 @@
+
+/* ==========================================================================
+   Storage — the artifact's shared store, with a per-browser fallback
+   ========================================================================== */
+const Store = {
+  db: null,
+  mode: "loading",      // loading | cloud | local
+  ready: null,
+  lastError: null,
+  lastSaveAt: null,
+  dirty: {},            // tournament ids edited before the store answered
+
+  /* Whichever host we are running in, and never waiting on it forever.
+     window.APP_DB is the standalone build (Firestore); window.claude.use is
+     the artifact runtime. Both expose the same doc/collection surface. */
+  provider() {
+    if (window.APP_DB && window.APP_DB.open) return window.APP_DB.open();
+    if (window.claude && window.claude.use) return window.claude.use("db");
+    return Promise.resolve(null);
+  },
+  async connect(ms) {
+    let got = null;
+    try {
+      got = await Promise.race([
+        this.provider(),
+        new Promise(r => setTimeout(() => r("timeout"), ms || 9000))
+      ]);
+    } catch (e) { got = null; }
+    if (got === "timeout") { this.db = null; this.lastError = "החיבור לאחסון לא ענה"; }
+    else { this.db = got || null; }
+    this.mode = this.db ? "cloud" : "local";
+    return this.db;
+  },
+
+  /* the browser's own copy, read synchronously so the page is usable at once */
+  initLocal() {
+    this.mode = "loading";
+    try {
+      const raw = localStorage.getItem("fifa-live");
+      if (raw) {
+        const o = JSON.parse(raw);
+        (o.tournaments || []).forEach(r => { if (r && r.i) LIVE[r.i] = hydrate(r); });
+        if (o.pool && o.pool.length) CLUB_POOL = o.pool;
+        if (o.photos) PHOTOMAP = Object.assign({}, o.photos);
+        if (Array.isArray(o.seasons) && o.seasons.length) SEASONS = o.seasons.map(x => ({ id: x.id, name: x.name }));
+      }
+    } catch (e) {}
+  },
+
+  initCloud() {
+    this.ready = (async () => {
+      await this.connect(9000);
+      if (this.db) await this.loadCloud();
+      await this.flushDirty(null);
+      this.paint();
+    })();
+    return this.ready;
+  },
+
+  async loadCloud() {
+    try {
+      const snap = await this.db.collection("tournaments").get();
+      snap.docs.forEach(d => {
+        const r = d.data();
+        /* d.data() is frozen — copy before anything tries to edit it */
+        if (r && r.i && !this.dirty[r.i]) LIVE[r.i] = hydrate(thaw(r));
+      });
+      const cfg = await this.db.doc("meta/config").get();
+      if (cfg.exists) {
+        const c = cfg.data();
+        if (Array.isArray(c.pool) && c.pool.length) CLUB_POOL = c.pool.slice();
+        if (c.photos && typeof c.photos === "object") PHOTOMAP = Object.assign({}, c.photos);
+        if (Array.isArray(c.seasons) && c.seasons.length) SEASONS = c.seasons.map(x => ({ id: x.id, name: x.name }));
+      }
+    } catch (e) {
+      this.lastError = (e && (e.code || e.message)) || "load failed";
+    }
+  },
+
+  localFlush() {
+    try {
+      localStorage.setItem("fifa-live", JSON.stringify({
+        pool: CLUB_POOL, photos: PHOTOMAP, seasons: SEASONS,
+        tournaments: Object.values(LIVE).map(t => t.rec)
+      }));
+      return true;
+    } catch (e) { return false; }
+  },
+
+  /* one attempt at the cloud, always a local copy, never a permanent give-up */
+  async write(t) {
+    let ok = false;
+    if (this.db) {
+      try {
+        await this.db.doc("tournaments/t" + t.i).set(t.rec);
+        ok = true; this.mode = "cloud"; this.lastError = null;
+      } catch (e) {
+        this.lastError = (e && (e.code || e.message)) || "save failed";
+      }
+    }
+    const local = this.localFlush();
+    if (!ok && !this.db) this.mode = "local";
+    if (ok || local) this.lastSaveAt = Date.now();
+    /* only a cloud write clears the flag — a local copy still owes the cloud */
+    if (ok || !this.db) delete this.dirty[t.i];
+    if (ok) await this.flushDirty(t.i);
+    this.paint();
+    return ok;
+  },
+
+  /* carry anything the cloud still owes, once it answers again */
+  async flushDirty(skip) {
+    if (!this.db) return;
+    for (const k of Object.keys(this.dirty)) {
+      if (String(k) === String(skip)) continue;
+      const o = LIVE[k];
+      if (!o) { delete this.dirty[k]; continue; }
+      try { await this.db.doc("tournaments/t" + o.i).set(o.rec); delete this.dirty[k]; }
+      catch (e) { this.lastError = (e && (e.code || e.message)) || "save failed"; break; }
+    }
+  },
+
+  async saveT(t) {
+    this.dirty[t.i] = true;
+    this.localFlush();              // the result is safe before the cloud is tried
+    this.paint();
+    if (this.ready) {
+      try { await Promise.race([this.ready, new Promise(r => setTimeout(r, 9500))]); } catch (e) {}
+    }
+    return this.write(t);
+  },
+
+  async delT(id) {
+    delete LIVE[id];
+    delete this.dirty[id];
+    if (this.db) { try { await this.db.doc("tournaments/t" + id).delete(); } catch (e) {} }
+    this.localFlush();
+    this.paint();
+  },
+
+  async saveConfig() {
+    if (this.ready) { try { await this.ready; } catch (e) {} }
+    if (this.db) {
+      try {
+        await this.db.doc("meta/config").set({ pool: CLUB_POOL, photos: PHOTOMAP, seasons: SEASONS });
+        this.lastError = null; this.lastSaveAt = Date.now(); this.paint(); return;
+      } catch (e) { this.lastError = (e && (e.code || e.message)) || "save failed"; }
+    }
+    this.localFlush(); this.lastSaveAt = Date.now(); this.paint();
+  },
+
+  /* try the connection again after a failure, without reloading the page */
+  async retry() {
+    this.mode = "loading"; this.lastError = null; this.paint();
+    await this.connect(9000);
+    await this.flushDirty(null);
+    this.paint();
+  },
+
+  /* write this tournament right now and report exactly what happened */
+  async forceSave(t) {
+    this.dirty[t.i] = true;
+    const local = this.localFlush();
+    /* a short probe: the button must answer quickly, not sit on "saving" */
+    if (!this.db) await this.connect(4000);
+    if (!this.db) {
+      this.paint();
+      return { ok: false, why: this.lastError || "אין חיבור לאחסון המשותף", local: local };
+    }
+    try {
+      await this.db.doc("tournaments/t" + t.i).set(t.rec);
+      delete this.dirty[t.i];
+      this.lastError = null; this.lastSaveAt = Date.now(); this.mode = "cloud";
+      await this.flushDirty(t.i);
+      this.paint();
+      return { ok: true, local: local };
+    } catch (e) {
+      this.lastError = (e && (e.code || e.message)) || "save failed";
+      this.paint();
+      return { ok: false, why: this.lastError, local: local };
+    }
+  },
+
+  /* everything the page holds, as text the user can keep */
+  backup() {
+    return JSON.stringify({
+      savedAt: new Date().toISOString(),
+      pool: CLUB_POOL, photos: PHOTOMAP, seasons: SEASONS,
+      tournaments: Object.values(LIVE).map(t => t.rec)
+    }, null, 2);
+  },
+
+  status() {
+    const pend = Object.keys(this.dirty).length;
+    if (this.mode === "loading") return { cls: "", text: "מתחבר לאחסון…" };
+    if (this.lastError) return { cls: " warn", text: "⚠ השמירה בענן נכשלה (" + esc(String(this.lastError)) +
+      "). הנתונים נשמרו בדפדפן הזה.", retry: true };
+    if (this.mode === "local") return { cls: " warn", text: "⚠ אין חיבור לאחסון המשותף — נשמר בדפדפן הזה בלבד.", retry: true };
+    if (pend) return { cls: "", text: "שומר… (" + pend + " ממתין לענן)" };
+    const at = this.lastSaveAt ? new Date(this.lastSaveAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }) : null;
+    return { cls: "", text: "✓ נשמר בענן" + (at ? " · " + at : "") };
+  },
+
+  paint() {
+    paintRows();
+    const n = document.getElementById("saveStatus");
+    if (!n) return;
+    const s = this.status();
+    n.className = "notice savebar" + s.cls;
+    n.innerHTML = "<span>" + s.text + "</span>";
+    if (s.retry) {
+      const b = el("button", "btn ghost sm", "נסה שוב");
+      b.onclick = () => this.retry();
+      n.appendChild(b);
+    }
+  }
+};
+
+/* on-disk record -> in-memory tournament */
+function hydrate(rec) {
+  const season = rec.s || 0;
+  const num = rec.n || rec.i;
+  const tpl = TPL[rec.tpl] || TPL[String(rec.slots.length)];
+  const slots = rec.slots, clubs = rec.clubs;
+  const d = slots.map((p, i) => [p, clubIdx(clubs[i])]);
+  const m = tpl.map((f, k) => {
+    const sc = (rec.scores && rec.scores[k]) || [null, null];
+    return [slots[f.h[0] - 1], slots[f.h[1] - 1], clubIdx(clubs[f.hc - 1]),
+            slots[f.a[0] - 1], slots[f.a[1] - 1], clubIdx(clubs[f.ac - 1]),
+            sc[0], sc[1]];
+  });
+  return { i: uid(season, num), num, season, d, t: null, m,
+           c: (rec.champs || []).slice().sort((a, b) => a - b), rec, live: true };
+}
+/* keep each match row's cloud label in step with the store */
+function paintRows() {
+  document.querySelectorAll(".doneline[data-t]").forEach(n => {
+    const lbl = n.querySelector(".ok");
+    if (!lbl) return;
+    const pend = !!Store.dirty[n.getAttribute("data-t")];
+    lbl.textContent = pend ? "⏳ ממתין לענן" : "✓ נשמר בענן";
+    lbl.classList.toggle("pend", pend);
+  });
+}
+
+function flash(msg, warn) {
+  const n = el("div", "notice" + (warn ? " warn" : ""), esc(msg));
+  n.style.cssText = "position:fixed;inset-inline:16px;bottom:16px;z-index:90;max-width:520px;margin-inline:auto;box-shadow:0 14px 40px rgba(0,0,0,.7)";
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 4200);
+}
+
+/* ==========================================================================
+   The draw
+   --------------------------------------------------------------------------
+   Player order is drawn at random — that is what sets the fixture pairings.
+   The clubs are not drawn at all: each player steps one place along a fixed
+   ring every tournament.
+
+       ריאל → באיירן → ליברפול → סיטי → פסז → ברצלונה → ריאל
+
+   The first tournament of a season is set by hand, and from there the app
+   fills the rest in. Because the ring is a bijection, two players can never
+   land on the same club — as long as both stepped from the same tournament.
+   A player who missed it, or who held a club outside the ring, is placed from
+   what the ring left over, and the screen says so.
+   ========================================================================== */
+const CLUB_RING = ["ריאל", "באיירן", "ליברפול", "סיטי", "פסז", "ברצלונה"];
+const ringNext = name => {
+  const i = CLUB_RING.indexOf(name);
+  return i < 0 ? null : CLUB_RING[(i + 1) % CLUB_RING.length];
+};
+
+/* the tournament this one follows, within its own season */
+function prevInSeason(season, excludeId) {
+  const seq = TS.filter(t => t.season === season && t.i !== excludeId)
+                .slice().sort((a, b) => a.num - b.num);
+  return seq[seq.length - 1] || null;
+}
+
+/* Step everyone along the ring. Returns the club per player plus, for each,
+   where it came from — the briefing on screen is built straight from this. */
+function rotateClubs(players, pool, prev) {
+  const got = {}, taken = {}, note = {};
+  players.forEach(p => {
+    const from = prev && prev.teamOf[p] != null ? CLUBS[prev.teamOf[p]] : null;
+    const to = from ? ringNext(from) : null;
+    note[p] = { from, to, why: null };
+    if (!from) note[p].why = "לא שיחק בטורניר הקודם";
+    else if (!to) note[p].why = "הקבוצה הקודמת אינה במחזור";
+    else if (pool.indexOf(to) < 0) note[p].why = "הקבוצה שבתור אינה ברשימת המשחק";
+    else if (taken[to]) note[p].why = "הקבוצה שבתור כבר נתפסה";
+    else { got[p] = to; taken[to] = 1; }
+  });
+  const left = pool.filter(c => !taken[c]);
+  players.filter(p => !got[p]).forEach(p => {
+    let k = left.findIndex(c => c !== note[p].from);
+    if (k < 0) k = 0;
+    const c = left[k];
+    if (c) { got[p] = c; left.splice(k, 1); note[p].fallback = true; }
+  });
+  return { got, note };
+}
+
+
+/* ==========================================================================
+   Match odds — a Poisson goals model fitted on the whole archive
+   --------------------------------------------------------------------------
+   Each pair has an attack rate (goals scored per match) and a defence rate
+   (goals conceded), both expressed relative to the league average and shrunk
+   toward it so a pair with few games is not over-trusted. The club a pair
+   picks nudges those rates. Expected goals for a side = league average x its
+   attack x the opponent's defence; the win/draw/loss split then falls out of
+   the Poisson score grid.
+   ========================================================================== */
+let MODEL = null;
+const SHRINK = 25;      // matches of league-average evidence mixed into every rate
+const CLUB_W = 0.25;    // how much the club counts next to the pair
+
+function buildModel() {
+  const done = TS.filter(t => t.done);
+  const all = aggregate(done);
+  const mu = all.matches ? all.goals / (2 * all.matches) : 2.2;
+  const rate = (v, g) => (v + SHRINK * mu) / (g + SHRINK) / mu;
+  const pf = {}, cf = {}, vs = {};
+  Object.values(all.PAIR).forEach(p => {
+    pf[p.a + "-" + p.b] = { att: rate(p.gf, p.g), def: rate(p.ga, p.g), g: p.g, ppg: p.ppg,
+                            w: p.w, d: p.dr, l: p.l, gf: p.gf, ga: p.ga };
+  });
+  all.TEAM.forEach((t, i) => {
+    if (t.g) cf[i] = { att: rate(t.gf, t.g), def: rate(t.ga, t.g), g: t.g, name: CLUBS[i] };
+  });
+  /* how these two exact pairs have fared against each other before */
+  const side = (a, b) => Math.min(a, b) + "-" + Math.max(a, b);
+  done.forEach(t => t.m.forEach(m => {
+    const A = side(m[0], m[1]), B = side(m[3], m[4]);
+    const put = (x, y, gf, ga) => {
+      const k = x + "|" + y;
+      const r = vs[k] || (vs[k] = { g: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+      r.g++; r.gf += gf; r.ga += ga;
+      if (gf > ga) r.w++; else if (gf === ga) r.d++; else r.l++;
+    };
+    put(A, B, m[6], m[7]);
+    put(B, A, m[7], m[6]);
+  }));
+  MODEL = { mu, pf, cf, vs, matches: all.matches, rho: 1 };
+  MODEL.rho = calibrateDraw(done);
+}
+
+function poissonRow(lambda, n) {
+  const out = []; let p = Math.exp(-lambda);
+  for (let k = 0; k <= n; k++) { out.push(p); p = p * lambda / (k + 1); }
+  return out;
+}
+
+/* expected goals for both sides of any pairing, clubs included */
+function lambdasFor(h1, h2, hc, a1, a2, ac) {
+  if (!MODEL || !MODEL.matches) return null;
+  const key = (a, b) => Math.min(a, b) + "-" + Math.max(a, b);
+  const ph = MODEL.pf[key(h1, h2)], pa = MODEL.pf[key(a1, a2)];
+  if (!ph || !pa) return null;
+  const one = { att: 1, def: 1, g: 0 };
+  const ch = MODEL.cf[hc] || one, ca = MODEL.cf[ac] || one;
+  const mix = (x, c) => Math.pow(x, 1 - CLUB_W) * Math.pow(c, CLUB_W);
+  return [MODEL.mu * mix(ph.att, ch.att) * mix(pa.def, ca.def),
+          MODEL.mu * mix(pa.att, ca.att) * mix(ph.def, ch.def), ph, pa, ch, ca];
+}
+
+function rawForecast(m) {
+  const L = lambdasFor(m[0], m[1], m[2], m[3], m[4], m[5]);
+  if (!L) return null;
+  const key = (a, b) => Math.min(a, b) + "-" + Math.max(a, b);
+  const kh = key(m[0], m[1]), ka = key(m[3], m[4]);
+  const lh = L[0], la = L[1], ph = L[2], pa = L[3], ch = L[4], ca = L[5];
+  const N = 12, A = poissonRow(lh, N), B = poissonRow(la, N);
+  let w = 0, d = 0, l = 0;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const q = A[i] * B[j];
+    if (i > j) w += q; else if (i === j) d += q; else l += q;
+  }
+  return { w, d, l, lh, la, ph, pa, ch, ca, kh, ka };
+}
+
+function forecast(m) {
+  const r = rawForecast(m);
+  if (!r) return null;
+  const rho = MODEL.rho || 1;
+  const den = r.w + rho * r.d + r.l;
+  return { w: r.w / den, d: rho * r.d / den, l: r.l / den,
+           lh: r.lh, la: r.la, ph: r.ph, pa: r.pa, ch: r.ch, ca: r.ca,
+           h2h: MODEL.vs[r.kh + "|" + r.ka] || null };
+}
+
+/* one shared factor on the drawn-score diagonal, solved so the model's mean
+   draw probability equals the rate the archive actually shows */
+function calibrateDraw(done) {
+  const cells = [];
+  let draws = 0, n = 0;
+  done.forEach(t => t.m.forEach(m => {
+    n++; if (m[6] === m[7]) draws++;
+    const r = rawForecast(m);
+    if (r) cells.push([r.d, r.w + r.l]);
+  }));
+  if (!n || !cells.length) return 1;
+  const target = draws / n;
+  const mean = rho => cells.reduce((s, c) => s + rho * c[0] / (rho * c[0] + c[1]), 0) / cells.length;
+  let lo = 0.25, hi = 6;
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    if (mean(mid) < target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+const pct = x => Math.round(x * 100);
+const dec = x => (x > 0.004 ? (1 / x).toFixed(2) : "—");
+
+function oddsRow(m) {
+  const f = forecast(m);
+  if (!f) return null;
+  const row = el("div", "odds");
+  row.appendChild(el("span", "cap", "סיכויים"));
+  const bar = el("button", "oddsbar");
+  bar.title = "לחץ להסבר";
+  const w = pct(f.w), d = pct(f.d), l = 100 - pct(f.w) - pct(f.d);
+  bar.innerHTML =
+    '<i class="oh" style="flex:' + Math.max(f.w, .04) + '">' + w + "%</i>" +
+    '<i class="od" style="flex:' + Math.max(f.d, .04) + '">' + d + "%</i>" +
+    '<i class="oa" style="flex:' + Math.max(f.l, .04) + '">' + l + "%</i>";
+  bar.onclick = e => pinTip(oddsWhy(m, f), e);
+  row.appendChild(bar);
+  return row;
+}
+
+function oddsWhy(m, f) {
+  const side = (a, b) => plate(a) + " " + plate(b);
+  const tr = (k, v) => "<tr><td>" + k + '</td><td class="ltr">' + v + "</td></tr>";
+  let h = '<div class="th">הסיכויים למשחק הזה</div>';
+  h += "<table>";
+  h += tr("ניצחון " + esc(P[m[0]]) + " ו" + esc(P[m[1]]), pct(f.w) + "% · יחס " + dec(f.w));
+  h += tr("תיקו", pct(f.d) + "% · יחס " + dec(f.d));
+  h += tr("ניצחון " + esc(P[m[3]]) + " ו" + esc(P[m[4]]), pct(f.l) + "% · יחס " + dec(f.l));
+  h += tr("שערים צפויים", f.lh.toFixed(2) + " – " + f.la.toFixed(2));
+  h += "</table>";
+  h += '<div class="hint">הצמד ' + esc(P[m[0]]) + "+" + esc(P[m[1]]) + ": " +
+       f.ph.w + "-" + f.ph.d + "-" + f.ph.l + " ב־" + f.ph.g + " משחקים, " +
+       f2(f.ph.gf / Math.max(1, f.ph.g)) + " שערים ו־" + f2(f.ph.ga / Math.max(1, f.ph.g)) + " ספיגות למשחק.<br>" +
+       "הצמד " + esc(P[m[3]]) + "+" + esc(P[m[4]]) + ": " +
+       f.pa.w + "-" + f.pa.d + "-" + f.pa.l + " ב־" + f.pa.g + " משחקים, " +
+       f2(f.pa.gf / Math.max(1, f.pa.g)) + " שערים ו־" + f2(f.pa.ga / Math.max(1, f.pa.g)) + " ספיגות למשחק." +
+       (f.h2h && f.h2h.g
+         ? "<br>הצמדים האלה נפגשו " + f.h2h.g + " פעמים: " + f.h2h.w + " נצחונות, " +
+           f.h2h.d + " תיקו, " + f.h2h.l + " הפסדים לצמד הבית."
+         : "<br>הצמדים האלה טרם נפגשו.") +
+       "<br>הקבוצות " + esc(CLUBS[m[2]]) + " ו" + esc(CLUBS[m[5]]) +
+       " משנות את התחזית במשקל של רבע מול הצמדים." +
+       "<br>המודל בנוי על " + nf(MODEL.matches) + " המשחקים שנרשמו עד היום, מכל העונות, " +
+       "ומכויל כך ששיעור התיקו שהוא חוזה שווה לשיעור התיקו שקרה בפועל.</div>";
+  return h;
+}
+
+function oddsKey() {
+  return el("div", "oddskey",
+    '<span><i style="background:#1C7C8C"></i><b>ניצחון בית</b> (הצמד מימין)</span>' +
+    '<span><i style="background:#39424B"></i><b>תיקו</b></span>' +
+    '<span><i style="background:#A8601A"></i><b>ניצחון חוץ</b> (הצמד משמאל)</span>' +
+    '<span class="mut">לחיצה על הפס פותחת את החישוב</span>');
+}
+
+/* ==========================================================================
+   Tournament simulation — who reaches the final four, and who lifts it
+   ========================================================================== */
+
+/* seeded xorshift: the same tournament state always yields the same numbers */
+function rng(seed) {
+  let x = seed | 0 || 123456789;
+  return () => {
+    x ^= x << 13; x |= 0; x ^= x >>> 17; x ^= x << 5; x |= 0;
+    return ((x >>> 0) % 100000) / 100000;
+  };
+}
+function seedOf(t) {
+  let h = 2166136261 ^ t.i;
+  t.m.forEach(m => { h = Math.imul(h ^ ((m[6] == null ? 99 : m[6]) * 31 + (m[7] == null ? 99 : m[7])), 16777619); });
+  return h >>> 0;
+}
+function samplePoisson(lambda, rnd) {
+  const L = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do { k++; p *= rnd(); } while (p > L && k < 40);
+  return k - 1;
+}
+
+/* the final's two legs, as expected goals, for the newsroom preview */
+function finalLegLambdas(t, tb) {
+  const A = lambdasFor(tb[2], tb[3], t.teamOf[tb[3]], tb[0], tb[1], t.teamOf[tb[1]]);
+  const B = lambdasFor(tb[0], tb[1], t.teamOf[tb[0]], tb[2], tb[3], t.teamOf[tb[2]]);
+  return [A, B];
+}
+
+/* `force` optionally pins the first unplayed fixture to an outcome
+   ("h" | "d" | "a") so we can ask what one result would be worth */
+function simulate(t, iters, force, seed) {
+  if (!MODEL || !MODEL.matches) return null;
+  /* `force` is "h"|"d"|"a" for the next open fixture, or {o, at} to pin one
+     particular fixture. `seed` pins the stream, so two runs of neighbouring
+     states differ because of the football and not because of the dice. */
+  const fo = typeof force === "string" ? { o: force, at: -1 } : (force || null);
+  const players = t.players;
+  const base = {};
+  players.forEach(p => { base[p] = { pts: 0, gf: 0, ga: 0 }; });
+  const open = [];
+  t.m.forEach((m, mi) => {
+    if (m[6] != null && m[7] != null) {
+      addResult(base, m, m[6], m[7]);
+    } else {
+      const f = rawForecast(m);
+      open.push({ m, at: mi, lh: f ? f.lh : MODEL.mu, la: f ? f.la : MODEL.mu });
+    }
+  });
+  if (fo && fo.at >= 0 && !open.some(o => o.at === fo.at)) return null;   // already played
+  const out = {};
+  players.forEach(p => { out[p] = { place: [0,0,0,0,0,0], top4: 0, title: 0, first: 0 }; });
+  const rnd = rng((seed != null ? seed : seedOf(t)) +
+                  (fo ? fo.o.charCodeAt(0) * 7919 + (fo.at + 2) * 104729 : 0));
+  for (let it = 0; it < iters; it++) {
+    const acc = {};
+    players.forEach(p => { acc[p] = { pts: base[p].pts, gf: base[p].gf, ga: base[p].ga }; });
+    open.forEach((o, oi) => {
+      let hg, ag;
+      if (fo && (fo.at < 0 ? oi === 0 : o.at === fo.at)) {
+        do { hg = samplePoisson(o.lh, rnd); ag = samplePoisson(o.la, rnd); }
+        while (!((fo.o === "h" && hg > ag) || (fo.o === "d" && hg === ag) || (fo.o === "a" && ag > hg)));
+      } else {
+        hg = samplePoisson(o.lh, rnd); ag = samplePoisson(o.la, rnd);
+      }
+      addResult(acc, o.m, hg, ag);
+    });
+    const order = players.slice().sort((a, b) =>
+      acc[b].pts - acc[a].pts ||
+      (acc[b].gf - acc[b].ga) - (acc[a].gf - acc[a].ga) ||
+      acc[b].gf - acc[a].gf);
+    order.forEach((p, i) => { if (i < 6) out[p].place[i]++; if (i < 4) out[p].top4++; });
+    out[order[0]].first++;
+    if (order.length >= 4) {
+      const A = lambdasFor(order[2], order[3], t.teamOf[order[3]],
+                           order[0], order[1], t.teamOf[order[1]]);
+      const B = lambdasFor(order[0], order[1], t.teamOf[order[0]],
+                           order[2], order[3], t.teamOf[order[2]]);
+      let topG, botG;
+      if (A && B) {
+        const l1h = samplePoisson(A[0], rnd), l1a = samplePoisson(A[1], rnd);
+        const l2h = samplePoisson(B[0], rnd), l2a = samplePoisson(B[1], rnd);
+        topG = l1a + l2h; botG = l1h + l2a;
+      } else { topG = 0; botG = 0; }
+      const top = topG > botG || (topG === botG && rnd() < 0.5);
+      const win = top ? [order[0], order[1]] : [order[2], order[3]];
+      win.forEach(p => out[p].title++);
+    }
+  }
+  players.forEach(p => {
+    const o = out[p];
+    o.top4 /= iters; o.title /= iters; o.first /= iters;
+    o.place = o.place.map(c => c / iters);
+  });
+  return out;
+}
+
+function addResult(acc, m, hg, ag) {
+  const dw = hg === ag, hp = dw ? 1 : hg > ag ? 3 : 0, ap = dw ? 1 : ag > hg ? 3 : 0;
+  [[[m[0], m[1]], hg, ag, hp], [[m[3], m[4]], ag, hg, ap]].forEach(([duo, gf, ga, pts]) => {
+    duo.forEach(p => { const a = acc[p]; a.pts += pts; a.gf += gf; a.ga += ga; });
+  });
+}
+
+/* ==========================================================================
+   The timeline: the tournament at every stage it passed through
+   --------------------------------------------------------------------------
+   Standings are derived and never stored, so the tournament after N matches
+   is simply the same tournament with the later results blanked out. Running
+   the simulation at each stage, all from one pinned seed, gives the road to
+   the final as it looked at that moment — and the difference between two
+   consecutive stages is exactly what that one result was worth.
+   ========================================================================== */
+const scoreSig = t => t.i + ":" + t.m.map(m =>
+  (m[6] == null ? "-" : m[6]) + "." + (m[7] == null ? "-" : m[7])).join(",");
+
+function snapshotAt(t, k) {
+  return decorate({
+    i: t.i, num: t.num, season: t.season,
+    d: t.d.map(x => x.slice()), t: null,
+    m: t.m.map((row, i) => i < k ? row.slice() : row.slice(0, 6).concat([null, null])),
+    c: [], rec: { i: t.i, scores: [] }, snap: true
+  });
+}
+
+const TLC = {};
+function timelineOf(t) {
+  const sig = scoreSig(t);
+  if (TLC[sig]) return TLC[sig];
+  const played = t.m.filter(m => m[6] != null && m[7] != null).length;
+  const seed = (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0;
+  const stages = [];
+  for (let k = 0; k <= played; k++) {
+    const s = snapshotAt(t, k);
+    stages.push({ k, t: s, sim: simulate(s, 2500, null, seed), swing: 0, mover: null, moved: 0 });
+  }
+  for (let k = 1; k < stages.length; k++) {
+    const a = stages[k - 1].sim, b = stages[k].sim;
+    if (!a || !b) continue;
+    let tv = 0, best = null, bestD = 0;
+    t.players.forEach(p => {
+      const dd = b[p].top4 - a[p].top4;
+      tv += Math.abs(dd);
+      if (Math.abs(dd) > Math.abs(bestD)) { bestD = dd; best = p; }
+    });
+    stages[k].swing = tv / 2; stages[k].mover = best; stages[k].moved = bestD;
+  }
+  const peak = stages.slice(1).sort((x, y) => y.swing - x.swing)[0] || null;
+  const out = { stages, peak, played };
+  if (Object.keys(TLC).length > 24) for (const k in TLC) delete TLC[k];
+  TLC[sig] = out;
+  return out;
+}
+
+/* What one result is worth: how far the road to the final moves between the
+   three possible outcomes of a single fixture, everything else simulated. */
+const GRV = {};
+function gravityOf(t) {
+  const sig = scoreSig(t);
+  if (GRV[sig]) return GRV[sig];
+  const map = {};
+  const openIdx = [];
+  t.m.forEach((m, i) => { if (m[6] == null || m[7] == null) openIdx.push(i); });
+  if (MODEL && MODEL.matches && openIdx.length && openIdx.length <= 8) {
+    const seed = (Math.imul(t.i, 40503) + 7) >>> 0;
+    openIdx.forEach(i => {
+      const m = t.m[i];
+      const H = simulate(t, 1500, { o: "h", at: i }, seed);
+      const D = simulate(t, 1500, { o: "d", at: i }, seed);
+      const A = simulate(t, 1500, { o: "a", at: i }, seed);
+      if (!H || !D || !A) return;
+      const inv = [m[0], m[1], m[3], m[4]];
+      let top = null;
+      inv.forEach(p => {
+        const v = [H[p].top4, D[p].top4, A[p].top4];
+        const spread = Math.max.apply(null, v) - Math.min.apply(null, v);
+        if (!top || spread > top.spread) top = { p, spread, v };
+      });
+      map[i] = { i, p: top.p, v: top.v, spread: top.spread,
+                 all: inv.map(p => ({ p, h: H[p].top4, d: D[p].top4, a: A[p].top4 })) };
+    });
+  }
+  const list = Object.keys(map).map(k => map[k]).sort((a, b) => b.spread - a.spread);
+  const out = { map, top: list[0] || null };
+  if (Object.keys(GRV).length > 24) for (const k in GRV) delete GRV[k];
+  GRV[sig] = out;
+  return out;
+}
+
+function gravityWhy(t, g) {
+  const m = t.m[g.i];
+  let h = '<div class="th">מה כל תוצאה שווה</div><table>';
+  h += "<tr><td></td><td>" + esc(P[m[0]]) + "+" + esc(P[m[1]]) + "</td><td>תיקו</td><td>" +
+       esc(P[m[3]]) + "+" + esc(P[m[4]]) + "</td></tr>";
+  g.all.forEach(r => {
+    h += "<tr><td>" + esc(P[r.p]) + '</td><td class="ltr">' + pct(r.h) + '%</td><td class="ltr">' +
+         pct(r.d) + '%</td><td class="ltr">' + pct(r.a) + "%</td></tr>";
+  });
+  h += "</table><div class=\"hint\">הסיכוי של כל אחד מארבעת המשתתפים לסיים בארבעה הראשונים " +
+       "ולעלות לגמר, בהינתן כל אחת משלוש התוצאות. שאר המשחקים שטרם נוצחו מוגרלים " +
+       "לפי המודל, " + nf(MODEL ? MODEL.matches : 0) + " משחקים.</div>";
+  return h;
+}
+
+/* Which of the three outcomes is best and worst for the player who has the
+   most riding on the match, named by the pair rather than by screen side. */
+function outcomeName(t, i, o) {
+  const m = t.m[i];
+  if (o === "d") return "תיקו";
+  return o === "h" ? "ניצחון של " + esc(P[m[0]]) + " ו" + esc(P[m[1]])
+                   : "ניצחון של " + esc(P[m[3]]) + " ו" + esc(P[m[4]]);
+}
+function gravityWords(t, g) {
+  const opts = [{ o: "h", v: g.v[0] }, { o: "d", v: g.v[1] }, { o: "a", v: g.v[2] }]
+    .sort((a, b) => b.v - a.v);
+  const best = opts[0], worst = opts[opts.length - 1];
+  return "ל" + esc(P[g.p]) + ": " +
+    (best.v >= 0.995 ? outcomeName(t, g.i, best.o) + " מבטיח לו את הגמר"
+                     : outcomeName(t, g.i, best.o) + ' מעלה אותו ל־<span class="ltr">' +
+                       pct(best.v) + "%</span> לגמר") + ", " +
+    (worst.v <= 0.005 ? outcomeName(t, g.i, worst.o) + " מוציא אותו."
+                      : outcomeName(t, g.i, worst.o) + ' מוריד אותו ל־<span class="ltr">' +
+                        pct(worst.v) + "%</span>.");
+}
+
+function gravityLine(t, g) {
+  const hot = g.spread >= 0.34;
+  const d = el("button", "gravity" + (hot ? " hot" : ""));
+  d.innerHTML = '<span class="gk">' + (hot ? "🔥 משחק גורלי" : "משחק חשוב") +
+    "</span><span>" + gravityWords(t, g) + "</span>";
+  d.title = "לחץ לפירוט מלא";
+  d.onclick = e => pinTip(gravityWhy(t, g), e);
+  return d;
+}
+
+function paintGravity(t) {
+  if (!t) return;
+  const g = gravityOf(t);
+  Object.keys(g.map).forEach(k => {
+    const info = g.map[k];
+    const fx = document.querySelector('[data-fx="' + t.i + "-" + k + '"]');
+    if (!fx) return;
+    const old = fx.querySelector(".gravity");
+    if (old) old.remove();
+    if (info.spread < 0.18) return;
+    fx.appendChild(gravityLine(t, info));
+  });
+}
+
+/* Both are expensive enough to keep off the keystroke path: clear at once,
+   recompute a moment after the typing settles. */
+let insightTimer = null;
+function scheduleInsights(t) {
+  clearTimeout(insightTimer);
+  document.querySelectorAll(".gravity").forEach(n => n.remove());
+  insightTimer = setTimeout(() => {
+    step("insights", () => {
+      paintGravity(t);
+      const host = document.getElementById("tlHost");
+      if (host) fillTimeline(t, host);
+    });
+  }, 320);
+}
+
+/* ---------- the timeline, on screen ---------- */
+function timelineBlock(t) {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>ציר הטורניר</h2>' +
+    '<span class="note">לחיצה על נקודה מציגה את הטבלה כפי שהייתה באותו רגע. ' +
+    'גובה העמוד הוא כמה אותו משחק הזיז את סיכויי העלייה.</span></div>';
+  const host = el("div");
+  host.id = "tlHost";
+  host.appendChild(el("div", "mut", "מחשב את הציר…"));
+  sec.appendChild(host);
+  /* paint the panel first, then compute — the strip is worth ~100ms */
+  setTimeout(() => step("timeline", () => fillTimeline(t, host)), 0);
+  return sec;
+}
+
+function fillTimeline(t, host) {
+  const tl = timelineOf(t);
+  host.innerHTML = "";
+  if (tl.played < 1) { host.appendChild(el("div", "mut", "הציר ייפתח אחרי המשחק הראשון.")); return; }
+  const maxSw = Math.max(0.02, ...tl.stages.slice(1).map(s => s.swing));
+  const strip = el("div", "tline");
+  const detail = el("div", "tldetail");
+  const select = k => {
+    strip.querySelectorAll(".tnode").forEach(n =>
+      n.setAttribute("aria-pressed", String(Number(n.getAttribute("data-k")) === k)));
+    tlStage(t, tl, k, detail);
+  };
+  tl.stages.forEach((s, k) => {
+    const m = k > 0 ? t.m[k - 1] : null;
+    const b = el("button", "tnode" + (k === 0 ? " zero" : ""));
+    b.setAttribute("data-k", String(k));
+    b.innerHTML = '<i class="sw" style="height:' + Math.round(3 + 25 * (s.swing || 0) / maxSw) + 'px"></i>' +
+      "<b>" + (m ? scoreTxt(m[6], m[7]) : "—") + "</b>" +
+      '<span class="n">' + (k === 0 ? "פתיחה" : k) + "</span>";
+    b.title = k === 0 ? "לפני המשחק הראשון"
+                      : "משחק " + k + " · הזיז " + pct(s.swing) + " נקודות אחוז";
+    b.onclick = () => select(k);
+    strip.appendChild(b);
+  });
+  for (let k = tl.played; k < t.m.length; k++) {
+    strip.appendChild(el("div", "tnode future",
+      '<i class="sw" style="height:3px"></i><b>—</b><span class="n">' + (k + 1) + "</span>"));
+  }
+  host.appendChild(strip);
+  if (tl.peak && tl.peak.swing >= 0.05 && tl.peak.mover != null) host.appendChild(peakCard(t, tl, select));
+  host.appendChild(detail);
+  select(tl.played);
+}
+
+function peakCard(t, tl, select) {
+  const s = tl.peak, m = t.m[s.k - 1], p = s.mover;
+  const before = tl.stages[s.k - 1].sim[p].top4, after = s.sim[p].top4;
+  const card = el("button", "peakcard");
+  card.innerHTML = '<span class="lbl">רגע השיא</span>' +
+    "<div><b>משחק " + s.k + "</b> · " + esc(P[m[0]]) + " ו" + esc(P[m[1]]) + " " +
+      scoreTxt(m[6], m[7]) + " " + esc(P[m[3]]) + " ו" + esc(P[m[4]]) + "</div>" +
+    "<div>" + plate(p) + " " + (after >= before ? "קפץ" : "צנח") + ' מ־<b class="ltr">' + pct(before) +
+      '%</b> ל־<b class="ltr">' + pct(after) + "%</b> סיכוי לעלות לגמר — התזוזה הגדולה בטורניר.</div>";
+  card.title = "לחץ כדי לראות את הטבלה מיד אחרי המשחק הזה";
+  card.onclick = () => select(s.k);
+  return card;
+}
+
+function tlStage(t, tl, k, host) {
+  host.innerHTML = "";
+  const cur = tl.stages[k], prev = k > 0 ? tl.stages[k - 1] : null;
+  if (k > 0) {
+    const m = t.m[k - 1];
+    host.appendChild(el("div", "tlmatch",
+      '<span class="mn">' + k + "</span>" +
+      "<span>" + plate(m[0]) + " " + plate(m[1]) + " " + clubTag(m[2]) + "</span>" +
+      '<span class="sc">' + scoreTxt(m[6], m[7]) + "</span>" +
+      "<span>" + plate(m[3]) + " " + plate(m[4]) + " " + clubTag(m[5]) + "</span>"));
+  } else {
+    host.appendChild(el("div", "tlmatch", '<span class="mut">לפני המשחק הראשון — כולם על אפס.</span>'));
+  }
+  const box = el("div", "tscroll fit");
+  const tb = el("table", "sttbl");
+  tb.innerHTML = "<thead><tr><th>#</th><th>שחקן</th><th>קבוצה</th>" +
+    '<th class="c-num">נק׳</th><th class="c-num">הפרש</th><th class="c-num">סיכוי לגמר</th></tr></thead>';
+  const bd = el("tbody");
+  cur.t.table.forEach((p, i) => {
+    const a = cur.t.acc[p], gd = a.gf - a.ga;
+    const mv = prev ? prev.t.place[p] - (i + 1) : 0;
+    const tr = el("tr", i < 4 ? "qual" : "");
+    tr.innerHTML =
+      '<td class="rank">' + (i + 1) +
+        (mv ? '<i class="mvar ' + (mv > 0 ? "up" : "down") + '">' + (mv > 0 ? "▲" : "▼") + "</i>" : "") + "</td>" +
+      "<td>" + plate(p) + "</td>" +
+      "<td>" + clubTag(cur.t.teamOf[p]) + "</td>" +
+      '<td class="c-num strong">' + a.pts + "</td>" +
+      '<td class="c-num ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</td>" +
+      '<td class="c-num">' + (cur.sim ? pct(cur.sim[p].top4) + "%" : "—") + "</td>";
+    bd.appendChild(tr);
+  });
+  tb.appendChild(bd); box.appendChild(tb); host.appendChild(box);
+}
+
+/* ==========================================================================
+   Newsroom copy
+   ========================================================================== */
+const ordHe = ["הראשון", "השני", "השלישי", "הרביעי", "החמישי", "השישי"];
+
+function nextFixture(t) {
+  for (let i = 0; i < t.m.length; i++) if (t.m[i][6] == null || t.m[i][7] == null) return { m: t.m[i], i };
+  return null;
+}
+function lastPlayed(t) {
+  for (let i = t.m.length - 1; i >= 0; i--) if (t.m[i][6] != null && t.m[i][7] != null) return { m: t.m[i], i };
+  return null;
+}
+function clubQuality(t) {
+  return t.players.map(p => {
+    const ci = t.teamOf[p], T = TEAM[ci] || { g: 0, ppg: 0 };
+    const f = MODEL.cf[ci] || { att: 1, def: 1, g: 0 };
+    return { p, ci, name: CLUBS[ci], ppg: T.ppg || 0, g: T.g || 0, att: f.att, def: f.def,
+             index: f.att / f.def };
+  }).sort((a, b) => b.ppg - a.ppg || b.index - a.index);   // sort by the number shown
+}
+
+function copyText(txt, btn) {
+  const done = ok => {
+    btn.textContent = ok ? "הועתק ✓" : "לא ניתן להעתיק";
+    setTimeout(() => { btn.textContent = "העתק"; }, 1800);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(() => done(true), () => fallback());
+  } else fallback();
+  function fallback() {
+    const ta = el("textarea");
+    ta.value = txt;
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    ta.remove();
+    done(ok);
+  }
+}
+
+function story(tag, head, bodyHtml, plain, hero) {
+  const c = el("article", "story" + (hero ? " hero" : ""));
+  c.innerHTML = '<div class="stag">' + esc(tag) + "</div>" +
+    '<h3 class="shead">' + head + "</h3>" +
+    '<div class="sbody">' + bodyHtml + "</div>";
+  if (plain) {
+    const b = el("button", "btn ghost sm", "העתק");
+    b.onclick = () => copyText(plain, b);
+    const foot = el("div", "sfoot");
+    foot.appendChild(b);
+    c.appendChild(foot);
+  }
+  return c;
+}
+
+/* ==========================================================================
+   LIVE view — create, draw, play, crown
+   ========================================================================== */
+let draft = null;   // {size, players:[], clubs:[], slots:[]}  before it is saved
+let liveId = null;  // which stored tournament is open
+
+function viewLive(root) {
+  root.innerHTML = "";
+  const open = liveId != null ? LIVE[liveId] : null;
+
+  const bar = el("section", "block");
+  const bh = el("div", "bhead");
+  bh.innerHTML = '<h2>חדר הבקרה</h2><span class="note">' +
+    "כל תוצאה נשמרת תוך כדי הקלדה. שורת המצב למטה אומרת אם השמירה הצליחה.</span>";
+  bar.appendChild(bh);
+
+  const sb = el("div", "notice savebar");
+  sb.id = "saveStatus";
+  bar.appendChild(sb);
+
+  const row = el("div", "chips");
+  const bNew = el("button", "btn", "＋ טורניר חדש");
+  bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
+  row.appendChild(bNew);
+  Object.values(LIVE).filter(t => SCOPE === "all" || t.season === SCOPE)
+    .sort((a, b) => b.i - a.i).forEach(t => {
+    const c = el("button", "chip", "טורניר " + t.num + (t.done ? " ✓" : " · בעיצומו"));
+    c.setAttribute("aria-pressed", String(liveId === t.i));
+    c.onclick = () => { draft = null; liveId = t.i; viewLive(root); };
+    row.appendChild(c);
+  });
+  bar.appendChild(row);
+  root.appendChild(bar);
+  Store.paint();
+
+  if (draft) { root.appendChild(draftPanel()); return; }
+  if (open) { root.appendChild(livePanel(open)); return; }
+  root.appendChild(idlePanel());
+}
+
+function idlePanel() {
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>איך זה עובד</h2></div>';
+  const g = el("div", "recs");
+  [["1 · הרכב", "בוחרים מי משחק — חמישה או שישה."],
+   ["2 · הגרלה", "סדר השחקנים נקבע אקראית — הוא שקובע את זוגות המשחקים. הקבוצות לא מוגרלות: כל אחד מתקדם צעד אחד במחזור הקבוע."],
+   ["2ב · מחזור הקבוצות", "ריאל ← באיירן ← ליברפול ← סיטי ← פסז ← ברצלונה ← ריאל. בטורניר הראשון של כל עונה בוחרים ידנית, ומשם זה אוטומטי — ותמיד ניתן לשינוי."],
+   ["3 · לוח משחקים", "נוצר אוטומטית מתבנית הקבועה — 12 משחקים לשישה, 10 לחמישה."],
+   ["4 · גמר", "ארבעת הראשונים עולים. צמד 1–2 מול צמד 3–4, והזוכה נכנס לארכיון."]
+  ].forEach(([k, v]) => g.appendChild(el("div", "rec", '<div class="lbl">' + esc(k) + '</div><div class="d" style="font-size:13.5px">' + esc(v) + "</div>")));
+  b.appendChild(g);
+  b.appendChild(seasonManager());
+  b.appendChild(clubManager());
+  return b;
+}
+
+function startDraft(size) {
+  const base = ORDER.slice(0, size);
+  draft = { size, players: base.slice(), clubs: CLUB_POOL.slice(0, size), slots: null, blocked: null, relaxed: false };
+  go("live");
+}
+
+function draftPanel() {
+  const wrap = el("section", "block");
+  const season = activeSeason();
+  const num = nextNum(season);
+  const id = uid(season, num);
+  wrap.innerHTML = '<div class="bhead"><h2>טורניר ' + num + ' · הגרלה</h2>' +
+    '<span class="note">' + esc(seasonById(season).name) +
+    ' · בוחרים הרכב וקבוצות, ואז מריצים את ההגרלה.</span></div>';
+
+  /* format */
+  const fmt = el("div", "chips");
+  fmt.style.alignItems = "center";
+  fmt.appendChild(el("span", "lbl", "פורמט"));
+  [6, 5].forEach(n => {
+    const c = el("button", "chip", n + " שחקנים");
+    c.setAttribute("aria-pressed", String(draft.size === n));
+    c.onclick = () => {
+      draft.size = n; draft.slots = null;
+      draft.players = draft.players.slice(0, n);
+      while (draft.players.length < n) { const cand = ORDER.find(p => !draft.players.includes(p)); draft.players.push(cand); }
+      draft.clubs = CLUB_POOL.slice(0, n);
+      viewLive(document.getElementById("v-live"));
+    };
+    fmt.appendChild(c);
+  });
+  wrap.appendChild(fmt);
+
+  /* participants */
+  const pl = el("div", "chips");
+  pl.appendChild(el("span", "lbl", "משתתפים " + draft.players.length + "/" + draft.size));
+  ORDER.forEach(p => {
+    const on = draft.players.includes(p);
+    const c = el("button", "chip", '<i class="dot" style="background:' + PC(p) + '"></i>' + esc(P[p]));
+    c.setAttribute("aria-pressed", String(on));
+    c.onclick = () => {
+      if (on) {
+        draft.players = draft.players.filter(x => x !== p);
+      } else if (draft.players.length >= draft.size) {
+        return flash("כבר נבחרו " + draft.size + " משתתפים — הסר אחד ואז הוסף");
+      } else {
+        draft.players.push(p);
+      }
+      draft.slots = null; viewLive(document.getElementById("v-live"));
+    };
+    pl.appendChild(c);
+  });
+  wrap.appendChild(pl);
+
+  /* clubs in play */
+  const cl = el("div", "chips");
+  cl.appendChild(el("span", "lbl", "קבוצות במשחק " + draft.clubs.length + "/" + draft.size));
+  CLUB_POOL.forEach(name => {
+    const on = draft.clubs.includes(name);
+    const c = el("button", "chip", '<i class="cdot" style="width:9px;height:9px;border-radius:50%;background:' + clubCol(name) + '"></i>' + esc(name));
+    c.setAttribute("aria-pressed", String(on));
+    c.onclick = () => {
+      if (on) draft.clubs = draft.clubs.filter(x => x !== name);
+      else if (draft.clubs.length >= draft.size) return flash("כבר נבחרו " + draft.size + " קבוצות — הסר אחת ואז הוסף");
+      else draft.clubs.push(name);
+      draft.slots = null; viewLive(document.getElementById("v-live"));
+    };
+    cl.appendChild(c);
+  });
+  wrap.appendChild(cl);
+
+  /* where each club comes from this time */
+  const prev = prevInSeason(season, id);
+  const manual = !prev;
+  const rot = manual ? null : rotateClubs(draft.players, draft.clubs, prev);
+  const brief = el("div", "panel");
+  brief.style.padding = "12px 15px";
+  if (manual) {
+    brief.innerHTML = '<div class="lbl">טורניר ראשון בעונה · בחירה ידנית</div>' +
+      '<div style="margin-top:7px;font-size:13px;color:var(--ink2);line-height:1.6">' +
+      "בעונה הזאת עוד לא שוחק טורניר, ולכן אין ממה להתקדם במחזור. " +
+      "אחרי ההגרלה בחר קבוצה לכל שחקן — ומהטורניר הבא הן ייקבעו לבד." +
+      '</div><div class="ringline" style="margin-top:9px">' +
+      CLUB_RING.map(c => '<span class="club" style="--c:' + clubCol(c) + '"><i class="cdot"></i>' + esc(c) + "</span>")
+        .join('<span class="mut">←</span>') + '<span class="mut">← חוזר לתחילת המחזור</span></div>';
+  } else {
+    brief.innerHTML = '<div class="lbl">מחזור הקבוצות · המשך מטורניר ' + prev.num + " של " +
+      esc(seasonById(prev.season).name) + "</div>" +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:9px">' +
+      draft.players.map(p => {
+        const nn = rot.note[p];
+        return '<div class="blocked">' + plate(p) +
+          (nn.from ? '<span class="mut">' + esc(nn.from) + "</span><span class=\"mut\">←</span>" : "") +
+          (rot.got[p] ? "<b>" + esc(rot.got[p]) + "</b>" : '<span class="mut">—</span>') +
+          (nn.why ? '<span class="mut" style="opacity:.75">(' + esc(nn.why) + ")</span>" : "") + "</div>";
+      }).join("") + "</div>";
+  }
+  wrap.appendChild(brief);
+
+  /* the ceremony */
+  const potWrap = el("div", "pots");
+  potWrap.id = "pots";
+  const n = draft.size;
+  for (let i = 0; i < n; i++) {
+    const pot = el("div", "pot empty");
+    pot.innerHTML = '<div class="slot">מקום ' + (i + 1) + '</div><div class="who">—</div><div class="got"></div>';
+    potWrap.appendChild(pot);
+  }
+  wrap.appendChild(potWrap);
+
+  const acts = el("div", "chips");
+  const ready = draft.players.length === draft.size && draft.clubs.length === draft.size;
+  const bDraw = el("button", "btn", ready ? "בצע הגרלה" :
+    "בחר " + draft.size + " משתתפים ו־" + draft.size + " קבוצות");
+  bDraw.disabled = !ready;
+  const bSave = el("button", "btn ghost", "פתח את הטורניר");
+  bSave.disabled = true;
+  acts.append(bDraw, bSave);
+  const bCancel = el("button", "btn ghost", "ביטול");
+  bCancel.onclick = () => { draft = null; viewLive(document.getElementById("v-live")); };
+  acts.appendChild(bCancel);
+  wrap.appendChild(acts);
+
+  const relax = el("div", "notice warn"); relax.hidden = true; wrap.appendChild(relax);
+
+  bDraw.onclick = () => {
+    if (draft.players.length !== draft.size) return flash("צריך בדיוק " + draft.size + " משתתפים");
+    if (draft.clubs.length !== draft.size) return flash("צריך בדיוק " + draft.size + " קבוצות");
+    const slots = shuffle(draft.players.slice());
+    /* only the order is drawn; the clubs follow the ring, or wait for a choice */
+    const r2 = manual ? null : rotateClubs(slots, draft.clubs, prev);
+    draft.slots = slots;
+    draft.assigned = manual ? draft.clubs.slice() : slots.map(p => r2.got[p]);
+    draft.manual = manual;
+    draft.note = r2 ? r2.note : null;
+    const odd = r2 ? slots.filter(p => r2.note[p].fallback) : [];
+    relax.hidden = !odd.length;
+    if (odd.length) relax.innerHTML = "<b>שימו לב</b> " +
+      odd.map(p => esc(P[p])).join(", ") + " לא יכלו להתקדם במחזור " +
+      "(" + esc(r2.note[odd[0]].why || "") + "), וקיבלו את מה שנשאר. אפשר לשנות למטה.";
+    runCeremony(potWrap, slots, manual ? slots.map(() => null) : draft.assigned,
+      () => { bSave.disabled = false; renderAssign(); });
+  };
+
+  const assignHost = el("div"); wrap.appendChild(assignHost);
+  function renderAssign() {
+    assignHost.innerHTML = "";
+    const b = el("section", "block");
+    b.innerHTML = '<div class="bhead"><h2>' + (draft.manual ? "בחירת הקבוצות" : "הקבוצות לפי המחזור") +
+      '</h2><span class="note">' + (draft.manual
+        ? "טורניר ראשון בעונה — בחר קבוצה לכל שחקן. מהטורניר הבא המחזור ימלא אותן לבד."
+        : "כל שחקן קיבל את הקבוצה הבאה במחזור. אפשר לשנות — ההחלפה מחליפה בין השניים כדי שלא תהיה כפילות.") +
+      "</span></div>";
+    const box = el("div", "tscroll fit");
+    const tb = el("table");
+    tb.innerHTML = "<thead><tr><th>מקום</th><th>שחקן</th><th>קבוצה</th></tr></thead>";
+    const body = el("tbody");
+    draft.slots.forEach((p, i) => {
+      const tr = el("tr");
+      tr.innerHTML = '<td class="rank">' + (i + 1) + "</td><td>" + plate(p) + "</td>";
+      const td = el("td");
+      td.appendChild(clubSelect(draft.assigned[i], v => {
+        const j = draft.assigned.indexOf(v);
+        if (j >= 0 && j !== i) draft.assigned[j] = draft.assigned[i];
+        draft.assigned[i] = v; renderAssign();
+      }));
+      const nn = draft.note && draft.note[p];
+      if (nn && nn.from) {
+        const onRing = draft.assigned[i] === ringNext(nn.from);
+        td.appendChild(el("span", "mut", onRing
+          ? " · " + nn.from + " ← " + draft.assigned[i]
+          : " ⚠ חריגה מהמחזור (היה " + nn.from + ", בתור " + (ringNext(nn.from) || "—") + ")"));
+      }
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); box.appendChild(tb); b.appendChild(box);
+    assignHost.appendChild(b);
+  }
+
+  bSave.onclick = () => {
+    const rec = { i: id, s: season, n: num, tpl: String(draft.size), slots: draft.slots.slice(),
+                  clubs: draft.assigned.slice(),
+                  scores: TPL[String(draft.size)].map(() => [null, null]), champs: [] };
+    LIVE[id] = hydrate(rec);
+    draft = null; liveId = id;
+    rebuild(); refreshChrome(); refreshLive();
+    Store.saveT(LIVE[id]);
+    publishBulletin(LIVE[id]);
+    flash("טורניר " + num + " נפתח");
+  };
+
+  return wrap;
+}
+
+function clubSelect(value, onChange) {
+  const s = el("select");
+  const names = Array.from(new Set(CLUB_POOL.concat(CLUBS).concat([value]).filter(Boolean)));
+  names.forEach(n => { const o = el("option", null, esc(n)); o.value = n; if (n === value) o.selected = true; s.appendChild(o); });
+  s.onchange = () => onChange(s.value);
+  return s;
+}
+
+function runCeremony(host, slots, clubs, done) {
+  const pots = Array.from(host.children);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  pots.forEach(p => { p.className = "pot empty"; p.querySelector(".who").textContent = "—"; p.querySelector(".got").innerHTML = ""; });
+  if (reduce) {
+    slots.forEach((p, i) => paint(i, p, clubs[i]));
+    done(); return;
+  }
+  let i = 0;
+  (function step() {
+    if (i >= slots.length) { done(); return; }
+    const pot = pots[i], who = pot.querySelector(".who");
+    pot.className = "pot rolling";
+    let ticks = 0;
+    const spin = setInterval(() => {
+      who.textContent = P[slots[(ticks * 3 + i) % slots.length]];
+      if (++ticks > 7) {
+        clearInterval(spin);
+        paint(i, slots[i], clubs[i]);
+        pot.classList.add("reveal");
+        i++; setTimeout(step, 210);
+      }
+    }, 55);
+  })();
+  function paint(i, p, club) {
+    const pot = pots[i];
+    pot.className = "pot";
+    pot.style.setProperty("--c", PC(p));
+    pot.querySelector(".who").textContent = P[p];
+    pot.querySelector(".got").innerHTML = club ? clubTag(clubIdx(club)) : "";
+    if (!pot.querySelector(".bar")) pot.appendChild(el("i", "bar"));
+  }
+}
+
+/* ---------- an open tournament ---------- */
+function livePanel(t) {
+  const box = el("div", "view");
+  const tplKey = t.rec.tpl, fixtures = TPL[tplKey];
+  const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
+
+  const head = el("section", "block");
+  head.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
+    '</h2><span class="note" id="liveProgress">' +
+    filled + " מתוך " + t.m.length + " משחקים הוזנו" + (t.done ? " · הסתיים" : "") + "</span></div>";
+  const actions = el("div", "chips");
+
+  const bSave = el("button", "btn sm", "שמור הכל");
+  bSave.onclick = async () => {
+    bSave.disabled = true;
+    const label = bSave.textContent;
+    bSave.textContent = "שומר…";
+    const r = await Store.forceSave(LIVE[t.i] || t);
+    bSave.disabled = false;
+    bSave.textContent = r.ok ? "נשמר בענן ✓"
+      : (r.local ? "לא עלה לענן — נשמר בדפדפן" : "השמירה נכשלה");
+    if (!r.ok) flash("השמירה בענן נכשלה: " + r.why, true);
+    setTimeout(() => { bSave.textContent = label; }, 2600);
+  };
+  actions.appendChild(bSave);
+
+  const bBackup = el("button", "btn ghost sm", "העתק גיבוי");
+  bBackup.onclick = () => copyText(Store.backup(), bBackup);
+  actions.appendChild(bBackup);
+
+  const bDel = el("button", "btn ghost sm danger", "מחק טורניר");
+  bDel.onclick = async () => {
+    const played = t.m.filter(m => m[6] != null && m[7] != null).length;
+    const ok = await askConfirm({
+      title: "בטוח שאתה רוצה למחוק את טורניר " + t.num + "?",
+      body: played
+        ? "בטורניר הזה כבר הוזנו " + played + " מתוך " + t.m.length +
+          " משחקים. המחיקה תסיר אותו מהמכשיר ומהענן, וכל התוצאות שבו יאבדו."
+        : "הטורניר עדיין ריק. המחיקה תסיר אותו מהמכשיר ומהענן.",
+      warn: "אי אפשר לבטל את הפעולה הזאת.",
+      ok: "כן, מחק את הטורניר",
+      cancel: "לא, חזור"
+    });
+    if (!ok) return;
+    bDel.disabled = true;
+    bDel.textContent = "מוחק…";
+    try { await Store.delT(t.i); }
+    catch (err) {
+      showFatal("delete → " + (err && err.message ? err.message : err));
+      bDel.disabled = false; bDel.textContent = "מחק טורניר";
+      return;
+    }
+    liveId = null;
+    rebuild(); refreshChrome();
+    viewLive(document.getElementById("v-live"));
+    flash("טורניר " + t.num + " נמחק.");
+  };
+  actions.appendChild(bDel);
+  head.appendChild(actions);
+  box.appendChild(head);
+
+  /* squads */
+  const sq = el("section", "block");
+  sq.innerHTML = '<div class="bhead"><h2>הרכב</h2><span class="note">אפשר להחליף קבוצה גם אחרי הפתיחה.</span></div>';
+  const sbox = el("div", "tscroll fit");
+  const stb = el("table");
+  stb.innerHTML = "<thead><tr><th>מקום</th><th>שחקן</th><th>קבוצה</th></tr></thead>";
+  const sbody = el("tbody");
+  t.rec.slots.forEach((p, i) => {
+    const tr = el("tr");
+    tr.innerHTML = '<td class="rank">' + (i + 1) + "</td><td>" + plate(p) + "</td>";
+    const td = el("td");
+    td.appendChild(clubSelect(t.rec.clubs[i], v => {
+      writable(t);
+      const j = t.rec.clubs.indexOf(v);
+      if (j >= 0 && j !== i) t.rec.clubs[j] = t.rec.clubs[i];
+      t.rec.clubs[i] = v;
+      const fresh = hydrate(t.rec);
+      LIVE[t.i] = fresh;
+      rebuild(); refreshChrome(); refreshLive();
+      Store.saveT(fresh);
+    }));
+    tr.appendChild(td); sbody.appendChild(tr);
+  });
+  stb.appendChild(sbody); sbox.appendChild(stb); sq.appendChild(sbox);
+  box.appendChild(sq);
+
+  /* live table */
+  const st = el("section", "block");
+  st.innerHTML = '<div class="bhead"><h2>טבלה חיה</h2><span class="note">ארבעת הראשונים עולים לגמר.</span></div>';
+  const stHost = el("div"); stHost.id = "liveStandings";
+  stHost.appendChild(standingsTable(t));
+  st.appendChild(stHost);
+  box.appendChild(st);
+
+  if (!filled) box.appendChild(forecastBlock(t));
+  if (filled) box.appendChild(timelineBlock(t));
+
+  /* fixtures with score entry */
+  const mb = el("section", "block");
+  mb.innerHTML = '<div class="bhead"><h2>לוח משחקים</h2><span class="note">תבנית קבועה של ' + t.m.length +
+    " משחקים. כל תוצאה נשמרת תוך כדי הקלדה וניתנת לתיקון בכל רגע.</span></div>";
+  const mc = el("div", "panel matches");
+  if (t.m.some(m => m[6] == null || m[7] == null)) mc.appendChild(oddsKey());
+  t.m.forEach((m, idx) => {
+    const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+    const fx = el("div", "fixture");
+    fx.setAttribute("data-fx", t.i + "-" + idx);
+    const row = el("div", "mrow");
+    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+      '<div class="side"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>";
+    const mid = el("div", "entry");
+    const mkScore = which => {
+      const n = el("input");
+      n.type = "number"; n.min = "0"; n.max = "30"; n.autocomplete = "off";
+      /* deliberately no id: the platform restores values into ids after a
+         republish, which would show a score the data does not hold */
+      n.setAttribute("data-k", "sc-" + t.i + "-" + idx + "-" + which);
+      n.setAttribute("aria-label", (which === "h" ? "שערי בית" : "שערי חוץ") + " במשחק " + (idx + 1));
+      return n;
+    };
+    const iA = mkScore("a"), iH = mkScore("h");
+    iA.value = ag == null ? "" : ag; iH.value = hg == null ? "" : hg;
+    /* write the typed score into the model; returns true if anything moved */
+    const apply = () => {
+      const a = iA.value === "" ? null : Math.max(0, parseInt(iA.value, 10) || 0);
+      const h = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
+      const was = t.rec.scores[idx] || [null, null];
+      if (was[0] === h && was[1] === a) return false;
+      t.rec.scores[idx] = [h, a];
+      const fresh = hydrate(t.rec);
+      LIVE[t.i] = fresh;
+      rebuild(); refreshChrome();
+      Store.saveT(fresh);
+      publishBulletin(LIVE[t.i]);
+      return true;
+    };
+    /* the second line: odds while unplayed, a saved marker once entered */
+    const stateLine = () => {
+      fx.querySelectorAll(".odds, .doneline, .gravity").forEach(n => n.remove());
+      const sc = t.rec.scores[idx] || [null, null];
+      const filled = sc[0] != null && sc[1] != null;
+      iA.classList.toggle("filled", filled);
+      iH.classList.toggle("filled", filled);
+      if (!filled) {
+        const o = oddsRow((LIVE[t.i] || t).m[idx]);
+        if (o) fx.appendChild(o);
+        return;
+      }
+      const d = el("div", "doneline");
+      d.setAttribute("data-t", String(t.i));
+      const pend = !!Store.dirty[t.i];
+      d.innerHTML = '<span class="ok' + (pend ? " pend" : "") + '">' +
+        (pend ? "⏳ ממתין לענן" : "✓ נשמר בענן") + "</span>" +
+        '<span class="grow">אפשר לתקן בכל רגע — שנה את המספר, או נקה כדי להחזיר את המשחק לרשימת הצפויים.</span>';
+
+      const clr = el("button", "btn ghost sm", "נקה תוצאה");
+      clr.onclick = () => { iA.value = ""; iH.value = ""; onType(); heavy(); };
+      d.appendChild(clr);
+      fx.appendChild(d);
+    };
+
+    /* write the typed score into the record right now — no timer involved */
+    const writeScore = () => {
+      writable(t);
+      const a2 = iA.value === "" ? null : Math.max(0, parseInt(iA.value, 10) || 0);
+      const h2 = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
+      const was = t.rec.scores[idx] || [null, null];
+      if (was[0] === h2 && was[1] === a2) return null;
+      t.rec.scores[idx] = [h2, a2];
+      t.rec.gg = false;
+      const fresh = decorate(hydrate(t.rec));
+      LIVE[t.i] = fresh;
+      Store.dirty[t.i] = true;
+      Store.localFlush();     // safe on this device before anything async runs
+      return fresh;
+    };
+
+    /* the ✓ button's write: always applies, never short-circuits */
+    const writeScoreForce = () => {
+      writable(t);
+      const a2 = iA.value === "" ? null : Math.max(0, parseInt(iA.value, 10) || 0);
+      const h2 = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
+      t.rec.scores[idx] = [h2, a2];
+      t.rec.gg = false;
+      const fresh = decorate(hydrate(t.rec));
+      LIVE[t.i] = fresh;
+      Store.dirty[t.i] = true;
+      Store.localFlush();
+      return fresh;
+    };
+
+    /* cheap repaint straight from the record */
+    const quickPaint = fresh => {
+      const sh = document.getElementById("liveStandings");
+      if (sh) { sh.innerHTML = ""; sh.appendChild(standingsTable(fresh)); }
+      const bar = document.getElementById("liveProgress");
+      if (bar) bar.textContent = fresh.m.filter(x => x[6] != null && x[7] != null).length +
+        " מתוך " + fresh.m.length + " משחקים הוזנו" + (fresh.done ? " · הסתיים" : "");
+      stateLine();
+      const fh = document.getElementById("liveFinal");
+      if (fh) renderFinal(fresh, fh);
+    };
+
+    /* the costly half: aggregates, the cloud, the newsroom */
+    const heavy = () => {
+      clearTimeout(typing);
+      rebuild(); refreshChrome();
+      Store.saveT(LIVE[t.i]);
+      publishBulletin(LIVE[t.i]);
+      scheduleInsights(LIVE[t.i] || t);
+    };
+
+    const onType = () => {
+      const fresh = writeScore();
+      if (!fresh) return;
+      quickPaint(fresh);
+      clearTimeout(typing);
+      typing = setTimeout(heavy, 600);
+    };
+
+    let typing = null;
+    iA.oninput = iH.oninput = onType;
+    iA.onchange = iH.onchange = () => { onType(); heavy(); };
+    iA.onblur = iH.onblur = () => { onType(); heavy(); };
+
+    const rowSave = el("button", "rowsave", "✓");
+    const saveKey = t.i + "-" + idx;
+    rowSave.setAttribute("data-save", saveKey);
+    rowSave.title = "שמור את התוצאה ועדכן את הטבלה";
+    rowSave.setAttribute("aria-label", "שמור את תוצאת משחק " + (idx + 1));
+    rowSave.onclick = async () => {
+      clearTimeout(typing);
+      rowSave.className = "rowsave busy";
+      step("reconcile", () => reconcileScores(LIVE[t.i] || t));
+      const wrote = step("write", () => writeScoreForce());
+      /* the table first, from the record, before anything that might fail */
+      step("paint", () => { if (wrote) quickPaint(wrote); });
+      step("rebuild", () => { rebuild(); refreshChrome(); });
+      step("redraw", () => refreshLive());
+      let r = { ok: false, why: "לא בוצעה שמירה" };
+      try { r = await Store.forceSave(LIVE[t.i]); }
+      catch (err) { showFatal("save → " + (err && err.message ? err.message : err)); }
+      const back = document.querySelector('[data-save="' + saveKey + '"]');
+      if (back) {
+        back.className = "rowsave " + (r.ok ? "done" : "bad");
+        back.textContent = r.ok ? "✓" : "!";
+        setTimeout(() => {
+          const z = document.querySelector('[data-save="' + saveKey + '"]');
+          if (z) { z.className = "rowsave"; z.textContent = "✓"; }
+        }, 1900);
+      }
+      flash(r.ok ? "התוצאה נקלטה והטבלה עודכנה" : "השמירה בענן נכשלה: " + r.why, !r.ok);
+    };
+    mid.append(iA, el("span", "mut", "–"), iH, rowSave);
+    row.appendChild(mid);
+    row.insertAdjacentHTML("beforeend",
+      '<div class="side away"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>");
+    fx.appendChild(row);
+    stateLine();
+    mc.appendChild(fx);
+  });
+  mb.appendChild(mc);
+  box.appendChild(mb);
+
+  /* the final */
+  const fb = el("section", "block");
+  fb.innerHTML = '<div class="bhead"><h2>הגמר</h2><span class="note">צמד 1–2 מול צמד 3–4. בוחרים מי הרים את הגביע.</span></div>';
+  const fHost = el("div"); fHost.id = "liveFinal";
+  renderFinal(t, fHost);
+  fb.appendChild(fHost);
+  box.appendChild(fb);
+  box.appendChild(clubManager());
+
+  setTimeout(() => step("gravity", () => paintGravity(LIVE[t.i] || t)), 90);
+
+  /* the boxes may be filled by the platform after this returns */
+  [80, 700].forEach(ms => setTimeout(() => {
+    const cur = LIVE[t.i];
+    if (cur && reconcileScores(cur)) {
+      flash("נמצאו תוצאות שהיו על המסך אך לא נשמרו — הן נקלטו ונשמרו עכשיו.");
+      refreshLive();
+    }
+  }, ms));
+
+  return box;
+}
+
+/* which finals the viewer has already walked into, so the intro plays once */
+const finalOpened = {};
+
+function renderFinal(t, host) {
+  host.innerHTML = "";
+  const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
+  if (filled < t.m.length) {
+    host.appendChild(el("div", "notice",
+      "הגמר ייפתח אחרי שכל " + t.m.length + " משחקי הליגה יוזנו. נותרו " + (t.m.length - filled) + "."));
+    return;
+  }
+  const out = finalOutcome(t);
+  if (!out) return;
+
+  if (!finalOpened[t.i]) {
+    host.appendChild(finalGate(t));
+    return;
+  }
+  host.appendChild(finalStage(t, out, finalOpened[t.i] === "intro"));
+  if (finalOpened[t.i] === "intro") finalOpened[t.i] = true;   // only once
+}
+
+function finalGate(t) {
+  const tb = t.table;
+  const g = el("div", "finalgate turf");
+  g.innerHTML = '<div class="kicker">שלב הליגה הסתיים</div>' +
+    "<h3>הגמר של טורניר " + t.num + "</h3>" +
+    '<div class="four">' + tb.slice(0, 4).map(p => {
+      const f = photoOf(p);
+      return '<i style="--c:' + PC(p) + (f ? ";background-image:url(" + f + ")" : "") + '"></i>';
+    }).join("") + "</div>" +
+    '<div class="kicker">' + esc(P[tb[0]]) + " ו" + esc(P[tb[1]]) + " נגד " +
+    esc(P[tb[2]]) + " ו" + esc(P[tb[3]]) + "</div>";
+  const b = el("button", "btn enter", "כניסה למשחק הגמר");
+  b.onclick = () => {
+    finalOpened[t.i] = "intro";
+    const fh = document.getElementById("liveFinal");
+    if (fh) renderFinal(t, fh);
+  };
+  g.appendChild(b);
+  return g;
+}
+
+function finalStage(t, out, intro) {
+  const tb = t.table;
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (calm) intro = false;
+  const st = el("div", "finalstage turf" + (intro ? " intro" : ""));
+  st.innerHTML = '<div class="bloom"></div><div class="midline"></div><div class="arc"></div>' +
+    '<div class="sweep"></div><div class="curtain"></div>';
+
+  const walk = el("div", "walkout");
+  const file = (cls, duo, delayBase) => {
+    const f = el("div", "file " + cls);
+    duo.forEach((p, i) => {
+      const ph = photoOf(p);
+      const w = el("div", "walker");
+      const d = delayBase + i * 0.55;
+      w.style.cssText = "--c:" + PC(p) + (intro ? ";animation-delay:" + d + "s" : "");
+      if (intro) w.dataset.d = d;
+      w.innerHTML = '<i class="ph" style="' + (ph ? "background-image:url(" + ph + ")" : "") + '"></i>' +
+        '<span class="nm">' + esc(P[p]) + '</span><span class="cl">' + esc(CLUBS[t.teamOf[p]]) + "</span>";
+      f.appendChild(w);
+      if (intro) {
+        const dd = delayBase + i * 0.55;
+        w.querySelector(".ph").style.animationDelay = dd + "s";
+        w.querySelector(".nm").style.animationDelay = (dd + 0.5) + "s";
+        w.querySelector(".cl").style.animationDelay = (dd + 0.62) + "s";
+      }
+    });
+    return f;
+  };
+  /* the lights take the first 1.6s; then one player at a time */
+  walk.appendChild(file("home", [tb[0], tb[1]], 1.65));
+  walk.appendChild(el("div", "vs", "הגמר"));
+  walk.appendChild(file("away", [tb[2], tb[3]], 2.75));
+  st.appendChild(walk);
+
+  const board = el("div", "stageboard");
+  const br = bracketEl(t, out);
+  br.classList.add("onpitch");
+  board.appendChild(br);
+  st.appendChild(board);
+
+  if (intro) {
+    board.classList.add("pending");
+    const skip = el("button", "skipintro", "דלג");
+    let timer = setTimeout(finish, 5900);
+    function finish() {
+      clearTimeout(timer);
+      st.classList.remove("intro");
+      board.classList.remove("pending");
+      skip.remove();
+    }
+    skip.onclick = finish;
+    st.appendChild(skip);
+  }
+
+  const again = el("button", "replay", "הצג שוב את הכניסה");
+  again.onclick = () => {
+    finalOpened[t.i] = "intro";
+    const fh = document.getElementById("liveFinal");
+    if (fh) renderFinal(t, fh);
+  };
+  st.appendChild(again);
+  return st;
+}
+
+function bracketEl(t, out) {
+  const tb = t.table;
+  const topPair = [tb[0], tb[1]], botPair = [tb[2], tb[3]];
+  const champTop = t.c.length === 2 && topPair.every(p => t.c.includes(p));
+  const champBot = t.c.length === 2 && botPair.every(p => t.c.includes(p));
+  const wrap = el("div", "bracket");
+
+  wrap.appendChild(sideCard("מקומות 1–2", topPair, t, champTop, out.played ? out.top : null));
+
+  const core = el("div", "bcore");
+  out.L.forEach((L, li) => {
+    const m = legMatch(L);
+    const has = L.s[0] != null && L.s[1] != null;
+    const leg = el("div", "bleg");
+    leg.appendChild(el("div", "lbl2", (li === 0 ? "משחק א׳" : "משחק ב׳") + " · מארחים " +
+      (li === 0 ? "מקומות 3–4" : "מקומות 1–2")));
+    const row = el("div", "blegrow");
+    row.innerHTML = "<div>" + clubTag(m[2]) + "</div>";
+    const mid = el("div", "entry");
+    const mk = which => {
+      const n = el("input");
+      n.type = "number"; n.min = "0"; n.max = "30"; n.autocomplete = "off";
+      n.setAttribute("data-k", "fn-" + t.i + "-" + li + "-" + which);
+      n.setAttribute("aria-label", (which === "h" ? "שערי הבית" : "שערי החוץ") + " במשחק גמר " + (li + 1));
+      return n;
+    };
+    const iA = mk("a"), iH = mk("h");
+    iA.value = L.s[1] == null ? "" : L.s[1];
+    iH.value = L.s[0] == null ? "" : L.s[0];
+    iA.classList.toggle("filled", has); iH.classList.toggle("filled", has);
+    const commit = () => {
+      writable(t);
+      const av = iA.value === "" ? null : Math.max(0, parseInt(iA.value, 10) || 0);
+      const hv = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
+      if (!t.rec.final) t.rec.final = [[null, null], [null, null]];
+      const was = t.rec.final[li] || [null, null];
+      if (was[0] === hv && was[1] === av) return;
+      t.rec.final[li] = [hv, av];
+      t.rec.gg = false;          // a new score retires any golden-goal pick
+      const fresh = hydrate(t.rec);
+      LIVE[t.i] = fresh;
+      rebuild(); refreshChrome();
+      Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+      const fh = document.getElementById("liveFinal");
+      if (fh) renderFinal(LIVE[t.i], fh);
+      const sh = document.getElementById("liveStandings");
+      if (sh) { sh.innerHTML = ""; sh.appendChild(standingsTable(LIVE[t.i])); }
+    };
+    let typing = null;
+    iA.oninput = iH.oninput = () => { clearTimeout(typing); typing = setTimeout(commit, 350); };
+    iA.onchange = iH.onchange = () => { clearTimeout(typing); commit(); };
+    const legSave = el("button", "rowsave", "✓");
+    legSave.title = "שמור את תוצאת משחק הגמר";
+    legSave.onclick = async () => {
+      commit();
+      legSave.className = "rowsave busy";
+      const r = await Store.forceSave(LIVE[t.i] || t);
+      legSave.className = "rowsave " + (r.ok ? "done" : "bad");
+      if (!r.ok) flash("השמירה בענן נכשלה: " + r.why, true);
+      setTimeout(() => { legSave.className = "rowsave"; }, 1800);
+    };
+    mid.append(iA, el("span", "mut", "–"), iH, legSave);
+    row.appendChild(mid);
+    row.insertAdjacentHTML("beforeend", '<div class="away">' + clubTag(m[5]) + "</div>");
+    leg.appendChild(row);
+    if (!has) { const o = oddsRow(m); if (o) leg.appendChild(o); }
+    core.appendChild(leg);
+  });
+
+  const agg = el("div", "bagg");
+  agg.innerHTML = out.played
+    ? '<span class="lbl2">סך שני המשחקים</span><span class="v">' + out.bot + " – " + out.top + "</span>"
+    : '<span class="lbl2">הזן את שתי התוצאות כדי להכריע</span>';
+  core.appendChild(agg);
+
+  if (out.played && !out.winner) {
+    const pk = el("div", "notice warn");
+    pk.innerHTML = "<b>שוויון בסך שני המשחקים</b> מי ניצח בשער הזהב?";
+    [topPair, botPair].forEach(duo => {
+      const b2 = el("button", "btn ghost sm", P[duo[0]] + " ו" + P[duo[1]]);
+      b2.onclick = () => {
+        writable(t);
+        t.rec.champs = duo.slice().sort((x, y) => x - y);
+        t.rec.gg = true;
+        const fresh = hydrate(t.rec);
+        LIVE[t.i] = fresh;
+        rebuild(); refreshChrome();
+        Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+        const fh = document.getElementById("liveFinal");
+        if (fh) renderFinal(LIVE[t.i], fh);
+      };
+      pk.appendChild(b2);
+    });
+    core.appendChild(pk);
+  }
+  wrap.appendChild(core);
+  wrap.appendChild(sideCard("מקומות 3–4", botPair, t, champBot, out.played ? out.bot : null));
+  wrap.appendChild(dugout(t));
+
+  if (t.done) wrap.appendChild(podiumScene(t));
+  return wrap;
+}
+
+/* the champions on the rostrum, under fireworks */
+const FW_SPARKS = (() => {
+  const cols = ["#F5C542", "#FF8A3D", "#6EE7FF", "#FF5FA2", "#9BE564", "#FFFFFF"];
+  const out = [];
+  for (let c = 0; c < cols.length; c++) {
+    const parts = [];
+    for (let k = 0; k < 16; k++) {
+      const ang = (k / 16) * Math.PI * 2;
+      parts.push(Math.round(Math.cos(ang) * 58) + "px " + Math.round(Math.sin(ang) * 58) + "px 0 -1px " + cols[c]);
+    }
+    out.push(parts.join(","));
+  }
+  return out;
+})();
+
+function podiumScene(t) {
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sc = el("div", "podiumscene");
+
+  const sky = el("div", "sky");
+  [[16, 22, 0], [38, 12, .7], [62, 26, 1.4], [84, 16, 2.1], [50, 40, 2.7]].forEach((f, i) => {
+    const b = el("i", "fw");
+    b.style.cssText = "left:" + f[0] + "%;top:" + f[1] + "%;box-shadow:" + FW_SPARKS[i % FW_SPARKS.length] +
+      (calm ? "" : ";animation-delay:" + f[2] + "s");
+    sky.appendChild(b);
+  });
+  sc.appendChild(sky);
+
+  if (!calm) {
+    const conf = el("div", "confetti");
+    const cols = [0, 1, 2, 3, 4, 5].map(i => "var(--p" + i + ")").concat(["var(--gold)", "#FFFFFF"]);
+    for (let i = 0; i < 44; i++) {
+      const p = el("i");
+      p.style.cssText = "left:" + (Math.random() * 100).toFixed(1) + "%;" +
+        "background:" + cols[i % cols.length] + ";" +
+        "--dx:" + (Math.random() * 70 - 35).toFixed(0) + "px;" +
+        "animation-duration:" + (2.8 + Math.random() * 2.6).toFixed(2) + "s;" +
+        "animation-delay:" + (Math.random() * 3.2).toFixed(2) + "s;" +
+        "width:" + (5 + Math.round(Math.random() * 4)) + "px;" +
+        "height:" + (9 + Math.round(Math.random() * 6)) + "px";
+      conf.appendChild(p);
+    }
+    sc.appendChild(conf);
+  }
+
+  sc.appendChild(el("div", "ttl2", "אלופי טורניר " + t.num));
+
+  const ros = el("div", "rostrum");
+  ros.insertAdjacentHTML("beforeend",
+    '<svg class="cup" viewBox="0 0 64 80" aria-hidden="true">' +
+    '<defs><linearGradient id="cupg" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="#FFF0BE"/><stop offset=".45" stop-color="#F5C542"/>' +
+    '<stop offset="1" stop-color="#A9760C"/></linearGradient></defs>' +
+    '<path d="M17 5h30v17a15 15 0 0 1-30 0z" fill="url(#cupg)"/>' +
+    '<path d="M17 9H7a10 10 0 0 0 10 10z" fill="none" stroke="url(#cupg)" stroke-width="3.5"/>' +
+    '<path d="M47 9h10a10 10 0 0 1-10 10z" fill="none" stroke="url(#cupg)" stroke-width="3.5"/>' +
+    '<rect x="29" y="37" width="6" height="12" fill="url(#cupg)"/>' +
+    '<rect x="20" y="49" width="24" height="6" rx="2" fill="url(#cupg)"/>' +
+    '<rect x="14" y="55" width="36" height="8" rx="2" fill="url(#cupg)"/>' +
+    '<path d="M24 9h16v9a8 8 0 0 1-16 0z" fill="rgba(255,255,255,.28)"/></svg>');
+
+  const st = el("div", "standers");
+  t.c.forEach(p => {
+    const f = photoOf(p);
+    const w = el("div", "stander");
+    w.style.setProperty("--c", PC(p));
+    w.innerHTML = '<i class="arm l"></i><i class="arm r"></i>' +
+      '<i class="head" style="' + (f ? "background-image:url(" + f + ")" : "") + '"></i>' +
+      '<span class="torso"></span>';
+    st.appendChild(w);
+  });
+  ros.appendChild(st);
+  sc.appendChild(ros);
+
+  sc.appendChild(el("div", "plinth", "<span>1</span>"));
+
+  sc.appendChild(el("div", "wnames", t.c.map(p =>
+    "<span><b>" + esc(P[p]) + "</b> · " + esc(CLUBS[t.teamOf[p]]) + "</span>").join("")));
+  return sc;
+}
+
+function sideCard(seed, duo, t, isChamp, goals) {
+  const c = el("div", "bteam" + (isChamp ? " win" : ""));
+  c.appendChild(el("div", "seed", seed + (isChamp ? " · אלופים" : "")));
+  duo.forEach(p => {
+    const one = el("div", "one");
+    one.innerHTML = plateFace(p) + clubTag(t.teamOf[p]);
+    c.appendChild(one);
+  });
+  if (goals != null) c.appendChild(el("div", "tot", String(goals)));
+  return c;
+}
+
+/* the players who missed the cut, sitting on a bench */
+function dugout(t) {
+  const outs = t.table.slice(4);
+  const d = el("div", "dugout");
+  d.appendChild(el("div", "seed", "הספסל"));
+  if (!outs.length) { d.appendChild(el("div", "dnote", "כולם עלו לגמר.")); return d; }
+  const scene = el("div", "dscene");
+  scene.innerHTML = '<div class="drail"></div>';
+  const seats = el("div", "dseats");
+  outs.forEach(p => {
+    const f = photoOf(p);
+    const s = el("div", "sitter");
+    s.style.setProperty("--c", PC(p));
+    s.innerHTML = '<i class="head" style="' + (f ? "background-image:url(" + f + ")" : "") + '"></i>' +
+      '<span class="torso"></span>';
+    seats.appendChild(s);
+  });
+  scene.appendChild(seats);
+  scene.insertAdjacentHTML("beforeend", '<div class="dplank"></div><div class="dlegs"><i></i><i></i></div>');
+  d.appendChild(scene);
+  d.appendChild(el("div", "dnames", outs.map(p => "<span>" + esc(P[p]) + " · " + t.place[p] + "</span>").join("")));
+  d.appendChild(el("div", "dnote", "לא עלו לגמר"));
+  return d;
+}
+
+/* The platform restores form values after a republish without firing any
+   event, so a score can sit in a box that the record knows nothing about.
+   Adopt anything on screen that the record disagrees with. */
+function reconcileScores(t) {
+  if (!t || !t.rec) return false;
+  writable(t);
+  let changed = false;
+  const pick = k => {
+    const n = document.querySelector('[data-k="' + k + '"]');
+    if (!n) return undefined;
+    return n.value === "" ? null : Math.max(0, parseInt(n.value, 10) || 0);
+  };
+  for (let i = 0; i < t.m.length; i++) {
+    const h = pick("sc-" + t.i + "-" + i + "-h"), a = pick("sc-" + t.i + "-" + i + "-a");
+    if (h === undefined || a === undefined) continue;
+    const was = t.rec.scores[i] || [null, null];
+    if (was[0] !== h || was[1] !== a) { t.rec.scores[i] = [h, a]; changed = true; }
+  }
+  for (let li = 0; li < 2; li++) {
+    const h = pick("fn-" + t.i + "-" + li + "-h"), a = pick("fn-" + t.i + "-" + li + "-a");
+    if (h === undefined || a === undefined) continue;
+    if (!t.rec.final) t.rec.final = [[null, null], [null, null]];
+    const was = t.rec.final[li] || [null, null];
+    if (was[0] !== h || was[1] !== a) { t.rec.final[li] = [h, a]; t.rec.gg = false; changed = true; }
+  }
+  if (!changed) return false;
+  LIVE[t.i] = decorate(hydrate(t.rec));
+  Store.dirty[t.i] = true;
+  Store.localFlush();
+  rebuild(); refreshChrome();
+  Store.saveT(LIVE[t.i]);
+  publishBulletin(LIVE[t.i]);
+  return true;
+}
+
+function standingsTable(t) {
+  const box = el("div", "tscroll fit");
+  const tbl = el("table", "sttbl");
+  tbl.innerHTML = "<thead><tr>" +
+    "<th>#</th><th>שחקן</th><th>קבוצה</th>" +
+    '<th class="c-num">מאזן</th><th class="c-num">שערים</th>' +
+    '<th class="c-num">הפרש</th><th class="c-num">נק׳</th></tr></thead>';
+  const body = el("tbody");
+  t.table.forEach((p, i) => {
+    const a = t.acc[p], gd = a.gf - a.ga, champ = t.c.includes(p), adv = i < 4;
+    const tr = el("tr", adv ? "qual" : "");
+    const club = CLUBS[t.teamOf[p]] || "—";
+    tr.innerHTML =
+      '<td class="rank">' + (i + 1) + "</td>" +
+      '<td><span class="who">' + plate(p) +
+        (champ ? '<span class="crown" title="אלוף הטורניר">★</span>' : "") + "</span></td>" +
+      '<td><span class="club" style="--c:' + clubCol(club) + '" title="' + esc(club) +
+        '"><i class="cdot"></i><span class="cn">' + esc(club) + "</span></span></td>" +
+      '<td class="c-num"><span class="ltr">' + a.w + "-" + a.dr + "-" + a.l + "</span></td>" +
+      '<td class="c-num">' + scoreTxt(a.gf, a.ga) + "</td>" +
+      '<td class="c-num ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</td>" +
+      '<td class="c-num strong">' + a.pts + "</td>";
+    body.appendChild(tr);
+  });
+  tbl.appendChild(body);
+  box.appendChild(tbl);
+  const wrap = el("div");
+  wrap.appendChild(box);
+  wrap.appendChild(el("div", "stlegend",
+    '<span><b>מאזן</b> נצחונות · תיקו · הפסדים</span>' +
+    '<span><b>שערים</b> זכות · חובה</span>' +
+    '<span><b style="color:var(--gold)">מספר מקום בזהב</b> עלה לגמר</span>' +
+    '<span><b style="color:var(--gold)">★</b> אלוף</span>'));
+  return wrap;
+}
+
+/* ---------- seasons ---------- */
+function seasonManager() {
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>עונות</h2><span class="note">' +
+    'עונה חדשה מתחילה את מספור הטורנירים מ־1. העונות הקודמות נשמרות במלואן, ומעבר ביניהן נעשה בבורר שלמעלה. ' +
+    'חוק ההגרלה ממשיך לחצות עונות — הקבוצה החסומה היא זו שהייתה לשחקן בטורניר הקודם באותו פורמט, גם אם הוא בעונה שעברה.' +
+    "</span></div>";
+  const box = el("div", "panel");
+  box.style.padding = "13px 15px";
+  const list = el("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:9px";
+  SEASONS.slice().sort((a, b) => a.id - b.id).forEach(sn => {
+    const row = el("div");
+    row.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap";
+    const mine = TS.filter(t => t.season === sn.id);
+    const inp = textInput(sn.name);
+    inp.id = "season-name-" + sn.id;
+    inp.style.cssText = "font-weight:700;min-width:150px";
+    inp.onchange = async () => {
+      const v = inp.value.trim();
+      if (!v) { inp.value = sn.name; return; }
+      sn.name = v; await Store.saveConfig(); refreshChrome(); viewLive(document.getElementById("v-live"));
+    };
+    row.appendChild(inp);
+    row.appendChild(el("span", "mut", mine.length + " טורנירים" + (SCOPE === sn.id ? " · מוצגת כעת" : "")));
+    if (SCOPE !== sn.id) {
+      const go2 = el("button", "btn ghost sm", "הצג");
+      go2.onclick = () => setScope(sn.id);
+      row.appendChild(go2);
+    }
+    if (!mine.length && SEASONS.length > 1) {
+      const del = el("button", "btn ghost sm danger", "מחק");
+      del.onclick = async () => {
+        SEASONS = SEASONS.filter(x => x.id !== sn.id);
+        if (SCOPE === sn.id) SCOPE = latestSeason();
+        await Store.saveConfig(); rebuild(); refreshChrome(); viewLive(document.getElementById("v-live"));
+      };
+      row.appendChild(del);
+    }
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+
+  const add = el("div");
+  add.style.cssText = "display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center";
+  const name = textInput("", "שם העונה החדשה…");
+  name.id = "new-season-name";
+  name.style.minWidth = "190px";
+  const btn = el("button", "btn", "התחל עונה חדשה");
+  const create = async () => {
+    const v = name.value.trim();
+    if (!v) return flash("צריך לתת שם לעונה");
+    if (SEASONS.some(x => x.name === v)) return flash("כבר יש עונה בשם הזה");
+    const id = Math.max.apply(null, SEASONS.map(x => x.id)) + 1;
+    SEASONS.push({ id, name: v });
+    draft = null; liveId = null;
+    setScope(id);
+    Store.saveConfig();
+    flash("העונה «" + v + "» נפתחה — הטורניר הבא יהיה מספר 1");
+  };
+  btn.onclick = create;
+  name.onkeydown = e => { if (e.key === "Enter") create(); };
+  add.append(name, btn);
+  box.appendChild(add);
+  b.appendChild(box);
+  return b;
+}
+
+/* ---------- photo board ----------
+   Kept as a safety net on the squad page: it only appears if a photo has no
+   player, which the shipped pairing already covers. */
+function photoBoard() {
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>תמונות השחקנים</h2>' +
+    '<span class="note">בחר לכל תמונה את השחקן שבה — התמונות ייכנסו לקלפים.</span></div>';
+  const board = el("div", "pboard");
+  Object.keys(PHOTOS).forEach(k => {
+    const slot = el("div", "pslot");
+    const th = el("div", "thumb");
+    th.style.backgroundImage = "url(" + PHOTOS[k] + ")";
+    slot.append(el("div", "num", "תמונה " + k), th);
+    const sel = el("select");
+    sel.appendChild(el("option", null, "— ללא שיוך —"));
+    sel.lastChild.value = "";
+    P.forEach((name, i) => {
+      const o = el("option", null, esc(name));
+      o.value = String(i);
+      if (PHOTOMAP[k] === i) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = async () => {
+      const v = sel.value === "" ? null : Number(sel.value);
+      if (v != null) Object.keys(PHOTOMAP).forEach(k2 => { if (PHOTOMAP[k2] === v) delete PHOTOMAP[k2]; });
+      if (v == null) delete PHOTOMAP[k]; else PHOTOMAP[k] = v;
+      await Store.saveConfig();
+      installFaceStyles();
+      const pv = document.getElementById("v-players");
+      if (pv && !pv.hidden) viewPlayers(pv);
+    };
+    slot.appendChild(sel);
+    board.appendChild(slot);
+  });
+  b.appendChild(board);
+  return b;
+}
+
+/* ---------- club catalogue ---------- */
+function clubManager() {
+  const b = el("section", "block");
+  b.innerHTML = '<div class="bhead"><h2>מאגר הקבוצות</h2><span class="note">המאגר משמש להגרלות הבאות. שינוי שם כאן לא נוגע בטורנירים שכבר נרשמו.</span></div>';
+  const box = el("div", "panel");
+  box.style.padding = "12px 14px";
+  const list = el("div", "chips");
+  CLUB_POOL.forEach((name, i) => {
+    const w = el("span", "chip");
+    w.style.cursor = "default";
+    w.innerHTML = '<i class="cdot" style="width:9px;height:9px;border-radius:50%;background:' + clubCol(name) + '"></i>';
+    const inp = textInput(name); inp.size = Math.max(6, name.length);
+    inp.style.cssText = "background:transparent;border:0;padding:0;font-weight:700;width:" + Math.max(64, name.length * 10) + "px";
+    inp.onchange = async () => {
+      const v = inp.value.trim(); if (!v || CLUB_POOL.includes(v)) { inp.value = name; return; }
+      CLUB_POOL[i] = v; clubIdx(v); await Store.saveConfig(); rebuild(); viewLive(document.getElementById("v-live"));
+    };
+    const del = el("button", null, "✕");
+    del.style.cssText = "color:var(--muted);font-size:12px";
+    del.title = "הסר מהמאגר";
+    del.onclick = async () => { CLUB_POOL.splice(i, 1); await Store.saveConfig(); viewLive(document.getElementById("v-live")); };
+    w.append(inp, del);
+    list.appendChild(w);
+  });
+  const add = textInput("", "הוסף קבוצה…"); add.id = "club-add";
+  add.onchange = async () => {
+    const v = add.value.trim(); if (!v || CLUB_POOL.includes(v)) return;
+    CLUB_POOL.push(v); clubIdx(v); await Store.saveConfig(); rebuild(); viewLive(document.getElementById("v-live"));
+  };
+  list.appendChild(add);
+  box.appendChild(list);
+  b.appendChild(box);
+  return b;
+}

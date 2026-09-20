@@ -1,0 +1,555 @@
+
+<div dir="rtl">
+  <header class="rail">
+    <div class="wrap rail-in">
+      <div class="mark">
+        <div class="glyph">51</div>
+        <div>
+          <h1>טורניר פיפא</h1>
+          <div class="sub" id="railSub">ארכיון וניהול</div>
+        </div>
+      </div>
+      <div class="seasonbar" id="seasonPick"></div>
+      <div class="reign" id="reign"></div>
+    </div>
+  </header>
+
+  <nav class="tabbar" aria-label="ניווט ראשי">
+    <div class="wrap tabbar-in" id="tabs" role="tablist"></div>
+  </nav>
+
+  <main class="wrap">
+    <div class="view" id="v-live" hidden></div>
+    <div class="view" id="v-news" hidden></div>
+    <div class="view" id="v-overview" hidden></div>
+    <div class="view" id="v-players" hidden></div>
+    <div class="view" id="v-tournaments" hidden></div>
+    <div class="view" id="v-pairs" hidden></div>
+    <div class="view" id="v-teams" hidden></div>
+    <div class="view" id="v-records" hidden></div>
+  </main>
+
+  <div class="wrap"><footer id="foot"></footer></div>
+</div>
+
+<script id="seed" type="application/json">__DATA__</script>
+<script id="faces" type="application/json">__FACES__</script>
+<script>
+"use strict";
+/* ==========================================================================
+   Data model
+   --------------------------------------------------------------------------
+   History (51 tournaments) ships with the page. New tournaments live in the
+   artifact's shared store, and everything on every screen is recomputed from
+   the merged set of raw match results.
+   ========================================================================== */
+const SEED = JSON.parse(document.getElementById("seed").textContent);
+const PHOTOS = JSON.parse(document.getElementById("faces").textContent);
+/* photo id -> player index. Seeded with the pairing the user gave for the six
+   uploaded files; the store overrides it once anyone changes a face. */
+const PHOTOMAP_DEFAULT = { "1": 1, "2": 0, "3": 4, "4": 2, "5": 3, "6": 5 };
+let PHOTOMAP = Object.assign({}, PHOTOMAP_DEFAULT);
+const photoOf = p => { const k = Object.keys(PHOTOMAP).find(k2 => PHOTOMAP[k2] === p); return k ? PHOTOS[k] : null; };
+const P = SEED.P, TPL = SEED.TPL, POOL0 = SEED.POOL, YEARS = SEED.Y;
+const NP = P.length;
+const HIST_COUNT = SEED.T.length;
+let CLUBS = SEED.C.slice();
+const PC = i => "var(--p" + i + ")";
+
+const CLUBCOL = {
+  "באיירן":"#DC052D", "ברצלונה":"#A50044", "פסז":"#1D4E96", "ליברפול":"#C8102E",
+  "ריאל":"#E8CE6A", "סיטי":"#6CABDD", "ארסנל":"#EF0107", "אתלטיקו":"#CB3524",
+  "צרפת":"#3D6BB5", "פורטוגל":"#0B8A4A", "ברזיל":"#E5CE00", "אנגליה":"#E0424F",
+  "ספרד":"#D4232F", "ארגנטינה":"#7EBBE8", "גרמניה":"#9AA3AC"
+};
+/* a stable fallback hue for a club the user adds later */
+function clubCol(name) {
+  if (CLUBCOL[name]) return CLUBCOL[name];
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return "hsl(" + h + " 52% 58%)";
+}
+function clubIdx(name) {
+  name = (name || "").trim();
+  let i = CLUBS.indexOf(name);
+  if (i < 0) { CLUBS.push(name); i = CLUBS.length - 1; }
+  return i;
+}
+
+/* ---------- helpers ---------- */
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h != null) n.innerHTML = h; return n; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const f1 = n => (Math.round(n * 10) / 10).toFixed(1);
+const f2 = n => (Math.round(n * 100) / 100).toFixed(2);
+const nf = n => n.toLocaleString("he-IL");
+const sgnTxt = n => (n > 0 ? "+" : "") + n;
+const sgn = n => '<span class="ltr">' + sgnTxt(n) + "</span>";
+const sgn1 = v => '<span class="ltr">' + (v > 0 ? "+" : "") + f1(v) + "</span>";
+const sgnF2 = v => '<span class="ltr">' + (v > 0 ? "+" : "") + f2(v) + "</span>";
+const scoreTxt = (a, b) => '<span class="ltr">' + a + ":" + b + "</span>";
+const plate = (i, cls) => '<span class="plate ' + (cls || "") + '" style="--c:' + PC(i) + '"><i class="dot"></i>' + esc(P[i]) + "</span>";
+const plateFace = (i, cls) => '<span class="plate ' + (cls || "") + '" style="--c:' + PC(i) + '">' +
+  (photoOf(i) ? '<i class="pface pf' + i + '"></i>' : '<i class="dot"></i>') + esc(P[i]) + "</span>";
+function installFaceStyles() {
+  let st = document.getElementById("faceCss");
+  if (!st) { st = el("style"); st.id = "faceCss"; document.head.appendChild(st); }
+  st.textContent = P.map((_, i) => {
+    const f = photoOf(i);
+    return f ? ".pf" + i + "{background-image:url(" + f + ")}" : "";
+  }).filter(Boolean).join("\n");
+}
+const clubTag = ci => { const n = CLUBS[ci] || "—"; return '<span class="club" style="--c:' + clubCol(n) + '"><i class="cdot"></i>' + esc(n) + "</span>"; };
+function textInput(value, ph) {
+  const i = el("input");
+  i.type = "text";
+  i.autocomplete = "off";
+  i.spellcheck = false;
+  i.setAttribute("autocorrect", "off");
+  i.setAttribute("autocapitalize", "off");
+  i.setAttribute("data-1p-ignore", "true");
+  i.setAttribute("data-lpignore", "true");
+  if (value != null) i.value = value;
+  if (ph) i.placeholder = ph;
+  return i;
+}
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/* ---------- the live set of tournaments ---------- */
+let LIVE = {};            // id -> tournament record kept in the store
+let CLUB_POOL = POOL0.slice();
+let TS = [];              // every tournament, all seasons, chronological
+let TSS = [];             // the ones in the season now on screen
+let SEASONS = [{ id: 0, name: "עונה 1" }];
+let SCOPE = 0;            // season id, or "all"
+let CARRY = null;         // last season's aggregate, shown while a new season is empty
+let S, PAIR, H2H, TEAM, perT, ORDER, MAXAPP, totGoals, totMatches, drawnMatches, LAST;
+let DUEL, LOG, CHEM;      // pair-vs-pair, the per-player match log, chemistry
+const seasonById = id => SEASONS.find(s => s.id === id) || SEASONS[0];
+const latestSeason = () => SEASONS.reduce((a, b) => (b.id > a.id ? b : a), SEASONS[0]).id;
+const activeSeason = () => (SCOPE === "all" ? latestSeason() : SCOPE);
+const uid = (season, num) => (season === 0 ? num : season * 1000 + num);
+function nextNum(season) {
+  const ns = TS.filter(t => t.season === season).map(t => t.num);
+  return ns.length ? Math.max.apply(null, ns) + 1 : 1;
+}
+
+function decorate(t) {
+  t.teamOf = {}; t.d.forEach(([p, c]) => { t.teamOf[p] = c; });
+  t.players = t.d.map(x => x[0]);
+  t.size = t.players.length;
+  /* standings are always derived from the results, never stored */
+  const acc = {}; t.players.forEach(p => { acc[p] = { p, g:0, w:0, dr:0, l:0, pts:0, gf:0, ga:0 }; });
+  t.m.forEach(m => {
+    const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+    if (hg == null || ag == null) return;
+    const dw = hg === ag, hp = dw ? 1 : hg > ag ? 3 : 0, ap = dw ? 1 : ag > hg ? 3 : 0;
+    [[[h1,h2], hg, ag, hp], [[a1,a2], ag, hg, ap]].forEach(([duo, gf, ga, pts]) => {
+      duo.forEach(p => { const a = acc[p]; a.g++; a.pts += pts; a.gf += gf; a.ga += ga;
+        if (dw) a.dr++; else if (gf > ga) a.w++; else a.l++; });
+    });
+  });
+  t.acc = acc;
+  if (t.t && t.t.length === t.size) {
+    t.table = t.t.slice();                        // recorded order keeps the original tie-breaks
+  } else {
+    t.table = t.players.slice().sort((a, b) =>
+      acc[b].pts - acc[a].pts || (acc[b].gf - acc[b].ga) - (acc[a].gf - acc[a].ga) || acc[b].gf - acc[a].gf);
+  }
+  t.place = {}; t.table.forEach((p, i) => { t.place[p] = i + 1; });
+  t.legs = finalLegs(t);
+  applyFinal(t);
+  t.done = t.m.length > 0 && t.m.every(m => m[6] != null && m[7] != null) && t.c && t.c.length === 2;
+  t.top2 = t.c && t.c.length === 2 &&
+    ((t.c[0] === t.table[0] && t.c[1] === t.table[1]) || (t.c[0] === t.table[1] && t.c[1] === t.table[0]));
+  return t;
+}
+
+function aggregate(list) {
+  const S = Array.from({ length: NP }, () => ({ app:0, g:0, w:0, dr:0, l:0, pts:0, gf:0, ga:0, titles:0, finals:0, last:0, places:[0,0,0,0,0,0] }));
+  const PAIR = {};
+  /* every match a player played, in order — the raw material for streaks,
+     form, the home-and-away split and the chemistry baseline */
+  const LOG = Array.from({ length: NP }, () => []);
+  const DUEL = {};          // pair against pair
+  const H2H = Array.from({ length: NP }, () => Array.from({ length: NP }, () => ({ g:0, w:0, dr:0, l:0, gf:0, ga:0 })));
+  const TEAM = CLUBS.map(() => ({ drawn:0, titles:0, finals:0, g:0, w:0, dr:0, l:0, gf:0, ga:0 }));
+  const perT = Array.from({ length: NP }, () => ({}));
+  let goals = 0, matches = 0, draws = 0;
+  const pairRec = (a, b) => {
+    const k = Math.min(a, b) + "-" + Math.max(a, b);
+    return PAIR[k] || (PAIR[k] = { a:Math.min(a,b), b:Math.max(a,b), g:0, w:0, dr:0, l:0, gf:0, ga:0, titles:0 });
+  };
+
+  list.forEach(t => {
+    t.players.forEach(p => { S[p].app++; TEAM[t.teamOf[p]].drawn++; });
+    t.table.forEach((p, i) => { if (i < 6) S[p].places[i]++; if (i === t.size - 1) S[p].last++; });
+    t.table.slice(0, 4).forEach(p => { S[p].finals++; TEAM[t.teamOf[p]].finals++; });
+    t.c.forEach(p => { S[p].titles++; TEAM[t.teamOf[p]].titles++; });
+    pairRec(t.c[0], t.c[1]).titles++;
+
+    t.m.forEach((m, mi) => {
+      const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+      goals += hg + ag; matches++;
+      const dw = hg === ag; if (dw) draws++;
+      const hp = dw ? 1 : hg > ag ? 3 : 0, ap = dw ? 1 : ag > hg ? 3 : 0;
+      [[[h1,h2], ht, hg, ag, hp, true,  [a1,a2], at],
+       [[a1,a2], at, ag, hg, ap, false, [h1,h2], ht]].forEach(([duo, club, gf, ga, pts, home, opp, oclub]) => {
+        const won = gf > ga;
+        duo.forEach(p => { const s = S[p]; s.g++; s.pts += pts; s.gf += gf; s.ga += ga;
+          if (dw) s.dr++; else if (won) s.w++; else s.l++; });
+        const pr = pairRec(duo[0], duo[1]);
+        pr.g++; pr.gf += gf; pr.ga += ga; if (dw) pr.dr++; else if (won) pr.w++; else pr.l++;
+        const T_ = TEAM[club]; T_.g++; T_.gf += gf; T_.ga += ga;
+        if (dw) T_.dr++; else if (won) T_.w++; else T_.l++;
+        duo.forEach((p, ix) => LOG[p].push({
+          ti: t.i, num: t.num, mi, club, oclub, gf, ga, pts, home,
+          res: dw ? "d" : won ? "w" : "l", mate: duo[1 - ix], opp: opp.slice()
+        }));
+      });
+      /* the two pairs met: record it from both sides */
+      const kh = pairKey(h1, h2), ka = pairKey(a1, a2);
+      const dRec = (x, y) => DUEL[x + "|" + y] ||
+        (DUEL[x + "|" + y] = { x, y, xa: Math.min(h1, h2), g: 0, w: 0, dr: 0, l: 0, gf: 0, ga: 0 });
+      const DA = dRec(kh, ka), DB = dRec(ka, kh);
+      DA.g++; DB.g++; DA.gf += hg; DA.ga += ag; DB.gf += ag; DB.ga += hg;
+      if (dw) { DA.dr++; DB.dr++; } else if (hg > ag) { DA.w++; DB.l++; } else { DA.l++; DB.w++; }
+      [h1, h2].forEach(x => [a1, a2].forEach(y => {
+        const A = H2H[x][y], B = H2H[y][x];
+        A.g++; B.g++; A.gf += hg; A.ga += ag; B.gf += ag; B.ga += hg;
+        if (dw) { A.dr++; B.dr++; } else if (hg > ag) { A.w++; B.l++; } else { A.l++; B.w++; }
+      }));
+    });
+    t.players.forEach(p => {
+      perT[p][t.i] = Object.assign({}, t.acc[p], { place: t.place[p], champ: t.c.includes(p), club: t.teamOf[p], size: t.size });
+    });
+  });
+
+  const MAXAPP = Math.max(1, ...S.map(s => s.app));
+  S.forEach((s, i) => {
+    s.i = i; s.gd = s.gf - s.ga; s.ppg = s.g ? s.pts / s.g : 0; s.k = s.app ? MAXAPP / s.app : 1;
+    s.avgPlace = s.app ? s.places.reduce((a, c, j) => a + c * (j + 1), 0) / s.app : 0;
+    s.titleRate = s.app ? s.titles / s.app : 0;
+  });
+  Object.values(PAIR).forEach(p => { p.pts = p.w * 3 + p.dr; p.ppg = p.g ? p.pts / p.g : 0; p.gd = p.gf - p.ga; });
+
+  /* Chemistry: a pair's points per match against what those same two manage
+     when they are NOT together. Excluding their shared matches from each
+     player's own rate keeps the comparison from measuring itself. */
+  const CHEM = {};
+  const apartRate = (p, q) => {
+    let g = 0, pts = 0;
+    LOG[p].forEach(e => { if (e.mate !== q) { g++; pts += e.pts; } });
+    return g ? pts / g : 0;
+  };
+  Object.keys(PAIR).forEach(k => {
+    const pr = PAIR[k];
+    const exp = (apartRate(pr.a, pr.b) + apartRate(pr.b, pr.a)) / 2;
+    let s2 = 0;
+    LOG[pr.a].forEach(e => { if (e.mate === pr.b) s2 += (e.pts - pr.ppg) * (e.pts - pr.ppg); });
+    const se = pr.g > 1 ? Math.sqrt(s2 / (pr.g - 1) / pr.g) : 0;
+    const d = pr.ppg - exp;
+    CHEM[k] = { a: pr.a, b: pr.b, g: pr.g, act: pr.ppg, exp, d, se, solid: se > 0 && Math.abs(d) > 1.5 * se };
+  });
+  TEAM.forEach((t, i) => { t.name = CLUBS[i]; t.gd = t.gf - t.ga; t.pts = t.w * 3 + t.dr; t.ppg = t.g ? t.pts / t.g : 0; });
+  const ORDER = S.map(s => s.i).sort((a, b) => S[b].pts - S[a].pts || S[b].titles - S[a].titles);
+  computeOVR(S);
+  return { S, PAIR, H2H, TEAM, perT, ORDER, MAXAPP, goals, matches, draws, list, LOG, DUEL, CHEM };
+}
+
+function rebuild() {
+  const seen = {};
+  SEED.T.forEach(t => {
+    seen[t.i] = { i: t.i, num: t.i, season: 0, d: t.d.map(x => x.slice()), t: t.t.slice(),
+                  m: t.m.map(x => x.slice()), c: t.c.slice(), seed: true };
+  });
+  Object.values(LIVE).forEach(t => { seen[t.i] = t; });
+  TS = Object.values(seen).sort((a, b) => a.i - b.i).map(decorate);
+  if (SCOPE !== "all" && !SEASONS.some(s => s.id === SCOPE)) SCOPE = latestSeason();
+  TSS = SCOPE === "all" ? TS : TS.filter(t => t.season === SCOPE);
+
+  const A = aggregate(TSS.filter(t => t.done));
+  S = A.S; PAIR = A.PAIR; H2H = A.H2H; TEAM = A.TEAM; perT = A.perT; ORDER = A.ORDER; MAXAPP = A.MAXAPP;
+  LOG = A.LOG; DUEL = A.DUEL; CHEM = A.CHEM;
+  totGoals = A.goals; totMatches = A.matches; drawnMatches = A.draws;
+  LAST = A.list[A.list.length - 1] || null;
+
+  /* a season that has not started yet borrows the previous one's cards */
+  buildModel();
+
+  CARRY = null;
+  if (SCOPE !== "all" && !A.list.length) {
+    const earlier = TS.filter(t => t.done && t.season < SCOPE);
+    if (earlier.length) {
+      const pid = Math.max.apply(null, earlier.map(t => t.season));
+      CARRY = { name: seasonById(pid).name, agg: aggregate(earlier.filter(t => t.season === pid)) };
+    }
+  }
+}
+const pairKey = (a, b) => Math.min(a, b) + "-" + Math.max(a, b);
+
+/* The two legs of the final, derived from the league table.
+   Leg 1: places 3+4 host with the club of place 4, against places 1+2 with the
+   club of place 2. Leg 2: places 1+2 host with the club of place 1, against
+   places 3+4 with the club of place 3. */
+function finalLegs(t) {
+  const tb = t.table;
+  if (!tb || tb.length < 4) return null;
+  const sc = (t.rec && t.rec.final) || [[null, null], [null, null]];
+  const g = i => (sc[i] && sc[i].length === 2) ? sc[i] : [null, null];
+  return [
+    { n: 1, home: [tb[2], tb[3]], hc: t.teamOf[tb[3]], away: [tb[0], tb[1]], ac: t.teamOf[tb[1]], s: g(0) },
+    { n: 2, home: [tb[0], tb[1]], hc: t.teamOf[tb[0]], away: [tb[2], tb[3]], ac: t.teamOf[tb[2]], s: g(1) }
+  ];
+}
+/* The winners follow from the aggregate. Level on aggregate, the golden-goal
+   pick stored on the record decides. Tournaments with no `final` field at all
+   keep whatever champions they were recorded with. */
+/* A deep, writable copy. Records hold nothing but numbers, strings and
+   arrays, so a JSON round-trip is both sufficient and exact. */
+function thaw(o) {
+  try { return JSON.parse(JSON.stringify(o)); } catch (e) { return o; }
+}
+function frozenRec(r) {
+  return !!r && (Object.isFrozen(r) ||
+    (r.scores && Object.isFrozen(r.scores)) ||
+    (r.clubs && Object.isFrozen(r.clubs)) ||
+    (r.final && Object.isFrozen(r.final)));
+}
+/* Every edit writes into t.rec in place. If that record is frozen the write
+   throws and the edit is lost, so swap in a writable copy first — and point
+   the live object at the same copy, so the two can never drift apart. */
+function writable(t) {
+  if (!t || !frozenRec(t.rec)) return t;
+  const cp = thaw(t.rec);
+  t.rec = cp;
+  try { if (LIVE[t.i] && LIVE[t.i] !== t) LIVE[t.i].rec = cp; } catch (e) {}
+  return t;
+}
+
+function applyFinal(t) {
+  if (!t.rec || !t.rec.final || !t.legs) return;
+  writable(t);
+  const L = t.legs;
+  if (!L.every(l => l.s[0] != null && l.s[1] != null)) { t.c = []; t.rec.champs = []; return; }
+  const top = L[0].s[1] + L[1].s[0], bot = L[0].s[0] + L[1].s[1];
+  if (top > bot) t.c = [t.table[0], t.table[1]].slice().sort((a, b) => a - b);
+  else if (bot > top) t.c = [t.table[2], t.table[3]].slice().sort((a, b) => a - b);
+  else t.c = t.rec.gg ? (t.rec.champs || []).slice().sort((a, b) => a - b) : [];
+  t.rec.champs = t.c.slice();
+}
+
+const legMatch = L => [L.home[0], L.home[1], L.hc, L.away[0], L.away[1], L.ac, L.s[0], L.s[1]];
+
+/* Aggregate over the two legs. Pair 1-2 is away in leg 1 and home in leg 2. */
+function finalOutcome(t) {
+  const L = t.legs;
+  if (!L) return null;
+  const played = L.every(l => l.s[0] != null && l.s[1] != null);
+  if (!played) return { L: L, played: false };
+  const top = L[0].s[1] + L[1].s[0];
+  const bot = L[0].s[0] + L[1].s[1];
+  const tb = t.table;
+  return { L: L, played: true, top: top, bot: bot,
+           winner: top > bot ? [tb[0], tb[1]] : bot > top ? [tb[2], tb[3]] : null };
+}
+
+/* render one view against a different season's aggregate */
+function withAgg(agg, fn, host) {
+  const keep = { S, PAIR, H2H, TEAM, perT, ORDER, MAXAPP, TSS, LOG, DUEL, CHEM };
+  S = agg.S; PAIR = agg.PAIR; H2H = agg.H2H; TEAM = agg.TEAM;
+  perT = agg.perT; ORDER = agg.ORDER; MAXAPP = agg.MAXAPP; TSS = agg.list;
+  LOG = agg.LOG; DUEL = agg.DUEL; CHEM = agg.CHEM;
+  try { fn(host); } finally {
+    S = keep.S; PAIR = keep.PAIR; H2H = keep.H2H; TEAM = keep.TEAM;
+    perT = keep.perT; ORDER = keep.ORDER; MAXAPP = keep.MAXAPP; TSS = keep.TSS;
+    LOG = keep.LOG; DUEL = keep.DUEL; CHEM = keep.CHEM;
+  }
+}
+
+/* ---------- the card rating ----------
+   Four career measures, each scaled 0-1 across the six players, then blended
+   and mapped onto 62-93 so the cards read like a squad list. Every input is
+   shown on the card, so the number can always be traced back. */
+function computeOVR(S) {
+  const ax = [
+    { k: "ppg",  w: .34, v: s => s.ppg },
+    { k: "ttl",  w: .30, v: s => s.titleRate },
+    { k: "fin",  w: .16, v: s => (s.app ? s.finals / s.app : 0) },
+    { k: "gd",   w: .20, v: s => (s.g ? (s.gf - s.ga) / s.g : 0) }
+  ];
+  ax.forEach(a => { a.lo = Math.min(...S.map(a.v)); a.hi = Math.max(...S.map(a.v)); });
+  S.forEach(s => {
+    let z = 0;
+    ax.forEach(a => { z += a.w * (a.hi > a.lo ? (a.v(s) - a.lo) / (a.hi - a.lo) : .5); });
+    s.ovr = Math.round(62 + 31 * z);
+    s.tier = s.ovr >= 84 ? "gold" : s.ovr >= 74 ? "silver" : "bronze";
+    s.role = s.gf / Math.max(1, s.g) >= s.ga / Math.max(1, s.g) ? "התקפה" : "הגנה";
+  });
+}
+const TIER = {
+  gold:   { t1:"#B8860B", t2:"#FFE9A3", ink:"#2A2004" },
+  silver: { t1:"#6E7A85", t2:"#D6DEE6", ink:"#1B2127" },
+  bronze: { t1:"#7A4A22", t2:"#D8A273", ink:"#2A1608" }
+};
+
+/* ---------- tooltip ---------- */
+const tip = el("div", "tip"); tip.hidden = true; document.body.appendChild(tip);
+function showTip(html, x, y) {
+  if (tipPinned) return;
+  tip.innerHTML = html; tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let left = Math.max(8, Math.min(x - r.width / 2, innerWidth - r.width - 8));
+  let top = y - r.height - 14; if (top < 8) top = y + 18;
+  tip.style.left = left + "px"; tip.style.top = top + "px";
+}
+/* Anything that goes wrong becomes visible — a silent failure is what made
+   the save bug so hard to pin down. */
+let lastFatal = "";
+function showFatal(msg) {
+  msg = String(msg || "").slice(0, 400);
+  if (msg === lastFatal) return;
+  lastFatal = msg;
+  const old = document.getElementById("errBar");
+  if (old) old.remove();
+  const bar = el("div", "errbar");
+  bar.id = "errBar";
+  bar.innerHTML = "<div><b>משהו נכשל</b><br><code>" + esc(msg) + "</code></div>";
+  const cp = el("button", "btn ghost sm", "העתק");
+  cp.onclick = () => copyText(msg, cp);
+  const x = el("button", "x", "✕");
+  x.onclick = () => { bar.remove(); lastFatal = ""; };
+  bar.append(cp, x);
+  document.body.appendChild(bar);
+}
+addEventListener("error", e => showFatal((e.message || "error") + "  @" + (e.lineno || "?") + ":" + (e.colno || "?")));
+addEventListener("unhandledrejection", e => {
+  const r = e.reason;
+  showFatal("Promise: " + ((r && (r.message || r.code)) || r));
+});
+/* run a step and report it by name if it throws, without stopping the rest */
+function step(name, fn) {
+  try { return fn(); } catch (err) { showFatal(name + " → " + (err && err.message ? err.message : err)); return null; }
+}
+
+/* window.confirm is blocked in the artifact frame — it returns false without
+   ever showing — so anything irreversible asks here instead. Resolves true
+   only on a deliberate click; Escape, the backdrop and Cancel all say no. */
+function askConfirm(o) {
+  return new Promise(resolve => {
+    const back = el("div", "modalback");
+    const card = el("div", "modalcard");
+    card.innerHTML = "<h3>" + esc(o.title) + "</h3><p>" + esc(o.body) + "</p>" +
+      (o.warn ? '<div class="warnstrip">' + esc(o.warn) + "</div>" : "");
+    const row = el("div", "modalrow");
+    const yes = el("button", "btn ghost sm danger", o.ok || "כן, מחק");
+    const no = el("button", "btn sm", o.cancel || "לא, השאר");
+    const done = v => {
+      document.removeEventListener("keydown", onKey);
+      back.remove();
+      resolve(v);
+    };
+    const onKey = e => { if (e.key === "Escape") done(false); };
+    yes.onclick = () => done(true);
+    no.onclick = () => done(false);
+    back.onclick = e => { if (e.target === back) done(false); };
+    document.addEventListener("keydown", onKey);
+    row.append(yes, no);
+    card.appendChild(row);
+    back.appendChild(card);
+    document.body.appendChild(back);
+    no.focus();                       // the safe option is the one under the finger
+  });
+}
+
+let tipPinned = false;
+const hideTip = force => { if (tipPinned && !force) return; tip.hidden = true; tip.classList.remove("pinned"); };
+/* a tapped explanation stays up until the next click anywhere */
+function pinTip(html, ev) {
+  ev.stopPropagation();
+  tipPinned = false;
+  const x = ev.clientX || 0, y = ev.clientY || 0;
+  if (x || y) showTip(html, x, y);
+  else { const r = ev.currentTarget.getBoundingClientRect(); showTip(html, r.left + r.width / 2, r.top); }
+  tip.classList.add("pinned");
+  tipPinned = true;
+}
+document.addEventListener("click", () => { if (tipPinned) { tipPinned = false; hideTip(true); } });
+addEventListener("scroll", () => hideTip(), { passive: true });
+
+/* Re-render the control room, keeping focus where the user just was. */
+function refreshLive() {
+  const ae = document.activeElement;
+  const id = ae && ae.id ? ae.id : null;
+  const key = ae && ae.getAttribute ? ae.getAttribute("data-k") : null;
+  const host = document.getElementById("v-live");
+  if (host) viewLive(host);
+  const back = id ? document.getElementById(id)
+             : key ? document.querySelector('[data-k="' + key + '"]') : null;
+  if (back) { back.focus(); if (back.select) back.select(); }
+}
+
+/* ---------- sortable table ---------- */
+/* The longest run of matches satisfying `ok`, and where it ended. */
+function longestRun(log, ok) {
+  let best = 0, cur = 0, from = null, span = null;
+  log.forEach(e => {
+    if (ok(e)) {
+      cur++; if (cur === 1) from = e;
+      if (cur > best) { best = cur; span = { from, to: e }; }
+    } else { cur = 0; from = null; }
+  });
+  return { n: best, span };
+}
+/* The run still going at the end of the log. */
+function currentRun(log, ok) {
+  let n = 0;
+  for (let i = log.length - 1; i >= 0; i--) { if (ok(log[i])) n++; else break; }
+  return n;
+}
+const isW = e => e.res === "w";
+const isNL = e => e.res !== "l";
+const isL = e => e.res === "l";
+
+function makeTable(host, cols, rows, opts) {
+  opts = opts || {};
+  const st = { key: opts.sort || null, dir: opts.dir || -1 };
+  const box = el("div", "tscroll" + (opts.fit ? " fit" : "")), tbl = el("table");
+  const thead = el("thead"), trh = el("tr");
+  cols.forEach(c => {
+    const th = el("th", c.sortable === false ? "" : "sortable");
+    th.innerHTML = esc(c.label) + '<span class="car"></span>';
+    if (c.sortable !== false) th.onclick = () => {
+      if (st.key === c.key) st.dir = -st.dir; else { st.key = c.key; st.dir = -1; }
+      render();
+    };
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh); tbl.appendChild(thead);
+  const tbody = el("tbody"); tbl.appendChild(tbody); box.appendChild(tbl); host.appendChild(box);
+  function render() {
+    const list = rows.slice();
+    if (st.key) {
+      const col = cols.find(c => c.key === st.key);
+      list.sort((a, b) => {
+        const va = col.sortVal ? col.sortVal(a) : col.val(a), vb = col.sortVal ? col.sortVal(b) : col.val(b);
+        return typeof va === "string" ? st.dir * va.localeCompare(vb, "he") : st.dir * (va - vb);
+      });
+    }
+    trh.querySelectorAll("th").forEach((th, i) => {
+      const on = cols[i].key === st.key;
+      th.querySelector(".car").textContent = on ? (st.dir === -1 ? " ↓" : " ↑") : "";
+      if (on) th.setAttribute("aria-sort", st.dir === -1 ? "descending" : "ascending"); else th.removeAttribute("aria-sort");
+    });
+    tbody.innerHTML = "";
+    list.forEach((r, i) => {
+      const tr = el("tr", opts.rowCls ? opts.rowCls(r, i) : "");
+      cols.forEach(c => {
+        const td = el("td", c.cls ? c.cls(r) : "");
+        td.innerHTML = c.render ? c.render(r, i) : String(c.val(r));
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  render();
+  return { render };
+}
