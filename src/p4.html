@@ -89,13 +89,16 @@ function awardsBlock() {
    The forecast made before a ball was kicked
    ========================================================================== */
 const PRE = {};
+const preKey = t => t.i + ":" + t.d.map(x => x.join(".")).join(",");
 function preForecast(t) {
   if (!MODEL || !MODEL.matches || !t.m.length) return null;
-  const k = t.i + ":" + t.d.map(x => x.join(".")).join(",");
+  const k = preKey(t);
   if (PRE[k]) return PRE[k];
   const sim = simulate(snapshotAt(t, 0), 2500, null, (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0);
   if (!sim) return null;
-  if (Object.keys(PRE).length > 80) for (const x in PRE) delete PRE[x];
+  /* one per tournament, and the season forecast walks all of them — the cap
+     must sit well above the archive or it would wipe itself mid-walk */
+  if (Object.keys(PRE).length > 400) for (const x in PRE) delete PRE[x];
   PRE[k] = sim;
   return sim;
 }
@@ -146,16 +149,27 @@ function modelScoreBlock() {
     'התחזית שלפני כל טורניר, מול מי שבאמת הרים. שימו לב: המודל מכויל על כל המשחקים שנרשמו, ' +
     'כולל אלה של אותו טורניר — ולכן זו בחינה בדיעבד. רק הטורניר החי הוא תחזית אמיתית.</span></div>';
   const host = el("div");
-  host.appendChild(el("div", "mut", "מריץ את התחזיות…"));
+  const wait = el("div", "mut", "מריץ את התחזיות…");
+  host.appendChild(wait);
   sec.appendChild(host);
-  setTimeout(() => step("modelscore", () => {
+  /* One forecast per tournament, ~35ms each on a laptop and several times
+     that on a phone. Run them one per step, yielding between them, and only
+     once this block is actually scrolled into view. */
+  const go = async () => {
     const done = TSS.filter(t => t.done && t.c && t.c.length === 2);
     const rows = [], buckets = [[0, .15], [.15, .3], [.3, .45], [.45, 1.01]];
     const acc = buckets.map(() => ({ n: 0, sum: 0, hit: 0 }));
     let favHit = 0, champSum = 0, baseSum = 0, n = 0;
-    done.forEach(t => {
+    for (let k = 0; k < done.length; k++) {
+      const t = done[k];
+      if (!PRE[preKey(t)]) {
+        preForecast(t);
+        await yieldNow();
+        if (!host.isConnected) return;                     // the user left the tab
+        wait.textContent = "מריץ את התחזיות… " + (k + 1) + " מתוך " + done.length;
+      }
       const sim = preForecast(t);
-      if (!sim) return;
+      if (!sim) continue;
       n++;
       const ranked = t.players.slice().sort((a, b) => sim[b].title - sim[a].title);
       if (t.c.indexOf(ranked[0]) >= 0) favHit++;
@@ -167,7 +181,7 @@ function modelScoreBlock() {
         acc[bi].n++; acc[bi].sum += v; acc[bi].hit += t.c.indexOf(p) >= 0 ? 1 : 0;
       });
       rows.push({ t, fav: ranked[0], hit: t.c.indexOf(ranked[0]) >= 0 });
-    });
+    }
     host.innerHTML = "";
     if (!n) { host.appendChild(el("div", "mut", "אין עדיין טורנירים שהסתיימו.")); return; }
     /* how far the buckets sit from what actually happened, weighted by size */
@@ -205,7 +219,23 @@ function modelScoreBlock() {
     host.appendChild(el("div", "stlegend",
       '<span>כל שורה: כל המקרים שבהם המודל נתן לשחקן סיכוי בטווח הזה, ' +
       'וכמה מהם באמת הסתיימו באליפות. ככל ששתי העמודות האחרונות קרובות, הכיול טוב יותר.</span>'));
-  }), 0);
+  };
+  /* Start when the block comes into view, or after a moment regardless: a
+     page that is not being displayed never reports intersections, and the
+     work is stepped now, so running it unseen costs battery, not taps. */
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    go().catch(err => showFatal("modelscore → " + (err && err.message ? err.message : err)));
+  };
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(es => {
+      if (es.some(e => e.isIntersecting)) { io.disconnect(); start(); }
+    }, { rootMargin: "400px" });
+    io.observe(sec);
+  }
+  setTimeout(start, 1500);
   return sec;
 }
 
@@ -1338,7 +1368,9 @@ function newsItems(t) {
   }
 
   /* the fixture that settles it, if one of the remaining ones does */
-  const gv = played < total ? gravityOf(t) : null;
+  /* cached only: these take seconds on a phone, so viewNews computes them in
+     the background and redraws once they are ready */
+  const gv = played < total ? gravityCached(t) : null;
   if (gv && gv.top && gv.top.spread >= 0.25) {
     const g = gv.top, gm = t.m[g.i];
     const ord = [{ o: "h", v: g.v[0] }, { o: "d", v: g.v[1] }, { o: "a", v: g.v[2] }]
@@ -1365,7 +1397,7 @@ function newsItems(t) {
   }
 
   /* the match that moved the tournament most, once there is enough to compare */
-  const tlN = played >= 3 ? timelineOf(t) : null;
+  const tlN = played >= 3 ? timelineCached(t) : null;
   if (tlN && tlN.peak && tlN.peak.swing >= 0.08 && tlN.peak.mover != null) {
     const sp = tlN.peak, pm = t.m[sp.k - 1], mp = sp.mover;
     const b4 = tlN.stages[sp.k - 1].sim[mp].top4, af = sp.sim[mp].top4;
@@ -1481,8 +1513,8 @@ function heroItem(t, sim, played, total, stand) {
 
 const stripTags = h => String(h).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 
-function bulletinFor(t) {
-  const n = newsItems(t);
+function bulletinFor(t, pre) {
+  const n = pre || newsItems(t);          // reuse the stories if the caller has them
   return {
     headline: stripTags(n.items[0].head),
     text: "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
@@ -1494,7 +1526,7 @@ function bulletinFor(t) {
 /* the scheduled task reads this doc and delivers it — the page is the only
    place that can compute it */
 let lastBulletin = "";
-function publishBulletin(t) {
+function publishBulletin(t, pre) {
   if (!Store.db || !t || !MODEL || !MODEL.matches) return;
   /* Only a tournament that lives in the store may speak for the newsroom.
      The newsroom SCREEN falls back to the last finished archive tournament
@@ -1502,7 +1534,7 @@ function publishBulletin(t) {
      overwrite the real bulletin with old news and set off a stale push. */
   if (!t.live || !LIVE[t.i]) return;
   let b;
-  try { b = bulletinFor(t); } catch (e) { return; }
+  try { b = bulletinFor(t, pre); } catch (e) { return; }
   if (b.text === lastBulletin) return;      // nothing moved since the last write
   lastBulletin = b.text;
   /* set() is async: a failure must not surface as an unexplained red bar */
@@ -1537,7 +1569,21 @@ function viewNews(root) {
   const full = "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
     n.items.map(i => i.plain).filter(Boolean).join("\n\n");
   all.onclick = () => copyText(full, all);
-  publishBulletin(t);
+  publishBulletin(t, n);
+
+  /* The peak-moment and decisive-match stories need simulations that take
+     seconds on a phone. Work them out in the background, a step at a time,
+     and redraw only if the reader is still on this screen, looking at the
+     same tournament in the same state. The redraw finds them cached. */
+  const needTl = n.played >= 3 && !timelineCached(t);
+  const needGv = n.played < n.total && !gravityCached(t);
+  if (needTl || needGv) {
+    const sig = scoreSig(t);
+    Promise.all([needTl ? timelineAsync(t) : null, needGv ? gravityAsync(t) : null]).then(() => {
+      const cur = TSS.filter(x => !x.done).slice(-1)[0] || TSS.filter(x => x.done).slice(-1)[0];
+      if (!root.hidden && root.isConnected && cur && cur.i === t.i && scoreSig(cur) === sig) viewNews(root);
+    }).catch(() => {});
+  }
 }
 
 /* ==========================================================================

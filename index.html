@@ -1817,7 +1817,23 @@ function finalLegLambdas(t, tb) {
 
 /* `force` optionally pins the first unplayed fixture to an outcome
    ("h" | "d" | "a") so we can ask what one result would be worth */
+/* The same tournament state always simulates to the same numbers (the
+   stream is seeded from it), so the answer is kept: reopening the newsroom
+   or a tournament costs nothing the second time. The key covers everything
+   the result depends on — scores, clubs, the model, and the options. */
+const SIMC = { model: null, map: {}, n: 0 };
 function simulate(t, iters, force, seed) {
+  if (!MODEL || !MODEL.matches) return null;
+  if (SIMC.model !== MODEL || SIMC.n > 600) { SIMC.model = MODEL; SIMC.map = {}; SIMC.n = 0; }
+  const key = scoreSig(t) + "|" + t.d.map(x => x[1]).join(".") + "|" + iters + "|" +
+              (force ? (typeof force === "string" ? force : force.o + "@" + force.at) : "-") + "|" +
+              (seed != null ? seed : "s");
+  if (SIMC.map[key]) return SIMC.map[key];
+  const out = simulateRun(t, iters, force, seed);
+  if (out) { SIMC.map[key] = out; SIMC.n++; }
+  return out;
+}
+function simulateRun(t, iters, force, seed) {
   if (!MODEL || !MODEL.matches) return null;
   /* `force` is "h"|"d"|"a" for the next open fixture, or {o, at} to pin one
      particular fixture. `seed` pins the stream, so two runs of neighbouring
@@ -1911,7 +1927,40 @@ function snapshotAt(t, k) {
   });
 }
 
+/* ==========================================================================
+   Heavy work, a step at a time
+   --------------------------------------------------------------------------
+   A phone runs these simulations 4-8x slower than a laptop. Run as one block,
+   the season-long forecast froze a phone for ten seconds and the tabs looked
+   dead. So every job that runs many simulations is done one unit at a time,
+   handing the browser back between units: a tap waits for one unit, never
+   for the whole job. Callers that cannot wait read only what is cached.
+   ========================================================================== */
+const yieldNow = () => new Promise(r => setTimeout(r, 0));
+const INFLIGHT = {};
+function once(key, make) {
+  if (!INFLIGHT[key]) INFLIGHT[key] = make().finally(() => { delete INFLIGHT[key]; });
+  return INFLIGHT[key];
+}
+
 const TLC = {};
+const timelineCached = t => TLC[scoreSig(t)] || null;
+function timelineAsync(t) {
+  const sig = scoreSig(t);
+  if (TLC[sig]) return Promise.resolve(TLC[sig]);
+  return once("tl:" + sig, async () => {
+    const played = t.m.filter(m => m[6] != null && m[7] != null).length;
+    const seed = (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0;
+    const stages = [];
+    for (let k = 0; k <= played; k++) {
+      const s = snapshotAt(t, k);
+      stages.push({ k, t: s, sim: simulate(s, 2500, null, seed), swing: 0, mover: null, moved: 0 });
+      await yieldNow();
+    }
+    return finishTimeline(t, sig, stages, played);
+  });
+}
+/* synchronous form, kept for tests and anything that already holds the cache */
 function timelineOf(t) {
   const sig = scoreSig(t);
   if (TLC[sig]) return TLC[sig];
@@ -1922,6 +1971,9 @@ function timelineOf(t) {
     const s = snapshotAt(t, k);
     stages.push({ k, t: s, sim: simulate(s, 2500, null, seed), swing: 0, mover: null, moved: 0 });
   }
+  return finishTimeline(t, sig, stages, played);
+}
+function finishTimeline(t, sig, stages, played) {
   for (let k = 1; k < stages.length; k++) {
     const a = stages[k - 1].sim, b = stages[k].sim;
     if (!a || !b) continue;
@@ -1943,31 +1995,49 @@ function timelineOf(t) {
 /* What one result is worth: how far the road to the final moves between the
    three possible outcomes of a single fixture, everything else simulated. */
 const GRV = {};
+const gravityCached = t => GRV[scoreSig(t)] || null;
+function gravityOpen(t) {
+  const openIdx = [];
+  t.m.forEach((m, i) => { if (m[6] == null || m[7] == null) openIdx.push(i); });
+  return (MODEL && MODEL.matches && openIdx.length && openIdx.length <= 8) ? openIdx : [];
+}
+function gravityOne(t, i, seed) {
+  const m = t.m[i];
+  const H = simulate(t, 1500, { o: "h", at: i }, seed);
+  const D = simulate(t, 1500, { o: "d", at: i }, seed);
+  const A = simulate(t, 1500, { o: "a", at: i }, seed);
+  if (!H || !D || !A) return null;
+  const inv = [m[0], m[1], m[3], m[4]];
+  let top = null;
+  inv.forEach(p => {
+    const v = [H[p].top4, D[p].top4, A[p].top4];
+    const spread = Math.max.apply(null, v) - Math.min.apply(null, v);
+    if (!top || spread > top.spread) top = { p, spread, v };
+  });
+  return { i, p: top.p, v: top.v, spread: top.spread,
+           all: inv.map(p => ({ p, h: H[p].top4, d: D[p].top4, a: A[p].top4 })) };
+}
+function gravityAsync(t) {
+  const sig = scoreSig(t);
+  if (GRV[sig]) return Promise.resolve(GRV[sig]);
+  return once("gv:" + sig, async () => {
+    const map = {}, seed = (Math.imul(t.i, 40503) + 7) >>> 0;
+    for (const i of gravityOpen(t)) {
+      const g = gravityOne(t, i, seed);
+      if (g) map[i] = g;
+      await yieldNow();
+    }
+    return finishGravity(sig, map);
+  });
+}
 function gravityOf(t) {
   const sig = scoreSig(t);
   if (GRV[sig]) return GRV[sig];
-  const map = {};
-  const openIdx = [];
-  t.m.forEach((m, i) => { if (m[6] == null || m[7] == null) openIdx.push(i); });
-  if (MODEL && MODEL.matches && openIdx.length && openIdx.length <= 8) {
-    const seed = (Math.imul(t.i, 40503) + 7) >>> 0;
-    openIdx.forEach(i => {
-      const m = t.m[i];
-      const H = simulate(t, 1500, { o: "h", at: i }, seed);
-      const D = simulate(t, 1500, { o: "d", at: i }, seed);
-      const A = simulate(t, 1500, { o: "a", at: i }, seed);
-      if (!H || !D || !A) return;
-      const inv = [m[0], m[1], m[3], m[4]];
-      let top = null;
-      inv.forEach(p => {
-        const v = [H[p].top4, D[p].top4, A[p].top4];
-        const spread = Math.max.apply(null, v) - Math.min.apply(null, v);
-        if (!top || spread > top.spread) top = { p, spread, v };
-      });
-      map[i] = { i, p: top.p, v: top.v, spread: top.spread,
-                 all: inv.map(p => ({ p, h: H[p].top4, d: D[p].top4, a: A[p].top4 })) };
-    });
-  }
+  const map = {}, seed = (Math.imul(t.i, 40503) + 7) >>> 0;
+  gravityOpen(t).forEach(i => { const g = gravityOne(t, i, seed); if (g) map[i] = g; });
+  return finishGravity(sig, map);
+}
+function finishGravity(sig, map) {
   const list = Object.keys(map).map(k => map[k]).sort((a, b) => b.spread - a.spread);
   const out = { map, top: list[0] || null };
   if (Object.keys(GRV).length > 24) for (const k in GRV) delete GRV[k];
@@ -2021,9 +2091,10 @@ function gravityLine(t, g) {
   return d;
 }
 
-function paintGravity(t) {
+async function paintGravity(t) {
   if (!t) return;
-  const g = gravityOf(t);
+  const g = await gravityAsync(t);
+  if (scoreSig(LIVE[t.i] || t) !== scoreSig(t)) return;   // a newer score landed meanwhile
   Object.keys(g.map).forEach(k => {
     const info = g.map[k];
     const fx = document.querySelector('[data-fx="' + t.i + "-" + k + '"]');
@@ -2065,8 +2136,9 @@ function timelineBlock(t) {
   return sec;
 }
 
-function fillTimeline(t, host) {
-  const tl = timelineOf(t);
+async function fillTimeline(t, host) {
+  const tl = timelineCached(t) || await timelineAsync(t);
+  if (!host.isConnected) return;                           // the user moved on meanwhile
   host.innerHTML = "";
   if (tl.played < 1) { host.appendChild(el("div", "mut", "הציר ייפתח אחרי המשחק הראשון.")); return; }
   const maxSw = Math.max(0.02, ...tl.stages.slice(1).map(s => s.swing));
@@ -3418,13 +3490,16 @@ function awardsBlock() {
    The forecast made before a ball was kicked
    ========================================================================== */
 const PRE = {};
+const preKey = t => t.i + ":" + t.d.map(x => x.join(".")).join(",");
 function preForecast(t) {
   if (!MODEL || !MODEL.matches || !t.m.length) return null;
-  const k = t.i + ":" + t.d.map(x => x.join(".")).join(",");
+  const k = preKey(t);
   if (PRE[k]) return PRE[k];
   const sim = simulate(snapshotAt(t, 0), 2500, null, (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0);
   if (!sim) return null;
-  if (Object.keys(PRE).length > 80) for (const x in PRE) delete PRE[x];
+  /* one per tournament, and the season forecast walks all of them — the cap
+     must sit well above the archive or it would wipe itself mid-walk */
+  if (Object.keys(PRE).length > 400) for (const x in PRE) delete PRE[x];
   PRE[k] = sim;
   return sim;
 }
@@ -3475,16 +3550,27 @@ function modelScoreBlock() {
     'התחזית שלפני כל טורניר, מול מי שבאמת הרים. שימו לב: המודל מכויל על כל המשחקים שנרשמו, ' +
     'כולל אלה של אותו טורניר — ולכן זו בחינה בדיעבד. רק הטורניר החי הוא תחזית אמיתית.</span></div>';
   const host = el("div");
-  host.appendChild(el("div", "mut", "מריץ את התחזיות…"));
+  const wait = el("div", "mut", "מריץ את התחזיות…");
+  host.appendChild(wait);
   sec.appendChild(host);
-  setTimeout(() => step("modelscore", () => {
+  /* One forecast per tournament, ~35ms each on a laptop and several times
+     that on a phone. Run them one per step, yielding between them, and only
+     once this block is actually scrolled into view. */
+  const go = async () => {
     const done = TSS.filter(t => t.done && t.c && t.c.length === 2);
     const rows = [], buckets = [[0, .15], [.15, .3], [.3, .45], [.45, 1.01]];
     const acc = buckets.map(() => ({ n: 0, sum: 0, hit: 0 }));
     let favHit = 0, champSum = 0, baseSum = 0, n = 0;
-    done.forEach(t => {
+    for (let k = 0; k < done.length; k++) {
+      const t = done[k];
+      if (!PRE[preKey(t)]) {
+        preForecast(t);
+        await yieldNow();
+        if (!host.isConnected) return;                     // the user left the tab
+        wait.textContent = "מריץ את התחזיות… " + (k + 1) + " מתוך " + done.length;
+      }
       const sim = preForecast(t);
-      if (!sim) return;
+      if (!sim) continue;
       n++;
       const ranked = t.players.slice().sort((a, b) => sim[b].title - sim[a].title);
       if (t.c.indexOf(ranked[0]) >= 0) favHit++;
@@ -3496,7 +3582,7 @@ function modelScoreBlock() {
         acc[bi].n++; acc[bi].sum += v; acc[bi].hit += t.c.indexOf(p) >= 0 ? 1 : 0;
       });
       rows.push({ t, fav: ranked[0], hit: t.c.indexOf(ranked[0]) >= 0 });
-    });
+    }
     host.innerHTML = "";
     if (!n) { host.appendChild(el("div", "mut", "אין עדיין טורנירים שהסתיימו.")); return; }
     /* how far the buckets sit from what actually happened, weighted by size */
@@ -3534,7 +3620,23 @@ function modelScoreBlock() {
     host.appendChild(el("div", "stlegend",
       '<span>כל שורה: כל המקרים שבהם המודל נתן לשחקן סיכוי בטווח הזה, ' +
       'וכמה מהם באמת הסתיימו באליפות. ככל ששתי העמודות האחרונות קרובות, הכיול טוב יותר.</span>'));
-  }), 0);
+  };
+  /* Start when the block comes into view, or after a moment regardless: a
+     page that is not being displayed never reports intersections, and the
+     work is stepped now, so running it unseen costs battery, not taps. */
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    go().catch(err => showFatal("modelscore → " + (err && err.message ? err.message : err)));
+  };
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(es => {
+      if (es.some(e => e.isIntersecting)) { io.disconnect(); start(); }
+    }, { rootMargin: "400px" });
+    io.observe(sec);
+  }
+  setTimeout(start, 1500);
   return sec;
 }
 
@@ -4667,7 +4769,9 @@ function newsItems(t) {
   }
 
   /* the fixture that settles it, if one of the remaining ones does */
-  const gv = played < total ? gravityOf(t) : null;
+  /* cached only: these take seconds on a phone, so viewNews computes them in
+     the background and redraws once they are ready */
+  const gv = played < total ? gravityCached(t) : null;
   if (gv && gv.top && gv.top.spread >= 0.25) {
     const g = gv.top, gm = t.m[g.i];
     const ord = [{ o: "h", v: g.v[0] }, { o: "d", v: g.v[1] }, { o: "a", v: g.v[2] }]
@@ -4694,7 +4798,7 @@ function newsItems(t) {
   }
 
   /* the match that moved the tournament most, once there is enough to compare */
-  const tlN = played >= 3 ? timelineOf(t) : null;
+  const tlN = played >= 3 ? timelineCached(t) : null;
   if (tlN && tlN.peak && tlN.peak.swing >= 0.08 && tlN.peak.mover != null) {
     const sp = tlN.peak, pm = t.m[sp.k - 1], mp = sp.mover;
     const b4 = tlN.stages[sp.k - 1].sim[mp].top4, af = sp.sim[mp].top4;
@@ -4810,8 +4914,8 @@ function heroItem(t, sim, played, total, stand) {
 
 const stripTags = h => String(h).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 
-function bulletinFor(t) {
-  const n = newsItems(t);
+function bulletinFor(t, pre) {
+  const n = pre || newsItems(t);          // reuse the stories if the caller has them
   return {
     headline: stripTags(n.items[0].head),
     text: "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
@@ -4823,7 +4927,7 @@ function bulletinFor(t) {
 /* the scheduled task reads this doc and delivers it — the page is the only
    place that can compute it */
 let lastBulletin = "";
-function publishBulletin(t) {
+function publishBulletin(t, pre) {
   if (!Store.db || !t || !MODEL || !MODEL.matches) return;
   /* Only a tournament that lives in the store may speak for the newsroom.
      The newsroom SCREEN falls back to the last finished archive tournament
@@ -4831,7 +4935,7 @@ function publishBulletin(t) {
      overwrite the real bulletin with old news and set off a stale push. */
   if (!t.live || !LIVE[t.i]) return;
   let b;
-  try { b = bulletinFor(t); } catch (e) { return; }
+  try { b = bulletinFor(t, pre); } catch (e) { return; }
   if (b.text === lastBulletin) return;      // nothing moved since the last write
   lastBulletin = b.text;
   /* set() is async: a failure must not surface as an unexplained red bar */
@@ -4866,7 +4970,21 @@ function viewNews(root) {
   const full = "📰 חדר חדשות · טורניר " + t.num + " · " + seasonById(t.season).name + "\n\n" +
     n.items.map(i => i.plain).filter(Boolean).join("\n\n");
   all.onclick = () => copyText(full, all);
-  publishBulletin(t);
+  publishBulletin(t, n);
+
+  /* The peak-moment and decisive-match stories need simulations that take
+     seconds on a phone. Work them out in the background, a step at a time,
+     and redraw only if the reader is still on this screen, looking at the
+     same tournament in the same state. The redraw finds them cached. */
+  const needTl = n.played >= 3 && !timelineCached(t);
+  const needGv = n.played < n.total && !gravityCached(t);
+  if (needTl || needGv) {
+    const sig = scoreSig(t);
+    Promise.all([needTl ? timelineAsync(t) : null, needGv ? gravityAsync(t) : null]).then(() => {
+      const cur = TSS.filter(x => !x.done).slice(-1)[0] || TSS.filter(x => x.done).slice(-1)[0];
+      if (!root.hidden && root.isConnected && cur && cur.i === t.i && scoreSig(cur) === sig) viewNews(root);
+    }).catch(() => {});
+  }
 }
 
 /* ==========================================================================

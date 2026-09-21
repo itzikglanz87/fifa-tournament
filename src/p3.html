@@ -500,7 +500,23 @@ function finalLegLambdas(t, tb) {
 
 /* `force` optionally pins the first unplayed fixture to an outcome
    ("h" | "d" | "a") so we can ask what one result would be worth */
+/* The same tournament state always simulates to the same numbers (the
+   stream is seeded from it), so the answer is kept: reopening the newsroom
+   or a tournament costs nothing the second time. The key covers everything
+   the result depends on — scores, clubs, the model, and the options. */
+const SIMC = { model: null, map: {}, n: 0 };
 function simulate(t, iters, force, seed) {
+  if (!MODEL || !MODEL.matches) return null;
+  if (SIMC.model !== MODEL || SIMC.n > 600) { SIMC.model = MODEL; SIMC.map = {}; SIMC.n = 0; }
+  const key = scoreSig(t) + "|" + t.d.map(x => x[1]).join(".") + "|" + iters + "|" +
+              (force ? (typeof force === "string" ? force : force.o + "@" + force.at) : "-") + "|" +
+              (seed != null ? seed : "s");
+  if (SIMC.map[key]) return SIMC.map[key];
+  const out = simulateRun(t, iters, force, seed);
+  if (out) { SIMC.map[key] = out; SIMC.n++; }
+  return out;
+}
+function simulateRun(t, iters, force, seed) {
   if (!MODEL || !MODEL.matches) return null;
   /* `force` is "h"|"d"|"a" for the next open fixture, or {o, at} to pin one
      particular fixture. `seed` pins the stream, so two runs of neighbouring
@@ -594,7 +610,40 @@ function snapshotAt(t, k) {
   });
 }
 
+/* ==========================================================================
+   Heavy work, a step at a time
+   --------------------------------------------------------------------------
+   A phone runs these simulations 4-8x slower than a laptop. Run as one block,
+   the season-long forecast froze a phone for ten seconds and the tabs looked
+   dead. So every job that runs many simulations is done one unit at a time,
+   handing the browser back between units: a tap waits for one unit, never
+   for the whole job. Callers that cannot wait read only what is cached.
+   ========================================================================== */
+const yieldNow = () => new Promise(r => setTimeout(r, 0));
+const INFLIGHT = {};
+function once(key, make) {
+  if (!INFLIGHT[key]) INFLIGHT[key] = make().finally(() => { delete INFLIGHT[key]; });
+  return INFLIGHT[key];
+}
+
 const TLC = {};
+const timelineCached = t => TLC[scoreSig(t)] || null;
+function timelineAsync(t) {
+  const sig = scoreSig(t);
+  if (TLC[sig]) return Promise.resolve(TLC[sig]);
+  return once("tl:" + sig, async () => {
+    const played = t.m.filter(m => m[6] != null && m[7] != null).length;
+    const seed = (Math.imul(t.i, 2654435761) ^ 0x5f3a) >>> 0;
+    const stages = [];
+    for (let k = 0; k <= played; k++) {
+      const s = snapshotAt(t, k);
+      stages.push({ k, t: s, sim: simulate(s, 2500, null, seed), swing: 0, mover: null, moved: 0 });
+      await yieldNow();
+    }
+    return finishTimeline(t, sig, stages, played);
+  });
+}
+/* synchronous form, kept for tests and anything that already holds the cache */
 function timelineOf(t) {
   const sig = scoreSig(t);
   if (TLC[sig]) return TLC[sig];
@@ -605,6 +654,9 @@ function timelineOf(t) {
     const s = snapshotAt(t, k);
     stages.push({ k, t: s, sim: simulate(s, 2500, null, seed), swing: 0, mover: null, moved: 0 });
   }
+  return finishTimeline(t, sig, stages, played);
+}
+function finishTimeline(t, sig, stages, played) {
   for (let k = 1; k < stages.length; k++) {
     const a = stages[k - 1].sim, b = stages[k].sim;
     if (!a || !b) continue;
@@ -626,31 +678,49 @@ function timelineOf(t) {
 /* What one result is worth: how far the road to the final moves between the
    three possible outcomes of a single fixture, everything else simulated. */
 const GRV = {};
+const gravityCached = t => GRV[scoreSig(t)] || null;
+function gravityOpen(t) {
+  const openIdx = [];
+  t.m.forEach((m, i) => { if (m[6] == null || m[7] == null) openIdx.push(i); });
+  return (MODEL && MODEL.matches && openIdx.length && openIdx.length <= 8) ? openIdx : [];
+}
+function gravityOne(t, i, seed) {
+  const m = t.m[i];
+  const H = simulate(t, 1500, { o: "h", at: i }, seed);
+  const D = simulate(t, 1500, { o: "d", at: i }, seed);
+  const A = simulate(t, 1500, { o: "a", at: i }, seed);
+  if (!H || !D || !A) return null;
+  const inv = [m[0], m[1], m[3], m[4]];
+  let top = null;
+  inv.forEach(p => {
+    const v = [H[p].top4, D[p].top4, A[p].top4];
+    const spread = Math.max.apply(null, v) - Math.min.apply(null, v);
+    if (!top || spread > top.spread) top = { p, spread, v };
+  });
+  return { i, p: top.p, v: top.v, spread: top.spread,
+           all: inv.map(p => ({ p, h: H[p].top4, d: D[p].top4, a: A[p].top4 })) };
+}
+function gravityAsync(t) {
+  const sig = scoreSig(t);
+  if (GRV[sig]) return Promise.resolve(GRV[sig]);
+  return once("gv:" + sig, async () => {
+    const map = {}, seed = (Math.imul(t.i, 40503) + 7) >>> 0;
+    for (const i of gravityOpen(t)) {
+      const g = gravityOne(t, i, seed);
+      if (g) map[i] = g;
+      await yieldNow();
+    }
+    return finishGravity(sig, map);
+  });
+}
 function gravityOf(t) {
   const sig = scoreSig(t);
   if (GRV[sig]) return GRV[sig];
-  const map = {};
-  const openIdx = [];
-  t.m.forEach((m, i) => { if (m[6] == null || m[7] == null) openIdx.push(i); });
-  if (MODEL && MODEL.matches && openIdx.length && openIdx.length <= 8) {
-    const seed = (Math.imul(t.i, 40503) + 7) >>> 0;
-    openIdx.forEach(i => {
-      const m = t.m[i];
-      const H = simulate(t, 1500, { o: "h", at: i }, seed);
-      const D = simulate(t, 1500, { o: "d", at: i }, seed);
-      const A = simulate(t, 1500, { o: "a", at: i }, seed);
-      if (!H || !D || !A) return;
-      const inv = [m[0], m[1], m[3], m[4]];
-      let top = null;
-      inv.forEach(p => {
-        const v = [H[p].top4, D[p].top4, A[p].top4];
-        const spread = Math.max.apply(null, v) - Math.min.apply(null, v);
-        if (!top || spread > top.spread) top = { p, spread, v };
-      });
-      map[i] = { i, p: top.p, v: top.v, spread: top.spread,
-                 all: inv.map(p => ({ p, h: H[p].top4, d: D[p].top4, a: A[p].top4 })) };
-    });
-  }
+  const map = {}, seed = (Math.imul(t.i, 40503) + 7) >>> 0;
+  gravityOpen(t).forEach(i => { const g = gravityOne(t, i, seed); if (g) map[i] = g; });
+  return finishGravity(sig, map);
+}
+function finishGravity(sig, map) {
   const list = Object.keys(map).map(k => map[k]).sort((a, b) => b.spread - a.spread);
   const out = { map, top: list[0] || null };
   if (Object.keys(GRV).length > 24) for (const k in GRV) delete GRV[k];
@@ -704,9 +774,10 @@ function gravityLine(t, g) {
   return d;
 }
 
-function paintGravity(t) {
+async function paintGravity(t) {
   if (!t) return;
-  const g = gravityOf(t);
+  const g = await gravityAsync(t);
+  if (scoreSig(LIVE[t.i] || t) !== scoreSig(t)) return;   // a newer score landed meanwhile
   Object.keys(g.map).forEach(k => {
     const info = g.map[k];
     const fx = document.querySelector('[data-fx="' + t.i + "-" + k + '"]');
@@ -748,8 +819,9 @@ function timelineBlock(t) {
   return sec;
 }
 
-function fillTimeline(t, host) {
-  const tl = timelineOf(t);
+async function fillTimeline(t, host) {
+  const tl = timelineCached(t) || await timelineAsync(t);
+  if (!host.isConnected) return;                           // the user moved on meanwhile
   host.innerHTML = "";
   if (tl.played < 1) { host.appendChild(el("div", "mut", "הציר ייפתח אחרי המשחק הראשון.")); return; }
   const maxSw = Math.max(0.02, ...tl.stages.slice(1).map(s => s.swing));
