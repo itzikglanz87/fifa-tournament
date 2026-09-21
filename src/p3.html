@@ -1717,6 +1717,8 @@ function renderFinal(t, host) {
     return;
   }
   host.appendChild(finalStage(t, out, finalOpened[t.i] === "intro"));
+  /* crowned: the night's card, straight to WhatsApp */
+  if (t.done) { const sb = shareButton(t); sb.classList.add("final-share"); host.appendChild(sb); }
   if (finalOpened[t.i] === "intro") finalOpened[t.i] = true;   // only once
 }
 

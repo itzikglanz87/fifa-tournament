@@ -1217,6 +1217,7 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .wr-pill{margin-top:8px; background:rgba(255,255,255,.14); padding:8px 16px; border-radius:999px; font-weight:800}
 .wr-face{width:110px; height:110px; border-radius:50%; border:4px solid var(--c); overflow:hidden; margin-bottom:8px; box-shadow:0 0 40px rgba(255,255,255,.2)}
 .wr-face .pface{width:100%; height:100%}
+.final-share{display:block; margin:14px auto 0; padding:12px 22px; font-size:15px}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -3696,6 +3697,8 @@ function renderFinal(t, host) {
     return;
   }
   host.appendChild(finalStage(t, out, finalOpened[t.i] === "intro"));
+  /* crowned: the night's card, straight to WhatsApp */
+  if (t.done) { const sb = shareButton(t); sb.classList.add("final-share"); host.appendChild(sb); }
   if (finalOpened[t.i] === "intro") finalOpened[t.i] = true;   // only once
 }
 
