@@ -496,7 +496,9 @@ function squadPage(root) {
   b.appendChild(deck);
   root.appendChild(b);
   if (Object.keys(PHOTOS).some(k => PHOTOMAP[k] == null)) root.appendChild(photoBoard());
-  root.appendChild(profile(curPlayer));
+  const pf = profile(curPlayer);
+  pf.id = "playerProfile";
+  root.appendChild(pf);
 }
 
 function futCard(p) {
@@ -508,7 +510,23 @@ function futCard(p) {
   c.tabIndex = 0;
   c.setAttribute("aria-pressed", String(p === curPlayer));
   c.style.cssText = "--t1:" + t.t1 + ";--t2:" + t.t2 + ";--tink:" + t.ink + ";--c:" + clubCol(lastClub);
-  const pick = () => { curPlayer = p; go("players"); };
+  /* redraw in place (no jump to the top) and glide down to the profile of
+     the card that was tapped */
+  const pick = () => {
+    curPlayer = p;
+    const root = document.getElementById("v-players");
+    viewPlayers(root);
+    const pf = document.getElementById("playerProfile");
+    if (!pf) return;
+    /* land just below whatever is pinned at the top (the bar, and the tabs row
+       when this screen has one) */
+    const pinned = ["header.appbar", "#subtabs"].map(q => document.querySelector(q))
+      .filter(e => e && getComputedStyle(e).position === "sticky")
+      .reduce((m, e) => Math.max(m, e.getBoundingClientRect().bottom), 0);
+    const y = pf.getBoundingClientRect().top + scrollY - pinned - 8;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setTimeout(() => scrollTo({ top: Math.max(0, y), behavior: still ? "auto" : "smooth" }), 0);
+  };
   c.onclick = pick;
   c.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
 
