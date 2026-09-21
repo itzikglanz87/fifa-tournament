@@ -1,18 +1,16 @@
 /* ----------------------------------------------------------------------------
-   Paste the config from your Firebase project here.
+   Firebase project: analytics-2bf94
 
-   Firebase console → Project settings (gear) → "Your apps" → Web app → Config.
    These values are not secret; they identify the project, they do not grant
-   access. Access is decided by firestore.rules.
-
-   Leave it as it is and the app runs per-device with no sync at all — it will
-   say so in the footer.
+   access. Access is decided by firestore.rules (signed-in callers only, and
+   only the tournaments/ and meta/ collections).
    -------------------------------------------------------------------------- */
 window.FIREBASE_CONFIG = {
-  apiKey: "PASTE_apiKey",
-  authDomain: "PASTE_authDomain",
-  projectId: "PASTE_projectId",
-  storageBucket: "PASTE_storageBucket",
-  messagingSenderId: "PASTE_messagingSenderId",
-  appId: "PASTE_appId"
+  apiKey: "AIzaSyC6jrNqzjqPZLmva-OvrYBQltrThEoR1d4",
+  authDomain: "analytics-2bf94.firebaseapp.com",
+  projectId: "analytics-2bf94",
+  storageBucket: "analytics-2bf94.firebasestorage.app",
+  messagingSenderId: "608346890313",
+  appId: "1:608346890313:web:1fc83f52a8ae299d4a9f98",
+  measurementId: "G-9NHMF7RGB7"
 };

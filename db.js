@@ -35,6 +35,33 @@
     return String(path).split("/").filter(Boolean);
   }
 
+  /* Firestore refuses an array directly inside an array, and every
+     tournament is built of them: scores [[h,a], ...], final [[h,a],[h,a]].
+     Each inner array is wrapped as {__a: [...]} on the way in (an array may
+     hold a map, and a map may hold an array) and unwrapped on the way out,
+     so the app never sees the difference. */
+  function pack(v) {
+    if (Array.isArray(v)) return v.map(function (e) { return Array.isArray(e) ? { __a: pack(e) } : pack(e); });
+    if (v && typeof v === "object") {
+      var o = {};
+      Object.keys(v).forEach(function (k) { o[k] = pack(v[k]); });
+      return o;
+    }
+    return v;
+  }
+  function unpack(v) {
+    if (Array.isArray(v)) return v.map(unpack);
+    if (v && typeof v === "object") {
+      var keys = Object.keys(v);
+      if (keys.length === 1 && keys[0] === "__a" && Array.isArray(v.__a)) return unpack(v.__a);
+      var o = {};
+      keys.forEach(function (k) { o[k] = unpack(v[k]); });
+      return o;
+    }
+    return v;
+  }
+  window.APP_DB_CODEC = { pack: pack, unpack: unpack };   // exposed for tests
+
   async function build() {
     var appMod = await import(SDK + "firebase-app.js");
     var authMod = await import(SDK + "firebase-auth.js");
@@ -70,9 +97,9 @@
         return {
           get: async function () {
             var snap = await fsMod.getDoc(ref);
-            return { exists: snap.exists(), data: function () { return snap.data(); } };
+            return { exists: snap.exists(), data: function () { return unpack(snap.data()); } };
           },
-          set: function (obj) { return fsMod.setDoc(ref, obj); },
+          set: function (obj) { return fsMod.setDoc(ref, pack(obj)); },
           delete: function () { return fsMod.deleteDoc(ref); }
         };
       },
@@ -83,7 +110,7 @@
             var snap = await fsMod.getDocs(ref);
             var docs = [];
             snap.forEach(function (d) {
-              docs.push({ id: d.id, data: function () { return d.data(); } });
+              docs.push({ id: d.id, data: function () { return unpack(d.data()); } });
             });
             return { docs: docs };
           }
