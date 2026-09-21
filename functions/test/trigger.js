@@ -34,8 +34,14 @@ const fakeAdmin = {
     }
   })
 };
+/* index.js uses the modular entry points (firebase-admin 13+) */
+const fakes = {
+  "firebase-admin/app": { initializeApp: fakeAdmin.initializeApp },
+  "firebase-admin/firestore": { getFirestore: fakeAdmin.firestore },
+  "firebase-admin/messaging": { getMessaging: fakeAdmin.messaging }
+};
 const load = Module._load;
-Module._load = function (req) { return req === "firebase-admin" ? fakeAdmin : load.apply(this, arguments); };
+Module._load = function (req) { return fakes[req] || load.apply(this, arguments); };
 process.env.ADMIN_KEY = "right-key";
 process.env.GCLOUD_PROJECT = "analytics-2bf94";
 const F = require("../index.js");

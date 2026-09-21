@@ -19,11 +19,15 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineString } = require("firebase-functions/params");
-const admin = require("firebase-admin");
+/* firebase-admin 13+ is modular only: admin.firestore()/admin.messaging()
+   no longer exist */
+const { initializeApp } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
+const { getMessaging } = require("firebase-admin/messaging");
 const T = require("./tournament");
 
-admin.initializeApp();
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 
 /* The Firestore trigger must run where the database lives. Set from
    `firebase firestore:databases:get` before the first deploy; the app reads
@@ -54,7 +58,7 @@ async function sendToAll(title, body, onlyToken) {
     const batch = tokens.slice(i, i + 500);
     /* data-only: the app's own service worker draws the notification, so it
        looks the same whether the app is open, in the background or closed */
-    const res = await admin.messaging().sendEachForMulticast({
+    const res = await getMessaging().sendEachForMulticast({
       tokens: batch,
       data: { title: String(title || ""), body: String(body || ""), url: APP_URL },
       webpush: { headers: { Urgency: "high", TTL: "86400" } }

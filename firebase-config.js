@@ -30,5 +30,5 @@ window.FIREBASE_CONFIG = {
    from the server after any new result; manual messages need the admin key,
    which is never in this repo.
    -------------------------------------------------------------------------- */
-window.VAPID_KEY = "PASTE_VAPID_KEY";
+window.VAPID_KEY = "BN60PiuRXw0W0DKLMLETHk4N91iaFeFGf8WerqRhtDq4xrXsy7GlLl5RuVlyHlH7bg1jVP1B-CuxdTVDyqguEOg";
 window.FUNCTIONS_REGION = "europe-west1";
