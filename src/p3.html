@@ -1079,6 +1079,7 @@ function viewLive(root) {
   const open = liveId != null ? LIVE[liveId] : null;
 
   if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
+  if (pane === "games") root.appendChild(pollCard());
 
   /* several tournaments in this season: a compact picker, like a date strip */
   if (inScope.length > 1 && !draft) {
@@ -1128,7 +1129,7 @@ function managePanel(open, inScope) {
   box.appendChild(bar);
   box.appendChild(pushPanel());
   box.appendChild(mePanel());
-  if (adminKey()) box.appendChild(activityPanel());
+  if (adminKey()) { box.appendChild(pollAdmin()); box.appendChild(activityPanel()); }
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
@@ -1496,6 +1497,7 @@ function livePanel(t, pane) {
   st.appendChild(stHost);
   add(st, "table");
 
+  add(predBoard(t), "table");
   if (pane === "table") add(filled ? timelineBlock(t) : forecastBlock(t), "table");
 
   /* fixtures with score entry */
@@ -1544,9 +1546,11 @@ function livePanel(t, pane) {
       iA.classList.toggle("filled", filled);
       iH.classList.toggle("filled", filled);
       fx.classList.toggle("played", filled);
+      fx.querySelectorAll(".social").forEach(n => n.remove());
       if (!filled) {
         const o = oddsRow((LIVE[t.i] || t).m[idx]);
         if (o) fx.appendChild(o);
+        fx.appendChild(socialLine(LIVE[t.i] || t, idx));
         return;
       }
       const d = el("div", "doneline");
@@ -1560,6 +1564,7 @@ function livePanel(t, pane) {
       clr.onclick = () => { iA.value = ""; iH.value = ""; onType(); heavy(); };
       d.appendChild(clr);
       fx.appendChild(d);
+      fx.appendChild(socialLine(LIVE[t.i] || t, idx));
     };
 
     /* write the typed score into the record right now — no timer involved */
@@ -1653,6 +1658,7 @@ function livePanel(t, pane) {
         }, 1900);
       }
       flash(r.ok ? "התוצאה נקלטה והטבלה עודכנה" : "השמירה בענן נכשלה: " + r.why, !r.ok);
+      if (r.ok) [3000, 8000].forEach(ms => setTimeout(() => Social.load(true), ms));
     };
     mid.append(iA, el("span", "mut", "–"), iH, rowSave);
     row.appendChild(mid);

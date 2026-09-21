@@ -1142,4 +1142,35 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .act-heat i{height:10px; border-radius:2px; background:var(--c)}
 .act-log summary{cursor:pointer; color:var(--blue); font-weight:700; font-size:13px; padding:4px 0}
 .act-line{display:grid; grid-template-columns:1fr auto auto; gap:10px; font-size:12.5px; padding:5px 2px; border-bottom:1px solid #222A35}
+/* ---------- predictions, reactions, poll ---------- */
+.social{display:flex; flex-wrap:wrap; align-items:center; gap:8px; justify-content:space-between; margin-top:8px}
+.soc-pred{border:0; background:#1F2833; color:#C9D1DB; font:inherit; font-size:12.5px; padding:6px 12px; border-radius:999px; cursor:pointer}
+.soc-pred b{color:#fff}
+.soc-pred.done{background:#1B2A22; color:#9FE3BD}
+.soc-react{display:flex; gap:4px}
+.rx{border:1px solid #2A333F; background:#161C24; border-radius:999px; font-size:14px; padding:3px 8px; cursor:pointer; display:inline-flex; gap:4px; align-items:center; color:#C9D1DB; font-family:inherit}
+.rx span{font-size:11px; font-weight:800}
+.rx.has{background:#1F2833}
+.rx.on{border-color:var(--blue); background:rgba(61,126,245,.18)}
+.pred-box{background:#1B2129; border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:10px}
+.pred-row{display:grid; grid-template-columns:1fr 54px auto 54px 1fr; gap:8px; align-items:center}
+.pred-side{font-size:12.5px; font-weight:700; text-align:center}
+.pred-in{width:54px; height:48px; text-align:center; font-size:22px; font-weight:800; border-radius:12px; border:1px solid #2F3946; background:#0E1218; color:#fff}
+.pred-note{font-size:11.5px}
+.pred-list{display:flex; flex-direction:column; gap:6px}
+.pred-line{display:grid; grid-template-columns:1fr auto 56px; gap:10px; align-items:center; background:#1B2129; border-radius:10px; padding:8px 10px}
+.pred-line.exact{box-shadow:0 0 0 1px var(--gold) inset} .pred-line.hit{box-shadow:0 0 0 1px #2FB86F inset}
+.pred-pts{text-align:end; font-weight:800; font-size:12.5px}
+.pred-board{display:flex; flex-direction:column; gap:5px; margin-bottom:10px}
+.pb-row{display:grid; grid-template-columns:18px 1fr auto 30px; gap:8px; align-items:center; background:#1B2129; border-radius:10px; padding:7px 10px; font-size:13px}
+.pb-row b{font-size:17px; text-align:center} .pb-n{color:#7D8795; text-align:center}
+.pollcard{background:linear-gradient(135deg,#1C2D4A,#15202F); border-radius:16px; padding:14px; display:flex; flex-direction:column; gap:10px}
+.poll-top{display:flex; justify-content:space-between; align-items:center; gap:10px}
+.poll-kicker{font-size:12px; color:#9DB7E0; font-weight:700} .poll-when{font-size:20px; font-weight:800}
+.poll-count{display:flex; flex-direction:column; align-items:center; background:rgba(0,0,0,.25); border-radius:12px; padding:6px 12px}
+.poll-count b{font-size:20px} .poll-count span{font-size:11px; color:#9AA4B2} .poll-count.ok b{color:#3DDC84}
+.poll-faces{display:flex; flex-wrap:wrap; gap:6px} .pf-n{opacity:.4; text-decoration:line-through}
+.poll-btns{display:flex; gap:8px}
+.soc-pred.live{background:linear-gradient(90deg,#3D2E7A,#5B3DB8); color:#fff; box-shadow:0 0 0 1px #8E74FF inset}
+.pred-timer{font-weight:800; color:#FFD36B; margin-inline-start:4px; font-variant-numeric:tabular-nums}
 </style>

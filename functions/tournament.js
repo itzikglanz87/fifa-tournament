@@ -110,4 +110,15 @@ function nextEventText(rec) {
   return "הגמר נגמר בשוויון - מי ניצח בשער הזהב?";
 }
 
-module.exports = { unpack, derive, progressOf, nextEventText, P, TPL };
+/* the next league match, and who sits it out — the only ones who may
+   predict it (two of six, one of five) */
+function nextLeagueMatch(rec) {
+  const d = derive(rec);
+  const nx = d.m.find(x => !played(x.s));
+  if (!nx) return null;
+  const on = new Set([nx.h[0], nx.h[1], nx.a[0], nx.a[1]]);
+  return { k: nx.i, sit: (rec.slots || []).filter(p => !on.has(p)) };
+}
+const predLine = sit => sit.length ? "\n🔮 " + sit.map(p => P[p]).join(" ו") + " — יש לכם 3 דקות לנחש!" : "";
+
+module.exports = { unpack, derive, progressOf, nextEventText, nextLeagueMatch, predLine, P, TPL };

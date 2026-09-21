@@ -29,12 +29,12 @@ const fakeAdmin = {
       /* enough of a query for the activity log: where(">="), orderBy desc, limit */
       const q = { f: null, lim: 1e9 };
       const api = {
-        where: (field, op, val) => { q.f = [field, val]; return api; },
+        where: (field, op, val) => { q.f = [field, val, op]; return api; },
         orderBy: () => api,
         limit: n => { q.lim = n; return api; },
         get: async () => {
           let docs = Object.keys(store).filter(p => p.startsWith(name + "/")).map(snap);
-          if (q.f) docs = docs.filter(x => String(x.data()[q.f[0]]) >= q.f[1]);
+          if (q.f) docs = docs.filter(x => q.f[2] === "==" ? x.data()[q.f[0]] === q.f[1] : String(x.data()[q.f[0]]) >= q.f[1]);
           docs.sort((a, b) => String(b.data().at || "").localeCompare(String(a.data().at || "")));
           return { docs: docs.slice(0, q.lim) };
         }
@@ -89,7 +89,11 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const withScores = (rec, pairs) => { const r = JSON.parse(JSON.stringify(rec)); pairs.forEach(([k, s]) => { r.scores[k] = s; }); return r; };
 
   await change("t1001", null, base);
-  expect("opening a tournament sends nothing", sent.length === 0);
+  expect("opening a tournament announces the first match", sent.length === 1 && /נפתח/.test(sent[0].title), sent[0] && sent[0].title);
+  expect("…with the two who sit it out invited to predict", /🔮 .+ו.+ — יש לכם 3 דקות לנחש!/.test(sent[0].body), sent[0] && sent[0].body);
+  const w0 = store["predWindows/1001_0"];
+  expect("…and opens the first prediction window for them", !!w0 && w0.sit.length === 2 && w0.closeMs - Date.now() > 170e3);
+  sent.length = 0;
 
   const r1 = withScores(base, [[0, [1, 0]]]);
   await change("t1001", base, r1);
@@ -112,12 +116,15 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const r2 = withScores(r1b, [[1, [2, 2]]]);
   await change("t1001", r1b, r2);
   expect("the next new result sends again", sent.length === 2, sent[1] && sent[1].body);
+  expect("…and opens the next prediction window", !!store["predWindows/1001_2"] && /3 דקות לנחש/.test(sent[1].body));
+  expect("the first result opened match 2's window once", !!store["predWindows/1001_1"]);
 
   await change("t1001", r2, null);
   expect("deleting the tournament clears its log", !("pushLog/t1001" in store));
+  Object.keys(store).filter(k => k.startsWith("predWindows/1001_")).forEach(k => delete store[k]);
   await change("t1001", null, base);
   await change("t1001", base, r1);
-  expect("a recreated tournament with the same id is not muted", sent.length === 3);
+  expect("a recreated tournament with the same id is not muted", sent.length === 4, sent.length + " pushes");
 
   /* a peak moment: replay archive tournament 51 through the trigger. Its
      last league match knocked דביר out (the app's own card: 40% -> 0%). */
@@ -185,6 +192,21 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const lv = await F.adminVisits.run({ data: { key: "right-key", days: 30 }, auth: null, rawRequest: {} });
   expect("the activity log returns the period, newest first", lv.visits.length === 2 && lv.visits[0].who === 5,
          JSON.stringify(lv.visits.map(v => v.who)));
+
+  /* the poll: one push when the yes votes reach the quorum, never twice */
+  store["meta/poll"] = { id: "p1", when: "חמישי 21:00", need: 3, closed: false };
+  const vote = async (who, v) => {
+    const path = "pollVotes/p1_" + who, d = { poll: "p1", who, v, at: "x" };
+    store[path] = d;
+    await F.onPollVote.run({ params: { id: "p1_" + who }, data: { before: { exists: false }, after: { exists: true, data: () => d } } });
+  };
+  const s0 = sent.length;
+  await vote(0, "y"); await vote(1, "n"); await vote(2, "y");
+  expect("no push before the quorum", sent.length === s0);
+  await vote(3, "y");
+  expect("the quorum sends one push", sent.length === s0 + 1 && /נדב, מיקי, דביר מגיעים/.test(sent[s0].body), sent[s0] && sent[s0].body);
+  await vote(4, "y");
+  expect("…and only one", sent.length === s0 + 1);
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

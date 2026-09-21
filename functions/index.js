@@ -83,6 +83,24 @@ async function sendToAll(title, body, onlyToken, url) {
   return { sent, failed, phones: tokens.length };
 }
 
+/* A prediction window: the players sitting the match out, and 3 minutes
+   from the push (plus a few seconds for delivery). The database rules read
+   this document, so a late or wrong-player prediction is refused there, not
+   just hidden by the app. Opened once per match: a result cleared and typed
+   again does not reopen it. */
+const PRED_MS = 3 * 60e3 + 5e3;
+async function openPredWindow(docId, rec, nx) {
+  const tid = rec.s ? rec.s * 1000 + (rec.n || rec.i) : (rec.n || rec.i);
+  const ref = db.doc("predWindows/" + tid + "_" + nx.k);
+  const now = Date.now();
+  return db.runTransaction(async tx => {
+    const s = await tx.get(ref);
+    if (s.exists) return false;
+    tx.set(ref, { t: tid, k: nx.k, sit: nx.sit, open: new Date(now), close: new Date(now + PRED_MS), closeMs: now + PRED_MS });
+    return true;
+  });
+}
+
 /* ---------------------------------------------------------------- 1. auto */
 exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   const id = event.params.id;
@@ -93,7 +111,19 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   /* a deleted tournament forgets its log; a new one starts from zero, so an
      id reused after a delete is not muted by the old tournament's count */
   if (!after) { await logRef.delete().catch(() => {}); return; }
-  if (!before) { await logRef.set({ progress: T.progressOf(after), at: new Date().toISOString() }); return; }
+  if (!before) {
+    await logRef.set({ progress: T.progressOf(after), at: new Date().toISOString() });
+    /* a new tournament: its first match has no result before it to announce
+       it, so the opening itself does — and opens the first prediction window */
+    const first = T.nextLeagueMatch(after);
+    if (first && first.k === 0) {
+      await openPredWindow(id, after, first);
+      const title = "🏆 טורניר " + (after.n || after.i) + " נפתח · " + (await seasonName(after.s));
+      const r = await sendToAll(title, T.nextEventText(after) + T.predLine(first.sit));
+      console.log("opening push", id, JSON.stringify(r));
+    }
+    return;
+  }
 
   const now = T.progressOf(after);
   if (now <= T.progressOf(before)) return;                  // a correction or a clear
@@ -124,8 +154,11 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
     console.error("peak moment skipped:", e && e.stack || e);
   }
 
-  const body = T.nextEventText(after);
+  let body = T.nextEventText(after);
   if (!body) return;
+  /* the next league match opens its prediction window with this push */
+  const nx = T.nextLeagueMatch(after);
+  if (nx && await openPredWindow(id, after, nx)) body += T.predLine(nx.sit);
   const title = "טורניר " + (after.n || after.i) + " · " + (await seasonName(after.s));
   const r = await sendToAll(title, body);
   console.log("auto push", id, now, JSON.stringify(r), body);
@@ -190,4 +223,31 @@ exports.adminVisits = onCall(async req => {
       return { who: typeof v.who === "number" ? v.who : null, at: v.at, dev: v.dev || "", app: v.app || "" };
     })
   };
+});
+
+/* --------------------------------------------------------------- 4. poll */
+/* "Who's in on Thursday?" — once enough players say yes, everyone hears it,
+   once per poll (pollLog makes a re-delivered trigger harmless). */
+const NAMES = require("./data.json").P;
+exports.onPollVote = onDocumentWritten("pollVotes/{id}", async event => {
+  const v = event.data.after.exists ? event.data.after.data() : null;
+  if (!v || v.v !== "y") return;
+  const pd = await db.doc("meta/poll").get();
+  const poll = pd.exists ? pd.data() : null;
+  if (!poll || poll.id !== v.poll || poll.closed) return;
+  const votes = (await db.collection("pollVotes").where("poll", "==", poll.id).get()).docs.map(d => d.data());
+  const yes = votes.filter(x => x.v === "y");
+  const need = Math.max(2, Math.min(6, Number(poll.need) || 4));
+  if (yes.length < need) return;
+  const logRef = db.doc("pollLog/" + poll.id);
+  const go = await db.runTransaction(async tx => {
+    const s = await tx.get(logRef);
+    if (s.exists) return false;
+    tx.set(logRef, { at: new Date().toISOString(), yes: yes.length });
+    return true;
+  });
+  if (!go) return;
+  const names = yes.map(x => NAMES[x.who]).filter(Boolean);
+  const r = await sendToAll("✅ יש מניין לטורניר!", names.join(", ") + " מגיעים" + (poll.when ? " · " + String(poll.when).slice(0, 60) : ""));
+  console.log("poll quorum push", poll.id, JSON.stringify(r));
 });

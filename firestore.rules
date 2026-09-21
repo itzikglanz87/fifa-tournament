@@ -18,7 +18,52 @@ service cloud.firestore {
     }
 
     match /meta/{id} {
-      allow read, write: if request.auth != null && id in ['config', 'newsroom'];
+      allow read, write: if request.auth != null && id in ['config', 'newsroom', 'poll'];
+    }
+
+    // predictions, reactions and poll votes: one document per player per
+    // match (or per poll), its id spelled from its own fields so nobody can
+    // write in someone else's slot by accident. Everyone reads them.
+    // a prediction is taken only from a player sitting that match out, and
+    // only inside its window — 3 minutes from the push (predWindows, written
+    // by the push server)
+    function predWin(t, k) {
+      return get(/databases/$(database)/documents/predWindows/$(string(t) + '_' + string(k))).data;
+    }
+    match /predictions/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['t', 'k', 'who', 'h', 'a', 'at'])
+        && request.resource.data.who is int && request.resource.data.who >= 0 && request.resource.data.who <= 5
+        && request.resource.data.h is int && request.resource.data.h >= 0 && request.resource.data.h <= 30
+        && request.resource.data.a is int && request.resource.data.a >= 0 && request.resource.data.a <= 30
+        && id == string(request.resource.data.t) + '_' + string(request.resource.data.k) + '_' + string(request.resource.data.who)
+        && exists(/databases/$(database)/documents/predWindows/$(string(request.resource.data.t) + '_' + string(request.resource.data.k)))
+        && request.time < predWin(request.resource.data.t, request.resource.data.k).close
+        && request.resource.data.who in predWin(request.resource.data.t, request.resource.data.k).sit;
+      allow delete: if false;
+    }
+    match /predWindows/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /reactions/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['t', 'k', 'who', 'e', 'at'])
+        && request.resource.data.who is int && request.resource.data.who >= 0 && request.resource.data.who <= 5
+        && request.resource.data.e is string && request.resource.data.e.size() <= 8
+        && id == string(request.resource.data.t) + '_' + string(request.resource.data.k) + '_' + string(request.resource.data.who);
+      allow delete: if false;
+    }
+    match /pollVotes/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['poll', 'who', 'v', 'at'])
+        && request.resource.data.who is int && request.resource.data.who >= 0 && request.resource.data.who <= 5
+        && request.resource.data.v in ['y', 'n']
+        && id == request.resource.data.poll + '_' + string(request.resource.data.who);
+      allow delete: if false;
     }
 
     // a phone that enables notifications registers its own token; nobody
