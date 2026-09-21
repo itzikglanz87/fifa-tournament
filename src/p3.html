@@ -916,9 +916,20 @@ function lastPlayed(t) {
   for (let i = t.m.length - 1; i >= 0; i--) if (t.m[i][6] != null && t.m[i][7] != null) return { m: t.m[i], i };
   return null;
 }
+/* The draw card says "points per game the club has brought, all time" — so it
+   reads every finished tournament, not the chosen season's (a new season has
+   none yet, and every club showed 0.00). Cached until a tournament finishes. */
+let ALLTEAM = null, ALLTEAM_KEY = "";
+function allTimeTeams() {
+  const done = TS.filter(x => x.done);
+  const key = done.length + ":" + (done.length ? done[done.length - 1].i : "");
+  if (key !== ALLTEAM_KEY) { ALLTEAM = aggregate(done).TEAM; ALLTEAM_KEY = key; }
+  return ALLTEAM;
+}
 function clubQuality(t) {
+  const ALL = allTimeTeams();
   return t.players.map(p => {
-    const ci = t.teamOf[p], T = TEAM[ci] || { g: 0, ppg: 0 };
+    const ci = t.teamOf[p], T = ALL[ci] || { g: 0, ppg: 0 };
     const f = MODEL.cf[ci] || { att: 1, def: 1, g: 0 };
     return { p, ci, name: CLUBS[ci], ppg: T.ppg || 0, g: T.g || 0, att: f.att, def: f.def,
              index: f.att / f.def };
