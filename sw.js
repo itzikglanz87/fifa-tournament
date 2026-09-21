@@ -8,7 +8,7 @@
    background. Firestore and the fonts are left alone — Firestore has its own
    offline queue, and the CSS names system fonts as a fallback.
    ========================================================================= */
-const VERSION = "fifa-3e8a95a34c";
+const VERSION = "fifa-7f1cdd3b8d";
 const SHELL = [
   "./",
   "./index.html",
