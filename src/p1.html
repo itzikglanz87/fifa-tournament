@@ -1204,4 +1204,15 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .wr-face{width:110px; height:110px; border-radius:50%; border:4px solid var(--c); overflow:hidden; margin-bottom:8px; box-shadow:0 0 40px rgba(255,255,255,.2)}
 .wr-face .pface{width:100%; height:100%}
 .final-share{display:block; margin:14px auto 0; padding:12px 22px; font-size:15px}
+/* ---------- the ניחושים tab ---------- */
+.predpanel{display:flex; flex-direction:column; gap:4px}
+.pn-match{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; background:#1B2129; border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:13px}
+.pn-k{font-weight:800; color:#9DB7E0}
+.pn-body{display:flex; flex-direction:column; gap:12px}
+.pn-row{display:grid; grid-template-columns:1fr auto; grid-template-areas:"where pts" "pairs pts" "guess pts"; gap:2px 10px; text-align:start;
+  width:100%; border:0; background:#1B2129; color:var(--ink); font:inherit; border-radius:12px; padding:10px 12px; margin-top:6px; cursor:pointer}
+.pn-row.exact{box-shadow:0 0 0 1px var(--gold) inset} .pn-row.hit{box-shadow:0 0 0 1px #2FB86F inset} .pn-row.miss{opacity:.75}
+.pn-where{grid-area:where; font-size:11.5px; color:#9AA4B2} .pn-pairs{grid-area:pairs; font-size:13px; font-weight:700}
+.pn-guess{grid-area:guess; font-size:12.5px; color:#C9D1DB} .pn-pts{grid-area:pts; align-self:center; font-weight:800; font-size:15px}
+.pn-rules div{font-size:13.5px; line-height:1.8; color:#C9D1DB}
 </style>

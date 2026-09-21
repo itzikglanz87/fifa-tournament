@@ -1218,6 +1218,17 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .wr-face{width:110px; height:110px; border-radius:50%; border:4px solid var(--c); overflow:hidden; margin-bottom:8px; box-shadow:0 0 40px rgba(255,255,255,.2)}
 .wr-face .pface{width:100%; height:100%}
 .final-share{display:block; margin:14px auto 0; padding:12px 22px; font-size:15px}
+/* ---------- the ניחושים tab ---------- */
+.predpanel{display:flex; flex-direction:column; gap:4px}
+.pn-match{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; background:#1B2129; border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:13px}
+.pn-k{font-weight:800; color:#9DB7E0}
+.pn-body{display:flex; flex-direction:column; gap:12px}
+.pn-row{display:grid; grid-template-columns:1fr auto; grid-template-areas:"where pts" "pairs pts" "guess pts"; gap:2px 10px; text-align:start;
+  width:100%; border:0; background:#1B2129; color:var(--ink); font:inherit; border-radius:12px; padding:10px 12px; margin-top:6px; cursor:pointer}
+.pn-row.exact{box-shadow:0 0 0 1px var(--gold) inset} .pn-row.hit{box-shadow:0 0 0 1px #2FB86F inset} .pn-row.miss{opacity:.75}
+.pn-where{grid-area:where; font-size:11.5px; color:#9AA4B2} .pn-pairs{grid-area:pairs; font-size:13px; font-weight:700}
+.pn-guess{grid-area:guess; font-size:12.5px; color:#C9D1DB} .pn-pts{grid-area:pts; align-self:center; font-weight:800; font-size:15px}
+.pn-rules div{font-size:13.5px; line-height:1.8; color:#C9D1DB}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -3060,6 +3071,11 @@ function viewLive(root) {
 
   if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
   if (pane === "games") root.appendChild(pollCard());
+  if (pane === "pred" && !draft) {
+    const cur = liveId != null ? LIVE[liveId] : null;
+    root.appendChild(predPanel(cur && !cur.done ? cur : (cur || null)));
+    return;
+  }
 
   /* several tournaments in this season: a compact picker, like a date strip */
   if (inScope.length > 1 && !draft) {
@@ -3477,7 +3493,6 @@ function livePanel(t, pane) {
   st.appendChild(stHost);
   add(st, "table");
 
-  add(predBoard(t), "table");
   if (pane === "table") add(filled ? timelineBlock(t) : forecastBlock(t), "table");
 
   /* fixtures with score entry */
@@ -6611,6 +6626,11 @@ const Social = {
     if (pc) pc.replaceWith(pollCard());
     const lb = document.getElementById("predBoard");
     if (lb) { const t = LIVE[lb.getAttribute("data-t")]; if (t) lb.replaceWith(predBoard(t)); }
+    const pp = document.getElementById("predPanel");
+    if (pp && !pp.contains(document.activeElement)) {      // never under someone typing a guess
+      const t = LIVE[pp.getAttribute("data-t")];
+      pp.replaceWith(predPanel(t || null));
+    }
   },
   async set(col, id, doc) {
     const db = await this.db();
@@ -6786,7 +6806,7 @@ function predTab(t, k, body) {
     const p = preds[w], pts = predPoints(p, m[6], m[7]);
     list.appendChild(el("div", "pred-line" + (pts === 3 ? " exact" : pts === 1 ? " hit" : ""),
       "<span>" + plateFace(w) + '</span><b class="ltr">' + p.a + " - " + p.h + "</b>" +
-      (played ? '<span class="pred-pts">' + (pts === 3 ? "🎯 +3" : pts === 1 ? "✓ +1" : "0") + "</span>" : "<span></span>")));
+      (played ? '<span class="pred-pts ltr">' + (pts === 3 ? "+3 🎯" : pts === 1 ? "+1 ✓" : "0") + "</span>" : "<span></span>")));
   });
   body.appendChild(list);
 }
@@ -6822,6 +6842,96 @@ function predBoard(t) {
     sec.appendChild(box);
   });
   return sec;
+}
+
+/* ---- the ניחושים tab: everything about predictions, for this phone's player */
+function predPanel(t) {
+  const box = el("div", "predpanel");
+  box.id = "predPanel";
+  if (t) box.setAttribute("data-t", String(t.i));
+  const me = meWho(), isMe = typeof me === "number" && me >= 0;
+
+  /* 1 — now */
+  const now = el("section", "block");
+  now.innerHTML = '<div class="bhead"><h2>עכשיו</h2></div>';
+  if (!isMe) {
+    now.appendChild(el("div", "notice", "כדי לנחש, בחר קודם מי אתה."));
+    const b = el("button", "btn sm", "מי אני?");
+    b.onclick = async () => { await askWho(); Social.paint(); };
+    now.appendChild(b);
+  } else if (!t) {
+    now.appendChild(el("div", "notice", "אין טורניר פתוח. הניחושים נפתחים עם הפוש על כל משחק — לשני השחקנים שלא משחקים בו."));
+  } else {
+    const openK = t.m.map((m, k) => k).filter(k => winOpen(winOf(t, k)) && t.m[k][6] == null);
+    const mineK = openK.find(k => canPredict(t, k));
+    if (mineK != null) {
+      const m = t.m[mineK];
+      now.appendChild(el("div", "pn-match",
+        '<span class="pn-k">מחזור ' + (mineK + 1) + '</span><span>' + plateFace(m[0]) + plateFace(m[1]) + " " + clubTag(m[2]) +
+        '</span><span class="mut">נגד</span><span>' + plateFace(m[3]) + plateFace(m[4]) + " " + clubTag(m[5]) + "</span>"));
+      const body = el("div", "pn-body");
+      predTab(t, mineK, body);
+      now.appendChild(body);
+    } else if (openK.length) {
+      const w = winOf(t, openK[0]);
+      now.appendChild(el("div", "notice", "🔮 " + w.sit.map(x => esc(P[x])).join(" ו") + " מנחשים את מחזור " + (openK[0] + 1) + " · " +
+        '<span class="pred-timer" data-close="' + w.closeMs + '">⏳ ' + mmss(w.closeMs - Date.now()) + "</span>"));
+    } else {
+      /* who predicts the next match, and whether that is me */
+      const nk = t.m.findIndex(m => m[6] == null || m[7] == null);
+      if (nk < 0) now.appendChild(el("div", "notice", "שלב הליגה הסתיים — אין עוד משחקים לנחש בטורניר הזה."));
+      else {
+        const m = t.m[nk], on = [m[0], m[1], m[3], m[4]];
+        const sit = t.players.filter(p => on.indexOf(p) < 0);
+        now.appendChild(el("div", "notice", sit.indexOf(me) >= 0
+          ? "🔮 <b>אתה מנחש את מחזור " + (nk + 1) + "!</b> הניחוש ייפתח עם הפוש שמודיע עליו — יהיו לך 3 דקות."
+          : "במחזור " + (nk + 1) + " מנחשים " + sit.map(x => esc(P[x])).join(" ו") + ". אתה משחק בו — בהצלחה ⚽"));
+      }
+    }
+  }
+  box.appendChild(now);
+
+  /* 2 — my predictions this season */
+  if (isMe) {
+    const season = t ? t.season : activeSeason();
+    const mine = [];
+    TS.filter(x => x.season === season).forEach(x => x.m.forEach((m, k) => {
+      const p = (Social.pred[x.i + "_" + k] || {})[me];
+      if (p) mine.push({ t: x, k, m, p, pts: predPoints(p, m[6], m[7]) });
+    }));
+    mine.sort((a, b) => b.t.i - a.t.i || b.k - a.k);
+    const done = mine.filter(r => r.pts != null);
+    const sec = el("section", "block");
+    sec.innerHTML = '<div class="bhead"><h2>הניחושים שלי</h2><span class="note">' + esc(seasonById(season).name) + "</span></div>";
+    sec.appendChild(el("div", "act-sum",
+      "<div><b>" + done.reduce((n, r) => n + r.pts, 0) + "</b><span>נקודות</span></div>" +
+      "<div><b>" + done.filter(r => r.pts === 3).length + "</b><span>🎯 מדויקים</span></div>" +
+      "<div><b>" + mine.length + "</b><span>ניחושים</span></div>"));
+    if (!mine.length) sec.appendChild(el("div", "mut", Social.loaded ? "עוד לא ניחשת העונה." : "טוען…"));
+    mine.forEach(r => {
+      const played = r.pts != null;
+      const row = el("button", "pn-row" + (r.pts === 3 ? " exact" : r.pts === 1 ? " hit" : played ? " miss" : ""),
+        '<span class="pn-where">טורניר ' + r.t.num + " · מחזור " + (r.k + 1) + "</span>" +
+        '<span class="pn-pairs">' + esc(P[r.m[0]]) + " ו" + esc(P[r.m[1]]) + ' <span class="mut">נגד</span> ' + esc(P[r.m[3]]) + " ו" + esc(P[r.m[4]]) + "</span>" +
+        '<span class="pn-guess">ניחוש <b class="ltr">' + r.p.a + " - " + r.p.h + "</b>" +
+          (played ? ' · תוצאה <b class="ltr">' + r.m[7] + " - " + r.m[6] + "</b>" : " · עוד לא שוחק") + "</span>" +
+        '<span class="pn-pts"><span class="ltr">' + (r.pts === 3 ? "+3 🎯" : r.pts === 1 ? "+1 ✓" : played ? "0" : "…") + "</span></span>");
+      row.onclick = () => openMatch(r.t.i, r.k, "pred");
+      sec.appendChild(row);
+    });
+    box.appendChild(sec);
+  }
+
+  /* 3 — the predictors table, 4 — the rules */
+  if (t) box.appendChild(predBoard(t));
+  box.appendChild(el("section", "block pn-rules",
+    '<div class="bhead"><h2>החוקים</h2></div>' +
+    "<div>🔮 מנחשים רק שני השחקנים שלא משחקים במשחק.</div>" +
+    "<div>⏳ יש 3 דקות מרגע הפוש שמודיע על המשחק.</div>" +
+    "<div>🎯 תוצאה מדויקת — 3 נקודות · ✓ המנצח הנכון או תיקו — נקודה · אחרת 0.</div>" +
+    "<div>🙈 הניחוש של השני נחשף רק כשהזמן נגמר.</div>"));
+  if (!Social.loaded) Social.load();
+  return box;
 }
 
 /* ---- the poll: "who's in?" */
@@ -7354,7 +7464,7 @@ const ICON = {
   stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8M3.5 19.5h17"/></svg>'
 };
 const SECTIONS = [
-  { id: "results", label: "תוצאות", tabs: [["live:games", "משחקים"], ["live:table", "טבלה"], ["live:final", "גמר"], ["live:manage", "ניהול"]] },
+  { id: "results", label: "תוצאות", tabs: [["live:games", "משחקים"], ["live:table", "טבלה"], ["live:pred", "ניחושים"], ["live:final", "גמר"], ["live:manage", "ניהול"]] },
   { id: "news", label: "חדשות", tabs: [["news", "חדשות"]] },
   { id: "players", label: "שחקנים", tabs: [["players", "שחקנים"]] },
   { id: "stats", label: "סטטיסטיקות", tabs: [["overview", "סיכום"], ["tournaments", "טורנירים"], ["pairs", "צמדים"], ["teams", "קבוצות"], ["records", "שיאים"]] }

@@ -1080,6 +1080,11 @@ function viewLive(root) {
 
   if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
   if (pane === "games") root.appendChild(pollCard());
+  if (pane === "pred" && !draft) {
+    const cur = liveId != null ? LIVE[liveId] : null;
+    root.appendChild(predPanel(cur && !cur.done ? cur : (cur || null)));
+    return;
+  }
 
   /* several tournaments in this season: a compact picker, like a date strip */
   if (inScope.length > 1 && !draft) {
@@ -1497,7 +1502,6 @@ function livePanel(t, pane) {
   st.appendChild(stHost);
   add(st, "table");
 
-  add(predBoard(t), "table");
   if (pane === "table") add(filled ? timelineBlock(t) : forecastBlock(t), "table");
 
   /* fixtures with score entry */
