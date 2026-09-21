@@ -714,7 +714,12 @@ function profile(p) {
    ["אחוז נצחון", Math.round(100 * s.w / Math.max(1, s.g)) + "%"], ["דירוג קלף", s.ovr]
   ].forEach(([a, v]) => k.appendChild(el("div", "kpi", '<div class="lbl">' + a + '</div><div class="v">' + v + "</div>")));
   head.appendChild(k);
+  const wr = el("button", "btn sm wr-open", "✨ ה־Wrapped של " + (SCOPE === "all" ? "כל העונות" : esc(seasonById(SCOPE).name)));
+  wr.onclick = () => openWrapped(p);
+  head.appendChild(wr);
   box.appendChild(head);
+  box.appendChild(trophyCabinet(p));
+  box.appendChild(achievementsBlock(p));
 
   const strip = el("section", "block");
   strip.innerHTML = '<div class="bhead"><h2>טורניר אחר טורניר</h2><span class="note">הצבע הוא המקום בטבלה, מסגרת זהב מסמנת אליפות, משבצת דהויה היא טורניר שהוחמץ.</span></div>';
@@ -895,6 +900,7 @@ function tournamentDetail(t) {
       '<div class="who">' + t.c.map(p => '<span style="display:flex;flex-direction:column;gap:3px">' + plate(p, "lg") + clubTag(t.teamOf[p]) + "</span>").join("") + "</div>" +
       '<div class="tag">' + (t.top2 ? "צמד 1–2 ניצח בגמר" : "צמד 3–4 הפתיע בגמר") + "</div>";
     box.appendChild(fin);
+    box.appendChild(shareButton(t));
   } else {
     const n = el("div", "notice warn");
     n.innerHTML = "<b>טורניר בעיצומו</b> אפשר להזין תוצאות בלשונית «חדר הבקרה».";
@@ -1867,6 +1873,275 @@ function publishBulletin(t, pre) {
 }
 
 /* ==========================================================================
+   Sounds: a cheer for a win, a whistle for a draw (switchable)
+   ========================================================================== */
+const soundOn = () => { try { return localStorage.getItem("fifa-sound") !== "0"; } catch (e) { return true; } };
+let SFX = null;
+function resultSound(h, a) {
+  if (!soundOn()) return;
+  try {
+    SFX = SFX || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = SFX; if (ctx.state === "suspended") ctx.resume();
+    const t0 = ctx.currentTime + 0.02, out = ctx.createGain();
+    out.gain.value = 0.8; out.connect(ctx.destination);
+    const noise = sec => { const n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; const s = ctx.createBufferSource(); s.buffer = b; return s; };
+    const whistle = (at, len) => {
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.12, at + 0.02);
+      g.gain.setValueAtTime(0.12, at + len - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, at + len); g.connect(out);
+      const tr = ctx.createOscillator(), tg = ctx.createGain(); tr.frequency.value = 34; tg.gain.value = 90; tr.connect(tg);
+      [2850, 3120].forEach(f => { const o = ctx.createOscillator(); o.frequency.value = f; tg.connect(o.frequency); o.connect(g); o.start(at); o.stop(at + len + 0.02); });
+      tr.start(at); tr.stop(at + len + 0.02);
+    };
+    if (h === a) { whistle(t0, 0.28); whistle(t0 + 0.42, 0.28); return; }
+    /* the crowd rises, holds, fades — with a horn on top */
+    const c = noise(2.2), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    f.type = "bandpass"; f.frequency.value = 850; f.Q.value = 0.55;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.25);
+    g.gain.setValueAtTime(0.5, t0 + 0.9); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.1);
+    c.connect(f); f.connect(g); g.connect(out); c.start(t0);
+    const hg = ctx.createGain(), lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400;
+    hg.gain.setValueAtTime(0.0001, t0 + 0.05); hg.gain.exponentialRampToValueAtTime(0.16, t0 + 0.1);
+    hg.gain.setValueAtTime(0.16, t0 + 0.6); hg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.75);
+    lp.connect(hg); hg.connect(out);
+    [233, 294, 349].forEach(fq => { const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fq; o.connect(lp); o.start(t0 + 0.05); o.stop(t0 + 0.8); });
+  } catch (e) {}
+}
+
+/* ==========================================================================
+   Trophy cabinet and achievements, on the player page
+   ========================================================================== */
+const TROPHY_SVG = '<svg viewBox="0 0 64 72" aria-hidden="true"><defs><linearGradient id="tg" x1="0" x2="1"><stop offset="0" stop-color="#8A5A12"/><stop offset=".35" stop-color="#FFF0B0"/><stop offset=".6" stop-color="#F0BF45"/><stop offset="1" stop-color="#8A5A12"/></linearGradient></defs>' +
+  '<path d="M16 8 H48 C48 30 42 38 35 40 V47 H29 V40 C22 38 16 30 16 8Z" fill="url(#tg)"/>' +
+  '<path d="M17 12 C6 12 6 28 20 31 M47 12 C58 12 58 28 44 31" fill="none" stroke="url(#tg)" stroke-width="4" stroke-linecap="round"/>' +
+  '<rect x="24" y="47" width="16" height="6" rx="2" fill="url(#tg)"/><rect x="18" y="53" width="28" height="9" rx="3" fill="#2A3140"/></svg>';
+function trophyCabinet(p) {
+  const sec = el("section", "block");
+  const wins = TS.filter(t => t.done && (t.c || []).includes(p));
+  sec.innerHTML = '<div class="bhead"><h2>ארון הגביעים</h2><span class="note">' +
+    (wins.length ? wins.length + " אליפויות לאורך כל העונות" : "עוד אין גביעים — הראשון מחכה") + "</span></div>";
+  if (!wins.length) return sec;
+  const shelf = el("div", "cabinet");
+  const bySeason = {};
+  wins.forEach(t => { (bySeason[t.season] = bySeason[t.season] || []).push(t); });
+  Object.keys(bySeason).sort((a, b) => a - b).forEach(sid => {
+    const row = el("div", "shelf");
+    row.appendChild(el("div", "shelf-name", esc(seasonById(Number(sid)).name)));
+    const cups = el("div", "cups");
+    bySeason[sid].forEach(t => {
+      const mate = t.c.find(x => x !== p);
+      const c = el("button", "cup", TROPHY_SVG + '<span class="cup-n">' + t.num + "</span>");
+      c.title = "טורניר " + t.num + (mate != null ? " · עם " + P[mate] : "");
+      c.onclick = () => { curT = t.i; go("tournaments"); };
+      cups.appendChild(c);
+    });
+    row.appendChild(cups);
+    shelf.appendChild(row);
+  });
+  sec.appendChild(shelf);
+  return sec;
+}
+let ACH_CACHE = null, ACH_KEY = "";
+function achOf(p) {
+  const key = TS.length + ":" + TS.reduce((n, t) => n + t.m.filter(m => m[6] != null).length, 0) + ":" + TS.filter(t => t.done).length;
+  if (key !== ACH_KEY) { ACH_CACHE = achievements(); ACH_KEY = key; }
+  return ACH_CACHE[p] || {};
+}
+function achievementsBlock(p) {
+  const got = achOf(p);
+  const n = ACH.filter(a => got[a.id]).length;
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>הישגים</h2><span class="note">' + n + " מתוך " + ACH.length + " · לאורך כל העונות</span></div>";
+  const grid = el("div", "achs");
+  ACH.slice().sort((a, b) => (got[b.id] ? 1 : 0) - (got[a.id] ? 1 : 0)).forEach(a => {
+    const g = got[a.id];
+    grid.appendChild(el("div", "ach" + (g ? " on" : ""),
+      '<span class="ach-i">' + a.icon + '</span><span class="ach-t"><b>' + esc(a.name) + "</b><small>" +
+      (g ? "טורניר " + g.t + " · " + esc(seasonById(g.season).name) : esc(a.desc)) + "</small></span>"));
+  });
+  sec.appendChild(grid);
+  return sec;
+}
+
+/* ==========================================================================
+   The tournament card: a picture of the night, ready for WhatsApp
+   ========================================================================== */
+function loadImg(src) { return new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+async function shareTournamentCard(t, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await (document.fonts ? document.fonts.ready : Promise.resolve());
+    const W = 1080, H = 1350, cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const x = cv.getContext("2d");
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#4B86FA";
+    const g = x.createRadialGradient(W / 2, 300, 50, W / 2, 500, 900);
+    g.addColorStop(0, "#23365C"); g.addColorStop(.55, "#0D1528"); g.addColorStop(1, "#04070D");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const halo = x.createRadialGradient(W / 2, 360, 20, W / 2, 360, 420);
+    halo.addColorStop(0, "rgba(255,225,150,.35)"); halo.addColorStop(1, "rgba(255,225,150,0)");
+    x.fillStyle = halo; x.fillRect(0, 0, W, 800);
+    x.direction = "rtl"; x.textAlign = "center"; x.fillStyle = "#fff";
+    x.font = "700 34px Heebo, sans-serif"; x.fillStyle = "#AFC3E6";
+    x.fillText("טורניר " + t.num + " · " + seasonById(t.season).name, W / 2, 90);
+    x.font = "400 88px 'Secular One', Heebo, sans-serif"; x.fillStyle = "#F5C542";
+    x.fillText("🏆 האלופים", W / 2, 200);
+    /* the champions, faces on their colours */
+    const champs = (t.c || []).slice(0, 2);
+    const pos = [W / 2 + 190, W / 2 - 190];
+    for (let i = 0; i < champs.length; i++) {
+      const p = champs[i], cx = pos[i], cy = 420, r = 130;
+      x.beginPath(); x.arc(cx, cy, r + 12, 0, Math.PI * 2); x.fillStyle = css("--p" + p); x.fill();
+      const img = await loadImg(photoOf(p));
+      x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip();
+      if (img) { const s = Math.max(2 * r / img.width, 2 * r / img.height); x.drawImage(img, cx - img.width * s / 2, cy - img.height * s / 2, img.width * s, img.height * s); }
+      else { x.fillStyle = "#0E1218"; x.fillRect(cx - r, cy - r, 2 * r, 2 * r); x.fillStyle = "#fff"; x.font = "800 120px Heebo"; x.fillText(P[p].slice(0, 1), cx, cy + 42); }
+      x.restore();
+      x.fillStyle = "#fff"; x.font = "800 56px Heebo, sans-serif"; x.fillText(P[p], cx, 620);
+      x.fillStyle = "#9AA4B2"; x.font = "500 32px Heebo, sans-serif"; x.fillText(CLUBS[t.teamOf[p]] || "", cx, 665);
+    }
+    /* the final table */
+    let y = 735;
+    x.fillStyle = "rgba(255,255,255,.06)"; x.fillRect(80, y - 50, W - 160, 60 + t.table.length * 58);
+    x.font = "700 28px Heebo"; x.fillStyle = "#7D8795"; x.textAlign = "right";
+    x.fillText("#", W - 110, y); x.fillText("שחקן", W - 170, y); x.textAlign = "center"; x.fillText("נק׳", 170, y); x.fillText("הפרש", 290, y);
+    t.table.forEach((p, i) => {
+      y += 58;
+      const a = t.acc[p], gd = a.gf - a.ga;
+      x.textAlign = "right";
+      x.fillStyle = i < 2 ? "#F5C542" : i < 4 ? "#8DB5FF" : "#9AA4B2"; x.font = "800 36px Heebo"; x.fillText(String(i + 1), W - 110, y);
+      x.fillStyle = css("--p" + p); x.fillRect(W - 185, y - 26, 8, 30);
+      x.fillStyle = "#fff"; x.font = "700 38px Heebo"; x.fillText(P[p], W - 200, y);
+      x.fillStyle = "#9AA4B2"; x.font = "500 28px Heebo"; x.fillText(CLUBS[t.teamOf[p]] || "", W - 420, y);
+      x.textAlign = "center"; x.fillStyle = "#fff"; x.font = "900 40px Heebo"; x.fillText(String(a.pts), 170, y);
+      x.fillStyle = gd > 0 ? "#3DDC84" : gd < 0 ? "#FF6B6B" : "#C9D1DB"; x.font = "700 32px Heebo";
+      x.direction = "ltr"; x.fillText((gd > 0 ? "+" : "") + gd, 290, y); x.direction = "rtl";
+    });
+    /* the game of the night: the widest win, then the most goals */
+    const best = t.m.filter(m => m[6] != null).slice().sort((a, b) => Math.abs(b[6] - b[7]) - Math.abs(a[6] - a[7]) || (b[6] + b[7]) - (a[6] + a[7]))[0];
+    y += 95;
+    if (best) {
+      /* home pair on the right, away on the left, each score beside its pair */
+      x.textAlign = "center"; x.fillStyle = "#AFC3E6"; x.font = "700 30px Heebo"; x.fillText("⚡ משחק הערב", W / 2, y);
+      const yy = y + 62;
+      x.fillStyle = "#fff"; x.font = "700 38px Heebo";
+      x.textAlign = "right"; x.fillText(P[best[0]] + " ו" + P[best[1]], W - 110, yy);
+      x.textAlign = "left"; x.fillText(P[best[3]] + " ו" + P[best[4]], 110, yy);
+      x.direction = "ltr"; x.textAlign = "center"; x.font = "900 48px Heebo"; x.fillStyle = "#F5C542";
+      x.fillText(best[7] + "  :  " + best[6], W / 2, yy + 2);
+      x.direction = "rtl";
+    }
+    x.textAlign = "center"; x.fillStyle = "#5C6673"; x.font = "500 26px Heebo"; x.fillText("טורניר פיפא · itzikglanz87.github.io/apk", W / 2, H - 28);
+
+    const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+    const file = new File([blob], "fifa-" + t.num + ".png", { type: "image/png" });
+    const text = "🏆 טורניר " + t.num + ": " + champs.map(p => P[p]).join(" ו") + " אלופים!";
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text }).catch(() => {});
+    } else {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+  } catch (e) { flash("לא הצלחתי להכין את התמונה", true); }
+  if (btn) btn.disabled = false;
+}
+function shareButton(t) {
+  const b = el("button", "btn sm", "📤 שתף בווטסאפ");
+  b.onclick = () => shareTournamentCard(t, b);
+  return b;
+}
+
+/* ==========================================================================
+   FIFA Wrapped — a season in stories, for one player
+   ========================================================================== */
+function wrappedData(p) {
+  const ts = TSS.filter(t => t.done);
+  const d = { g: 0, w: 0, dr: 0, l: 0, gf: 0, ga: 0, titles: 0, tours: 0, mates: {}, foes: {}, clubs: {}, nights: [] };
+  ts.forEach(t => {
+    if (!t.players.includes(p)) return;
+    d.tours++;
+    if ((t.c || []).includes(p)) d.titles++;
+    const a = t.acc[p];
+    d.nights.push({ t, pts: a.pts, place: t.place[p], champ: (t.c || []).includes(p) });
+    t.m.forEach(m => {
+      if (m[6] == null) return;
+      const home = m[0] === p || m[1] === p, away = m[3] === p || m[4] === p;
+      if (!home && !away) return;
+      const gf = home ? m[6] : m[7], ga = home ? m[7] : m[6];
+      const pts = gf > ga ? 3 : gf === ga ? 1 : 0;
+      d.g++; d.gf += gf; d.ga += ga; if (pts === 3) d.w++; else if (pts === 1) d.dr++; else d.l++;
+      const mate = home ? (m[0] === p ? m[1] : m[0]) : (m[3] === p ? m[4] : m[3]);
+      const foes = home ? [m[3], m[4]] : [m[0], m[1]];
+      const club = home ? m[2] : m[5];
+      const add = (o, k) => { const r = o[k] || (o[k] = { g: 0, pts: 0 }); r.g++; r.pts += pts; };
+      add(d.mates, mate); foes.forEach(f => add(d.foes, f)); add(d.clubs, club);
+    });
+  });
+  const pick = (o, min, best) => {
+    const rows = Object.keys(o).map(k => ({ k: Number(k), g: o[k].g, ppg: o[k].pts / o[k].g })).filter(r => r.g >= min);
+    rows.sort((a, b) => best ? b.ppg - a.ppg || b.g - a.g : a.ppg - b.ppg || b.g - a.g);
+    return rows[0] || null;
+  };
+  const min = Math.max(3, Math.round(d.g * 0.08));
+  d.mate = pick(d.mates, min, true);
+  d.foe = pick(d.foes, min, false);
+  d.club = pick(d.clubs, Math.max(3, Math.round(d.g * 0.05)), true);
+  d.night = d.nights.slice().sort((a, b) => b.pts - a.pts || a.place - b.place)[0] || null;
+  d.rank = ORDER.indexOf(p) + 1;
+  return d;
+}
+function openWrapped(p) {
+  const d = wrappedData(p);
+  if (!d.g) { flash("עוד אין משחקים בעונה הזאת", true); return; }
+  const season = SCOPE === "all" ? "כל העונות" : seasonById(SCOPE).name;
+  const face = photoOf(p) ? '<span class="wr-face" style="--c:' + PC(p) + '"><i class="pface pf' + p + '"></i></span>' : "";
+  const slides = [
+    ["#3D2E7A", "#12091F", face + '<div class="wr-k">' + esc(season) + '</div><div class="wr-big">' + esc(P[p]) + '</div><div class="wr-s">ככה נראתה העונה שלך</div>'],
+    ["#0F5132", "#06140D", '<div class="wr-k">שיחקת</div><div class="wr-big" data-count="' + d.g + '">0</div><div class="wr-s">משחקים · ' + d.w + " ניצחונות · " + d.dr + " תיקו · " + d.l + " הפסדים</div>" +
+      '<div class="wr-pill">' + Math.round(100 * d.w / d.g) + "% ניצחונות</div>"],
+    ["#7A5A0E", "#1A1204", '<div class="wr-k">גביעים</div><div class="wr-big" data-count="' + d.titles + '">0</div><div class="wr-s">' +
+      (d.titles ? "אליפויות מתוך " + d.tours + " טורנירים 🏆" : "עוד לא הפעם — אבל " + d.tours + " טורנירים של ניסיון") + "</div>"],
+    d.mate ? ["#0E4A7A", "#050F1A", '<div class="wr-k">השותף המושלם</div><div class="wr-big">' + esc(P[d.mate.k]) + '</div><div class="wr-s">' +
+      f2(d.mate.ppg) + " נקודות למשחק ביחד · " + d.mate.g + " משחקים</div>"] : null,
+    d.foe ? ["#7A1E2E", "#1A0509", '<div class="wr-k">היריב המושבע</div><div class="wr-big">' + esc(P[d.foe.k]) + '</div><div class="wr-s">רק ' +
+      f2(d.foe.ppg) + " נקודות למשחק מולו · " + d.foe.g + " משחקים</div>"] : null,
+    d.club ? ["#1E5A5A", "#051414", '<div class="wr-k">הקבוצה שלך</div><div class="wr-big">' + esc(CLUBS[d.club.k] || "") + '</div><div class="wr-s">' +
+      f2(d.club.ppg) + " נקודות למשחק איתה</div>"] : null,
+    d.night ? ["#5A1E7A", "#12051A", '<div class="wr-k">הערב הכי חזק</div><div class="wr-big">טורניר ' + d.night.t.num + '</div><div class="wr-s">' +
+      d.night.pts + " נקודות · מקום " + d.night.place + (d.night.champ ? " · ואליפות 🏆" : "") + "</div>"] : null,
+    ["#223A66", "#070D1A", face + '<div class="wr-k">הסיכום</div><div class="wr-big">מקום ' + d.rank + '</div><div class="wr-s">' +
+      d.gf + " שערים · " + d.titles + " גביעים · " + d.g + " משחקים</div>" + '<div class="wr-s" style="margin-top:14px">נתראה בעונה הבאה 🔥</div>']
+  ].filter(Boolean);
+
+  const ov = el("div", "wrapped");
+  const bars = el("div", "wr-bars", slides.map(() => "<i><b></b></i>").join(""));
+  const stage = el("div", "wr-stage");
+  const close = el("button", "wr-x", "✕");
+  ov.append(bars, stage, close);
+  document.body.appendChild(ov);
+  document.body.style.overflow = "hidden";
+  let i = -1, timer = null;
+  const end = () => { clearTimeout(timer); ov.remove(); document.body.style.overflow = ""; };
+  const show = k => {
+    if (k >= slides.length) return end();
+    i = Math.max(0, k);
+    const [c1, c2, html] = slides[i];
+    stage.style.background = "radial-gradient(120% 90% at 50% 20%," + c1 + "," + c2 + ")";
+    stage.innerHTML = '<div class="wr-card">' + html + "</div>";
+    bars.querySelectorAll("i").forEach((b, j) => b.className = j < i ? "done" : j === i ? "now" : "");
+    stage.querySelectorAll("[data-count]").forEach(n => {
+      const to = Number(n.getAttribute("data-count")), t0 = performance.now();
+      const tick = now => { const f = Math.min(1, (now - t0) / 900); n.textContent = Math.round(to * (1 - Math.pow(1 - f, 3))); if (f < 1) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
+    clearTimeout(timer); timer = setTimeout(() => show(i + 1), 4200);
+  };
+  close.onclick = e => { e.stopPropagation(); end(); };
+  stage.onclick = e => { const r = stage.getBoundingClientRect(); show(e.clientX < r.left + r.width / 3 ? i + 1 : e.clientX > r.right - r.width / 3 ? i - 1 : i + 1); };
+  show(0);
+}
+
+/* ==========================================================================
    The social layer: predictions, reactions, the "who's in" poll
    --------------------------------------------------------------------------
    Everything is one small document per player per match (or per poll), so
@@ -2279,6 +2554,13 @@ function mePanel() {
   ch.onclick = async () => { await askWho(); viewLive(document.getElementById("v-live")); };
   row.appendChild(ch);
   sec.appendChild(row);
+  const snd = el("button", "btn ghost sm", soundOn() ? "🔊 צלילים: פועל" : "🔇 צלילים: כבוי");
+  snd.onclick = () => {
+    try { localStorage.setItem("fifa-sound", soundOn() ? "0" : "1"); } catch (e) {}
+    snd.textContent = soundOn() ? "🔊 צלילים: פועל" : "🔇 צלילים: כבוי";
+    if (soundOn()) resultSound(2, 1);
+  };
+  sec.appendChild(snd);
   return sec;
 }
 

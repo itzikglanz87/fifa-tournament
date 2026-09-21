@@ -153,6 +153,9 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     expect("…and it comes before that result's next-match push",
            last[0] && last[0].title.startsWith("⚡") && /שלב הליגה הסתיים/.test(last[1] && last[1].body));
     expect("ordinary results do not each become a peak", peaks.length <= 4, peaks.length + " of 12");
+    const ach = mine.filter(m => m.title.startsWith("🏅"));
+    expect("achievements are announced when earned, not on every result", ach.length >= 1 && ach.length <= 12,
+           ach.length + ": " + ach.map(a => a.body.split("\n")[0]).join(" | "));
     await change("t1051", rec, null);
   }
 

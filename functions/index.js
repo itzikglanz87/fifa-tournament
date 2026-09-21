@@ -31,6 +31,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const T = require("./tournament");
+const { makeKit } = require("./model");
 const { peakOf } = require("./peak");
 
 initializeApp();
@@ -152,6 +153,27 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
     }
   } catch (e) {
     console.error("peak moment skipped:", e && e.stack || e);
+  }
+
+  /* new achievements this result unlocked — the same list the player page
+     shows, run on the store before and after the change */
+  try {
+    const cfg = await db.doc("meta/config").get();
+    const seasons = (cfg.data() || {}).seasons;
+    const docs = (await db.collection("tournaments").get()).docs;
+    const recsAfter = docs.map(d => T.unpack(d.data()));
+    const recsBefore = docs.map(d => d.id === id ? before : T.unpack(d.data()));
+    const nb = makeKit(recsBefore, seasons).achievements(), K = makeKit(recsAfter, seasons), na = K.achievements();
+    const lines = [];
+    Object.keys(na).forEach(p => Object.keys(na[p]).forEach(aid => {
+      if (!nb[p][aid]) { const a = K.ACH.find(x => x.id === aid); if (a) lines.push(T.P[p] + " — " + a.icon + " " + a.name); }
+    }));
+    if (lines.length && lines.length <= 6) {
+      const r = await sendToAll("🏅 הישג חדש · טורניר " + (after.n || after.i), lines.join("\n"));
+      console.log("achievement push", id, JSON.stringify(r), lines.join(" | "));
+    }
+  } catch (e) {
+    console.error("achievements skipped:", e && e.stack || e);
   }
 
   let body = T.nextEventText(after);

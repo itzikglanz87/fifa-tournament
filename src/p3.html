@@ -1574,6 +1574,7 @@ function livePanel(t, pane) {
       const h2 = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
       const was = t.rec.scores[idx] || [null, null];
       if (was[0] === h2 && was[1] === a2) return null;
+      if ((was[0] == null || was[1] == null) && h2 != null && a2 != null) resultSound(h2, a2);
       t.rec.scores[idx] = [h2, a2];
       t.rec.gg = false;
       const fresh = decorate(hydrate(t.rec));
@@ -1588,6 +1589,8 @@ function livePanel(t, pane) {
       writable(t);
       const a2 = iA.value === "" ? null : Math.max(0, parseInt(iA.value, 10) || 0);
       const h2 = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
+      const was = t.rec.scores[idx] || [null, null];
+      if ((was[0] == null || was[1] == null) && h2 != null && a2 != null) resultSound(h2, a2);
       t.rec.scores[idx] = [h2, a2];
       t.rec.gg = false;
       const fresh = decorate(hydrate(t.rec));

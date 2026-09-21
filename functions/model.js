@@ -14,7 +14,7 @@ const CODE = fs.readFileSync(path.join(__dirname, "app-rules.js"), "utf8");
 const SEED = JSON.parse(fs.readFileSync(path.join(__dirname, "seed.json"), "utf8"));
 const script = new vm.Script(
   "const SEED = __SEED; const PHOTOS = {};\n" + CODE + "\n" +
-  "this.kit = { LIVE, hydrate, decorate, rebuild, simulate, P, CLUBS," +
+  "this.kit = { LIVE, hydrate, decorate, rebuild, simulate, achievements, ACH, P, CLUBS," +
   " setSeasons: v => { SEASONS = v; }, model: () => MODEL };");
 
 /* recs: every tournament record in the store (unpacked), live and finished */

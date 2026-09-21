@@ -57,6 +57,7 @@
      and then the intro simply runs silent. */
   var ctx = null;
   try {
+    if (localStorage.getItem("fifa-sound") === "0") return;   // sounds switched off
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ctx = new AC();
@@ -480,6 +481,81 @@ function withAgg(agg, fn, host) {
    Four career measures, each scaled 0-1 across the six players, then blended
    and mapped onto 62-93 so the cards read like a squad list. Every input is
    shown on the card, so the number can always be traced back. */
+/* ---------- achievements ----------
+   Unlocked by walking every tournament in order, match by match: streaks,
+   clean sheets, big wins, milestones, titles. Each one remembers the
+   tournament where it was first earned. Also run by the push server, which
+   compares before and after a result to announce new ones. */
+const ACH = [
+  { id: "g100", icon: "🎮", name: "100 משחקים", desc: "שיחק 100 משחקים" },
+  { id: "g250", icon: "🕹️", name: "250 משחקים", desc: "שיחק 250 משחקים" },
+  { id: "g500", icon: "👾", name: "500 משחקים", desc: "שיחק 500 משחקים" },
+  { id: "w3", icon: "🔥", name: "שלושה ברצף", desc: "3 ניצחונות רצופים" },
+  { id: "w5", icon: "⚡", name: "חמישה ברצף", desc: "5 ניצחונות רצופים" },
+  { id: "w8", icon: "🌪️", name: "בלתי ניתן לעצירה", desc: "8 ניצחונות רצופים" },
+  { id: "u10", icon: "🛡️", name: "עשרה בלי הפסד", desc: "10 משחקים רצופים בלי הפסד" },
+  { id: "cs1", icon: "🧤", name: "רשת נקייה", desc: "משחק בלי לספוג" },
+  { id: "cs25", icon: "🧱", name: "חומה", desc: "25 משחקים בלי לספוג" },
+  { id: "big4", icon: "💥", name: "דריסה", desc: "ניצחון בהפרש 4 ומעלה" },
+  { id: "big6", icon: "☄️", name: "השפלה", desc: "ניצחון בהפרש 6 ומעלה" },
+  { id: "gf6", icon: "🎯", name: "מטווח", desc: "6 שערים במשחק אחד" },
+  { id: "top", icon: "📈", name: "ראש הטבלה", desc: "סיים ראשון בשלב הליגה" },
+  { id: "unb", icon: "🧘", name: "בלי הפסד", desc: "שלב ליגה שלם בלי להפסיד" },
+  { id: "perf", icon: "💎", name: "טורניר מושלם", desc: "ניצח בכל משחקי הליגה שלו" },
+  { id: "gk", icon: "⚽", name: "מלך השערים", desc: "הכי הרבה שערים בטורניר" },
+  { id: "t1", icon: "🏆", name: "אליפות ראשונה", desc: "זכה בטורניר" },
+  { id: "t5", icon: "🥇", name: "חמש אליפויות", desc: "זכה ב־5 טורנירים" },
+  { id: "t10", icon: "👑", name: "עשר אליפויות", desc: "זכה ב־10 טורנירים" },
+  { id: "tt2", icon: "✌️", name: "פעמיים ברצף", desc: "אלוף בשני טורנירים רצופים" },
+  { id: "tt3", icon: "🔱", name: "שלוש ברצף", desc: "אלוף בשלושה טורנירים רצופים" }
+];
+function achievements() {
+  const got = {};
+  for (let p = 0; p < NP; p++) got[p] = {};
+  const st = {};
+  for (let p = 0; p < NP; p++) st[p] = { g: 0, w: 0, u: 0, cs: 0, titles: 0, lastTitle: -9, run: 0 };
+  const give = (p, id, t) => { if (!got[p][id]) got[p][id] = { t: t.num, season: t.season }; };
+  let doneIdx = 0;
+  TS.forEach(t => {
+    t.m.forEach(m => {
+      if (m[6] == null || m[7] == null) return;
+      [[[m[0], m[1]], m[6], m[7]], [[m[3], m[4]], m[7], m[6]]].forEach(([duo, gf, ga]) => duo.forEach(p => {
+        const s = st[p]; if (!s) return;
+        s.g++;
+        if (gf > ga) { s.w++; s.u++; } else if (gf === ga) { s.w = 0; s.u++; } else { s.w = 0; s.u = 0; }
+        if (ga === 0) s.cs++;
+        if (s.g >= 100) give(p, "g100", t); if (s.g >= 250) give(p, "g250", t); if (s.g >= 500) give(p, "g500", t);
+        if (s.w >= 3) give(p, "w3", t); if (s.w >= 5) give(p, "w5", t); if (s.w >= 8) give(p, "w8", t);
+        if (s.u >= 10) give(p, "u10", t);
+        if (s.cs >= 1) give(p, "cs1", t); if (s.cs >= 25) give(p, "cs25", t);
+        if (gf - ga >= 4) give(p, "big4", t); if (gf - ga >= 6) give(p, "big6", t);
+        if (gf >= 6) give(p, "gf6", t);
+      }));
+    });
+    if (!t.done) return;
+    const idx = doneIdx++;
+    if (t.table && t.table.length) give(t.table[0], "top", t);
+    t.players.forEach(p => {
+      const a = t.acc[p]; if (!a || !a.g) return;
+      if (a.l === 0) give(p, "unb", t);
+      if (a.w === a.g) give(p, "perf", t);
+    });
+    const best = Math.max.apply(null, t.players.map(p => t.acc[p].gf));
+    const kings = t.players.filter(p => t.acc[p].gf === best);
+    if (kings.length === 1) give(kings[0], "gk", t);
+    (t.c || []).forEach(p => {
+      const s = st[p]; if (!s) return;
+      s.titles++;
+      s.run = s.lastTitle === idx - 1 ? s.run + 1 : 1;
+      s.lastTitle = idx;
+      give(p, "t1", t);
+      if (s.titles >= 5) give(p, "t5", t); if (s.titles >= 10) give(p, "t10", t);
+      if (s.run >= 2) give(p, "tt2", t); if (s.run >= 3) give(p, "tt3", t);
+    });
+  });
+  return got;
+}
+
 function computeOVR(S) {
   const ax = [
     { k: "ppg",  w: .34, v: s => s.ppg },

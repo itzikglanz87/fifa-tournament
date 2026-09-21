@@ -1173,4 +1173,34 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .poll-btns{display:flex; gap:8px}
 .soc-pred.live{background:linear-gradient(90deg,#3D2E7A,#5B3DB8); color:#fff; box-shadow:0 0 0 1px #8E74FF inset}
 .pred-timer{font-weight:800; color:#FFD36B; margin-inline-start:4px; font-variant-numeric:tabular-nums}
+/* ---------- trophy cabinet, achievements, Wrapped ---------- */
+.cabinet{display:flex; flex-direction:column; gap:12px}
+.shelf{background:linear-gradient(180deg,#1E252F,#161B23); border-radius:14px; padding:10px 12px 0; box-shadow:0 10px 0 -4px #3A2A12 inset}
+.shelf-name{font-size:12px; color:#9AA4B2; font-weight:700; margin-bottom:6px}
+.cups{display:flex; flex-wrap:wrap; gap:6px; padding-bottom:10px; border-bottom:6px solid #5A3F16; border-radius:0 0 4px 4px}
+.cup{border:0; background:transparent; width:46px; display:flex; flex-direction:column; align-items:center; cursor:pointer; padding:0; color:#F5C542}
+.cup svg{width:40px; height:45px; filter:drop-shadow(0 4px 6px rgba(245,197,66,.25))}
+.cup-n{font-size:11px; font-weight:800; margin-top:-2px}
+.achs{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px}
+.ach{display:flex; gap:9px; align-items:center; background:#161B23; border-radius:12px; padding:9px 10px; opacity:.45; filter:grayscale(1)}
+.ach.on{opacity:1; filter:none; background:linear-gradient(135deg,#232C39,#1A2029); box-shadow:0 0 0 1px rgba(245,197,66,.3) inset}
+.ach-i{font-size:24px} .ach-t{display:flex; flex-direction:column; min-width:0}
+.ach-t b{font-size:13px} .ach-t small{font-size:11px; color:#9AA4B2}
+.wr-open{margin-top:10px; background:linear-gradient(90deg,#7B3FE4,#E54C7A); border:0; color:#fff}
+.wrapped{position:fixed; inset:0; z-index:250; background:#000; display:flex; flex-direction:column}
+.wr-bars{position:absolute; top:calc(10px + env(safe-area-inset-top)); left:10px; right:10px; display:flex; gap:4px; z-index:2; direction:ltr}
+.wr-bars i{flex:1; height:3px; border-radius:2px; background:rgba(255,255,255,.3); overflow:hidden}
+.wr-bars i b{display:block; height:100%; width:0; background:#fff}
+.wr-bars i.done b{width:100%} .wr-bars i.now b{animation:wr-fill 4.2s linear forwards}
+@keyframes wr-fill{to{width:100%}}
+.wr-x{position:absolute; top:calc(22px + env(safe-area-inset-top)); left:14px; z-index:3; border:0; background:rgba(0,0,0,.35); color:#fff; width:36px; height:36px; border-radius:50%; font-size:16px}
+.wr-stage{flex:1; display:flex; align-items:center; justify-content:center; padding:24px; transition:background .5s}
+.wr-card{text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px; animation:wr-in .55s cubic-bezier(.2,1.2,.4,1)}
+@keyframes wr-in{from{opacity:0; transform:translateY(24px) scale(.94)} to{opacity:1; transform:none}}
+.wr-k{font-size:16px; letter-spacing:.08em; color:rgba(255,255,255,.75); font-weight:700}
+.wr-big{font-family:"Secular One",Heebo,sans-serif; font-size:64px; line-height:1.05; color:#fff; text-shadow:0 6px 30px rgba(0,0,0,.5)}
+.wr-s{font-size:17px; color:rgba(255,255,255,.85); max-width:300px; line-height:1.5}
+.wr-pill{margin-top:8px; background:rgba(255,255,255,.14); padding:8px 16px; border-radius:999px; font-weight:800}
+.wr-face{width:110px; height:110px; border-radius:50%; border:4px solid var(--c); overflow:hidden; margin-bottom:8px; box-shadow:0 0 40px rgba(255,255,255,.2)}
+.wr-face .pface{width:100%; height:100%}
 </style>
