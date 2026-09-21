@@ -103,9 +103,19 @@ def pwa(s):
     assert '<script id="seed"' in body_html, 'seed payload moved'
     assert app_script.rstrip().endswith('</script>'), 'unexpected tail'
 
+    # The page is always fetched fresh, but the service worker serves scripts
+    # from its cache first, so a new page could run with last version's db.js
+    # for one launch (it did: the activity log reached the push function).
+    # A version in the address makes each page load its own copy.
+    import hashlib
+    boot = BOOT
+    for f in ('firebase-config.js', 'db.js'):
+        v = hashlib.sha256(io.open(os.path.join(ROOT, f), 'rb').read()).hexdigest()[:8]
+        assert ('src="%s"' % f) in boot, f
+        boot = boot.replace('src="%s"' % f, 'src="%s?v=%s"' % (f, v))
     doc = ('<!doctype html>\n<html lang="he" dir="rtl">\n<head>\n'
            + HEAD_EXTRA + head_html + '\n</head>\n<body>\n'
-           + body_html + BOOT + app_script + TAIL)
+           + body_html + boot + app_script + TAIL)
     for tag in ('<html', '<head>', '<body>', '</html>'):
         assert doc.count(tag) == 1, (tag, doc.count(tag))
     assert doc.count('<script id="seed"') == 1

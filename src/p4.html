@@ -2248,10 +2248,17 @@ function setScope(v) {
 }
 
 function refreshChrome() {
+  /* the badge and the line under the name count the tournaments of the chosen
+     season, the running one included (1 once the first is opened, 0 if it is
+     deleted). Counting finished ones only showed 0 for a season under way. */
   const done = TSS.filter(t => t.done);
-  document.querySelector(".mark .glyph").textContent = done.length;
+  const nT = TSS.length;
+  const glyph = document.querySelector(".mark .glyph");
+  glyph.textContent = nT;
+  glyph.title = nT + " טורנירים" + (SCOPE === "all" ? "" : " בעונה");
   document.getElementById("railSub").textContent =
-    (SCOPE === "all" ? "כל העונות" : seasonById(SCOPE).name) + " · " + nf(totMatches) + " משחקים";
+    (SCOPE === "all" ? "כל העונות" : seasonById(SCOPE).name) + " · " +
+    (nT === 1 ? "טורניר אחד" : nT ? nf(nT) + " טורנירים" : "אין טורנירים");
 
   const sp = document.getElementById("seasonPick");
   sp.innerHTML = "";
