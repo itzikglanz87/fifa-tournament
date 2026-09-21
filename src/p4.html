@@ -1955,9 +1955,19 @@ function achievementsBlock(p) {
   const grid = el("div", "achs");
   ACH.slice().sort((a, b) => (got[b.id] ? 1 : 0) - (got[a.id] ? 1 : 0)).forEach(a => {
     const g = got[a.id];
-    grid.appendChild(el("div", "ach" + (g ? " on" : ""),
+    const c = el("button", "ach" + (g ? " on" : ""),
       '<span class="ach-i">' + a.icon + '</span><span class="ach-t"><b>' + esc(a.name) + "</b><small>" +
-      (g ? "טורניר " + g.t + " · " + esc(seasonById(g.season).name) : esc(a.desc)) + "</small></span>"));
+      (g ? "טורניר " + g.t + " · " + esc(seasonById(g.season).name) : esc(a.desc)) + "</small></span>");
+    /* a tap explains it: what it takes, when he got it, who else has it */
+    c.onclick = e => {
+      achOf(p);
+      const holders = Object.keys(ACH_CACHE).filter(q => ACH_CACHE[q][a.id]).map(Number);
+      pinTip('<div class="th">' + a.icon + " " + esc(a.name) + "</div>" +
+        '<div class="ach-about">' + esc(a.about || a.desc) + "</div>" +
+        '<div class="tr"><span>' + esc(P[p]) + "</span><b>" + (g ? "הושג בטורניר " + g.t + " · " + esc(seasonById(g.season).name) : "עוד לא") + "</b></div>" +
+        '<div class="tr"><span>השיגו</span><b>' + (holders.length ? holders.length + " מתוך " + NP + " · " + holders.map(q => esc(P[q])).join(", ") : "אף אחד עדיין") + "</b></div>", e);
+    };
+    grid.appendChild(c);
   });
   sec.appendChild(grid);
   return sec;
