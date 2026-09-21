@@ -1218,4 +1218,20 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .ach{border:0; color:var(--ink); font:inherit; text-align:start; cursor:pointer}
 .ach:active{transform:scale(.97)}
 .ach-about{font-size:13px; line-height:1.55; margin:4px 0 8px; max-width:260px}
+/* ---------- the day poll, WhatsApp style ---------- */
+.poll-sub{font-size:12px; color:#9DB7E0; margin-bottom:4px}
+.pday{position:relative; overflow:hidden; display:grid; grid-template-columns:24px 1fr auto 22px; gap:10px; align-items:center;
+  width:100%; border:0; border-radius:12px; padding:10px 12px; background:rgba(0,0,0,.25); color:#fff; font:inherit; text-align:start; cursor:pointer}
+.pday-fill{position:absolute; inset-block:0; inset-inline-start:0; background:rgba(61,220,132,.22); transition:width .35s ease; z-index:0}
+.pday > span:not(.pday-fill){position:relative; z-index:1}
+.pday-check{width:22px; height:22px; border-radius:50%; border:2px solid #7D8795; display:grid; place-items:center; font-size:13px; font-weight:900}
+.pday.on .pday-check{background:#25D366; border-color:#25D366; color:#0B1A10}
+.pday-label{font-weight:700; font-size:14px}
+.pday.best .pday-label{color:#FFE08A}
+.pday-faces{display:flex}
+.pday-face{width:22px; height:22px; border-radius:50%; border:2px solid var(--c); overflow:hidden; margin-inline-start:-6px; background:#0E1218; display:grid; place-items:center; font-style:normal}
+.pday-face:first-child{margin-inline-start:0}
+.pday-face .pface{width:100%; height:100%} .pday-face b{font-size:10px}
+.pday-n{font-weight:800; text-align:center}
+.poll-foot{font-size:12.5px; margin-top:4px}
 </style>

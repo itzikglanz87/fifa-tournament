@@ -59,9 +59,9 @@ service cloud.firestore {
     match /pollVotes/{id} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null
-        && request.resource.data.keys().hasOnly(['poll', 'who', 'v', 'at'])
+        && request.resource.data.keys().hasOnly(['poll', 'who', 'days', 'at'])
         && request.resource.data.who is int && request.resource.data.who >= 0 && request.resource.data.who <= 5
-        && request.resource.data.v in ['y', 'n']
+        && request.resource.data.days is list && request.resource.data.days.size() <= 7
         && id == request.resource.data.poll + '_' + string(request.resource.data.who);
       allow delete: if false;
     }

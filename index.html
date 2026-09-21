@@ -1232,6 +1232,22 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .ach{border:0; color:var(--ink); font:inherit; text-align:start; cursor:pointer}
 .ach:active{transform:scale(.97)}
 .ach-about{font-size:13px; line-height:1.55; margin:4px 0 8px; max-width:260px}
+/* ---------- the day poll, WhatsApp style ---------- */
+.poll-sub{font-size:12px; color:#9DB7E0; margin-bottom:4px}
+.pday{position:relative; overflow:hidden; display:grid; grid-template-columns:24px 1fr auto 22px; gap:10px; align-items:center;
+  width:100%; border:0; border-radius:12px; padding:10px 12px; background:rgba(0,0,0,.25); color:#fff; font:inherit; text-align:start; cursor:pointer}
+.pday-fill{position:absolute; inset-block:0; inset-inline-start:0; background:rgba(61,220,132,.22); transition:width .35s ease; z-index:0}
+.pday > span:not(.pday-fill){position:relative; z-index:1}
+.pday-check{width:22px; height:22px; border-radius:50%; border:2px solid #7D8795; display:grid; place-items:center; font-size:13px; font-weight:900}
+.pday.on .pday-check{background:#25D366; border-color:#25D366; color:#0B1A10}
+.pday-label{font-weight:700; font-size:14px}
+.pday.best .pday-label{color:#FFE08A}
+.pday-faces{display:flex}
+.pday-face{width:22px; height:22px; border-radius:50%; border:2px solid var(--c); overflow:hidden; margin-inline-start:-6px; background:#0E1218; display:grid; place-items:center; font-style:normal}
+.pday-face:first-child{margin-inline-start:0}
+.pday-face .pface{width:100%; height:100%} .pday-face b{font-size:10px}
+.pday-n{font-weight:800; text-align:center}
+.poll-foot{font-size:12.5px; margin-top:4px}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -6626,7 +6642,7 @@ const Social = {
         p.docs.forEach(d => { const x = d.data(); (pred[x.t + "_" + x.k] = pred[x.t + "_" + x.k] || {})[x.who] = { h: x.h, a: x.a }; });
         r.docs.forEach(d => { const x = d.data(); if (x.e) (react[x.t + "_" + x.k] = react[x.t + "_" + x.k] || {})[x.who] = x.e; });
         this.poll = pl.exists ? pl.data() : null;
-        v.docs.forEach(d => { const x = d.data(); if (this.poll && x.poll === this.poll.id) votes[x.who] = x.v; });
+        v.docs.forEach(d => { const x = d.data(); if (this.poll && x.poll === this.poll.id && Array.isArray(x.days)) votes[x.who] = x.days.slice(); });
         this.pred = pred; this.react = react; this.votes = votes; this.win = win; this.loaded = true;
         this.paint();
       } catch (e) { /* social extras never block the app */ }
@@ -6947,70 +6963,114 @@ function predPanel(t) {
   return box;
 }
 
-/* ---- the poll: "who's in?" */
+/* ---- the poll: which days, WhatsApp style ----
+   The next five weekdays (Sunday to Thursday, from today on). Everyone ticks every day
+   they can; each day shows a filling bar, the voters' faces and a count, with
+   a tick on this phone's own choices. The admin opens it (with a push), sends
+   reminders (naming who has not voted) and deletes it. */
+const POLL_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי"];
+function pollWeek() {
+  /* the next five weekdays from today, Friday and Saturday skipped — no day
+     that has already passed */
+  const out = [], d = new Date(); d.setHours(12, 0, 0, 0);
+  const names = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  while (out.length < 5) {
+    if (d.getDay() <= 4) out.push(names[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+const pollOpen = () => { const p = Social.poll; return p && !p.closed && Array.isArray(p.days) ? p : null; };
+function pollTally(p) {
+  const by = p.days.map(() => []);
+  Object.keys(Social.votes).forEach(w => (Social.votes[w] || []).forEach(k => { if (by[k]) by[k].push(Number(w)); }));
+  const voted = Object.keys(Social.votes).map(Number).filter(w => (Social.votes[w] || []).length);
+  return { by, voted, missing: P.map((_, w) => w).filter(w => voted.indexOf(w) < 0) };
+}
 function pollCard() {
-  const p = Social.poll;
+  const p = pollOpen();
   const box = el("section", "block pollcard");
   box.id = "pollCard";
-  if (!p || p.closed) { box.hidden = true; return box; }
-  const need = Math.max(2, Math.min(6, Number(p.need) || 4));
-  const yes = Object.keys(Social.votes).filter(w => Social.votes[w] === "y").map(Number);
-  const no = Object.keys(Social.votes).filter(w => Social.votes[w] === "n").map(Number);
-  const me = meWho(), mine = typeof me === "number" ? Social.votes[me] : null;
-  box.innerHTML = '<div class="poll-top"><div><div class="poll-kicker">📅 הטורניר הבא</div><div class="poll-when">' + esc(p.when || "") + "</div></div>" +
-    '<div class="poll-count' + (yes.length >= need ? " ok" : "") + '"><b>' + yes.length + "/" + need + "</b><span>" + (yes.length >= need ? "יש מניין ✅" : "אישרו") + "</span></div></div>" +
-    '<div class="poll-faces">' + yes.map(w => '<span class="pf-y" title="' + esc(P[w]) + '">' + plateFace(w) + "</span>").join("") +
-      no.map(w => '<span class="pf-n" title="' + esc(P[w]) + '">' + plateFace(w) + "</span>").join("") + "</div>";
-  const row = el("div", "poll-btns");
-  [["y", "👍 אני בא"], ["n", "👎 לא הפעם"]].forEach(([v, label]) => {
-    const b = el("button", "btn sm" + (mine === v ? "" : " ghost"), label);
-    b.onclick = async () => {
+  if (!p) { box.hidden = true; return box; }
+  const me = meWho(), mine = typeof me === "number" && me >= 0 ? (Social.votes[me] || []) : [];
+  const T = pollTally(p), top = Math.max(0, ...T.by.map(v => v.length));
+  box.innerHTML = '<div class="poll-kicker">📊 סקר</div><div class="poll-when">' + esc(p.title || "איזה יום מתאים לטורניר?") + "</div>" +
+    '<div class="poll-sub">אפשר לבחור כמה ימים</div>';
+  p.days.forEach((label, k) => {
+    const who = T.by[k], on = mine.indexOf(k) >= 0;
+    const row = el("button", "pday" + (on ? " on" : "") + (top && who.length === top ? " best" : ""));
+    row.innerHTML = '<span class="pday-fill" style="width:' + Math.round(100 * who.length / P.length) + '%"></span>' +
+      '<span class="pday-check">' + (on ? "✓" : "") + "</span>" +
+      '<span class="pday-label">' + esc(label) + (top && who.length === top ? " ⭐" : "") + "</span>" +
+      '<span class="pday-faces">' + who.slice(0, 6).map(w => '<i class="pday-face" style="--c:' + PC(w) + '" title="' + esc(P[w]) + '">' +
+        (photoOf(w) ? '<i class="pface pf' + w + '"></i>' : "<b>" + esc(P[w].slice(0, 1)) + "</b>") + "</i>").join("") + "</span>" +
+      '<span class="pday-n">' + who.length + "</span>";
+    row.onclick = async () => {
       const w = await needMe();
       if (w == null) return;
-      Social.votes[w] = v; Social.paint();
-      try { await Social.set("pollVotes", p.id + "_" + w, { poll: p.id, who: w, v, at: new Date().toISOString() }); }
+      const cur = (Social.votes[w] || []).slice();
+      const at = cur.indexOf(k);
+      if (at >= 0) cur.splice(at, 1); else cur.push(k);
+      cur.sort((a, b) => a - b);
+      Social.votes[w] = cur; Social.paint();
+      try { await Social.set("pollVotes", p.id + "_" + w, { poll: p.id, who: w, days: cur, at: new Date().toISOString() }); }
       catch (e) { flash("ההצבעה לא נשמרה — אין חיבור", true); }
     };
-    row.appendChild(b);
+    box.appendChild(row);
   });
-  box.appendChild(row);
+  box.appendChild(el("div", "poll-foot", "הצביעו " + T.voted.length + " מתוך " + P.length +
+    (T.missing.length ? ' · <span class="mut">עוד לא: ' + T.missing.map(w => esc(P[w])).join(", ") + "</span>" : " ✅")));
   return box;
 }
 
-/* under ניהול, admin only: open or close the poll, and tell everyone */
+/* under ניהול, admin only: open the poll (with a push), remind, delete */
 function pollAdmin() {
   const sec = el("section", "block");
-  sec.innerHTML = '<div class="bhead"><h2>תיאום טורניר</h2><span class="note">פותחים הצבעה "מי בא?" — כולם מקבלים פוש, וכשמגיעים למניין נשלח פוש נוסף.</span></div>';
-  const p = Social.poll;
-  if (p && !p.closed) {
-    sec.appendChild(el("div", "notice", "הצבעה פתוחה: <b>" + esc(p.when || "") + "</b> · מניין " + (p.need || 4)));
-    const close = el("button", "btn ghost sm", "סגור את ההצבעה");
-    close.onclick = async () => {
-      try { await Social.set("meta", "poll", Object.assign({}, p, { closed: true })); await Social.load(true); viewLive(document.getElementById("v-live")); }
-      catch (e) { flash("לא נסגר — אין חיבור", true); }
+  sec.innerHTML = '<div class="bhead"><h2>סקר ימים</h2><span class="note">סקר של ראשון עד חמישי. כל אחד מסמן את הימים שהוא יכול. את הפושים שולח רק האדמין.</span></div>';
+  const p = pollOpen();
+  const push = (title, body) => window.APP_PUSH.admin({ key: adminKey(), title, body, tag: "poll" });
+  if (p) {
+    const T = pollTally(p);
+    sec.appendChild(el("div", "notice", "סקר פתוח: <b>" + esc(p.title || "") + "</b> · הצביעו " + T.voted.length + " מתוך " + P.length +
+      (T.missing.length ? " · עוד לא: " + T.missing.map(w => esc(P[w])).join(", ") : "")));
+    const row = el("div", "chips");
+    const remind = el("button", "btn sm", "⏰ שלח תזכורת");
+    remind.onclick = async () => {
+      remind.disabled = true;
+      try {
+        const r = await push("⏰ תזכורת: " + (p.title || "סקר ימים"),
+          T.missing.length ? "עוד לא הצביעו: " + T.missing.map(w => P[w]).join(", ") + " — סמנו באפליקציה" : "כולם הצביעו! אפשר לעדכן באפליקציה");
+        flash("התזכורת נשלחה ל־" + r.sent + " טלפונים");
+      } catch (e) { flash(pushErr(e), true); }
+      remind.disabled = false;
     };
-    sec.appendChild(close);
+    const del = el("button", "btn ghost sm danger", "🗑️ מחק סקר");
+    del.onclick = async () => {
+      const ok = await askConfirm({ title: "למחוק את הסקר?", body: "הסקר ייעלם מהאפליקציה של כולם. פוש שכבר נשלח נשאר בטלפונים — לחיצה עליו רק תפתח את האפליקציה.", ok: "מחק", cancel: "ביטול" });
+      if (!ok) return;
+      try { await Social.set("meta", "poll", { id: p.id, closed: true, at: new Date().toISOString() }); await Social.load(true); viewLive(document.getElementById("v-live")); }
+      catch (e) { flash("לא נמחק — אין חיבור", true); }
+    };
+    row.append(remind, del);
+    sec.appendChild(row);
     return sec;
   }
-  const when = textInput("", "מתי? למשל: חמישי 21:00");
-  const need = el("select");
-  [3, 4, 5, 6].forEach(n => { const o = el("option", null, "מניין: " + n); o.value = n; if (n === 4) o.selected = true; need.appendChild(o); });
-  const go = el("button", "btn sm", "📅 פתח הצבעה ושלח פוש");
+  const title = textInput("איזה יום מתאים לטורניר השבוע?", "כותרת הסקר");
+  const days = pollWeek();
+  sec.appendChild(el("div", "mut", "הימים: " + days.join(" · ")));
+  const go = el("button", "btn sm", "📊 פתח סקר ושלח פוש");
   go.onclick = async () => {
-    const w = when.value.trim();
-    if (!w) { flash("כתוב מתי", true); return; }
     go.disabled = true;
-    const poll = { id: "p" + Date.now().toString(36), when: w.slice(0, 60), need: Number(need.value), closed: false, at: new Date().toISOString() };
+    const poll = { id: "p" + Date.now().toString(36), title: (title.value.trim() || "איזה יום מתאים לטורניר השבוע?").slice(0, 60), days, closed: false, at: new Date().toISOString() };
     try {
       await Social.set("meta", "poll", poll);
-      try { await window.APP_PUSH.admin({ key: adminKey(), title: "📅 " + poll.when + " — מי בא?", body: "הצביעו באפליקציה: 👍 אני בא / 👎 לא הפעם" }); } catch (e) {}
-      flash("ההצבעה נפתחה ונשלח פוש");
+      try { await push("📊 " + poll.title, "סמנו באפליקציה את כל הימים שאתם יכולים"); } catch (e) { flash("הסקר נפתח, אבל הפוש לא נשלח: " + pushErr(e), true); }
       await Social.load(true);
       viewLive(document.getElementById("v-live"));
-    } catch (e) { flash("לא נפתחה — אין חיבור", true); go.disabled = false; }
+    } catch (e) { flash("הסקר לא נפתח — אין חיבור", true); go.disabled = false; }
   };
   const row = el("div", "chips");
-  row.append(when, need, go);
+  row.append(title, go);
   sec.appendChild(row);
   return sec;
 }

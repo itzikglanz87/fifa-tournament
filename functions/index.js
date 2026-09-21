@@ -55,7 +55,9 @@ async function seasonName(season) {
 }
 
 /* Send to every registered phone (or one token), prune the dead ones. */
-async function sendToAll(title, body, onlyToken, url) {
+/* tag: a later push with the same tag replaces the earlier one on the phone
+   (the poll and its reminders), instead of piling up */
+async function sendToAll(title, body, onlyToken, url, tag) {
   let tokens;
   if (onlyToken) tokens = [onlyToken];
   else tokens = (await db.collection("pushTokens").get()).docs.map(d => d.id);
@@ -68,7 +70,8 @@ async function sendToAll(title, body, onlyToken, url) {
        looks the same whether the app is open, in the background or closed */
     const res = await getMessaging().sendEachForMulticast({
       tokens: batch,
-      data: { title: String(title || ""), body: String(body || ""), url: url || APP_URL },
+      data: Object.assign({ title: String(title || ""), body: String(body || ""), url: url || APP_URL },
+                          tag ? { tag: String(tag).slice(0, 40) } : {}),
       webpush: { headers: { Urgency: "high", TTL: "86400" } }
     });
     sent += res.successCount; failed += res.failureCount;
@@ -224,7 +227,8 @@ exports.adminPush = onCall(async req => {
     storyId = await saveStory(d.story);
     url = APP_URL + "#story=" + storyId;
   }
-  const r = await sendToAll(title, body, typeof d.token === "string" ? d.token : null, url);
+  const r = await sendToAll(title, body, typeof d.token === "string" ? d.token : null, url,
+                           typeof d.tag === "string" ? d.tag : null);
   console.log("admin push", JSON.stringify(r), title, body, storyId || "");
   return Object.assign({ ok: true, story: storyId }, r);
 });
@@ -245,31 +249,4 @@ exports.adminVisits = onCall(async req => {
       return { who: typeof v.who === "number" ? v.who : null, at: v.at, dev: v.dev || "", app: v.app || "" };
     })
   };
-});
-
-/* --------------------------------------------------------------- 4. poll */
-/* "Who's in on Thursday?" — once enough players say yes, everyone hears it,
-   once per poll (pollLog makes a re-delivered trigger harmless). */
-const NAMES = require("./data.json").P;
-exports.onPollVote = onDocumentWritten("pollVotes/{id}", async event => {
-  const v = event.data.after.exists ? event.data.after.data() : null;
-  if (!v || v.v !== "y") return;
-  const pd = await db.doc("meta/poll").get();
-  const poll = pd.exists ? pd.data() : null;
-  if (!poll || poll.id !== v.poll || poll.closed) return;
-  const votes = (await db.collection("pollVotes").where("poll", "==", poll.id).get()).docs.map(d => d.data());
-  const yes = votes.filter(x => x.v === "y");
-  const need = Math.max(2, Math.min(6, Number(poll.need) || 4));
-  if (yes.length < need) return;
-  const logRef = db.doc("pollLog/" + poll.id);
-  const go = await db.runTransaction(async tx => {
-    const s = await tx.get(logRef);
-    if (s.exists) return false;
-    tx.set(logRef, { at: new Date().toISOString(), yes: yes.length });
-    return true;
-  });
-  if (!go) return;
-  const names = yes.map(x => NAMES[x.who]).filter(Boolean);
-  const r = await sendToAll("✅ יש מניין לטורניר!", names.join(", ") + " מגיעים" + (poll.when ? " · " + String(poll.when).slice(0, 60) : ""));
-  console.log("poll quorum push", poll.id, JSON.stringify(r));
 });

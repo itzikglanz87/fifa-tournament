@@ -14,6 +14,7 @@ const Module = require("module");
 const store = {};                       // path -> data
 const sent = [];                        // what "FCM" was asked to deliver
 const sentUrls = [];
+const sentTags = [];
 const snap = (path) => ({ exists: path in store, id: path.split("/").pop(), data: () => store[path] });
 const docRef = path => ({
   path,
@@ -47,6 +48,7 @@ const fakeAdmin = {
     sendEachForMulticast: async msg => {
       sent.push({ title: msg.data.title, body: msg.data.body, to: msg.tokens.length });
       sentUrls.push(msg.data.url);
+      sentTags.push(msg.data.tag);
       return { successCount: msg.tokens.length, failureCount: 0, responses: msg.tokens.map(() => ({ success: true })) };
     }
   })
@@ -196,20 +198,10 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   expect("the activity log returns the period, newest first", lv.visits.length === 2 && lv.visits[0].who === 5,
          JSON.stringify(lv.visits.map(v => v.who)));
 
-  /* the poll: one push when the yes votes reach the quorum, never twice */
-  store["meta/poll"] = { id: "p1", when: "חמישי 21:00", need: 3, closed: false };
-  const vote = async (who, v) => {
-    const path = "pollVotes/p1_" + who, d = { poll: "p1", who, v, at: "x" };
-    store[path] = d;
-    await F.onPollVote.run({ params: { id: "p1_" + who }, data: { before: { exists: false }, after: { exists: true, data: () => d } } });
-  };
-  const s0 = sent.length;
-  await vote(0, "y"); await vote(1, "n"); await vote(2, "y");
-  expect("no push before the quorum", sent.length === s0);
-  await vote(3, "y");
-  expect("the quorum sends one push", sent.length === s0 + 1 && /נדב, מיקי, דביר מגיעים/.test(sent[s0].body), sent[s0] && sent[s0].body);
-  await vote(4, "y");
-  expect("…and only one", sent.length === s0 + 1);
+  /* the poll's pushes carry a tag, so a reminder replaces the first push */
+  const tagBase = sentTags.length;
+  await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll" });
+  expect("an admin push can carry a tag", sentTags[tagBase] === "poll", sentTags[tagBase]);
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);
