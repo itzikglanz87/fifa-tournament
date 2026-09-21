@@ -1581,17 +1581,31 @@ function newsItems(t) {
       r.a.gf + ":" + r.a.ga).join("\n")
   });
 
-  const q = clubQuality(t);
-  items.push({
-    tag: "ההגרלה", head: "מי יצא מרוצה מהקבוצה שלו", hero: false, icon: "🎲", who: [q[0].p],
-    body: '<div class="qbar">' + q.map((c, i) =>
-      '<div class="qrow" style="grid-template-columns:20px 1fr auto"><span class="mut">' + (i + 1) +
-      "</span><span>" + plate(c.p) + " " + clubTag(c.ci) + '</span><span class="qval">' +
-      f2(c.ppg) + "</span></div>").join("") + "</div>" +
-      "<div>הדירוג הוא נקודות למשחק שהקבוצה הביאה לאורך ההיסטוריה, בכל הידיים שהחזיקו בה.</div>",
-    plain: "🎲 איכות ההגרלה\n" + q.map((c, i) =>
-      (i + 1) + ". " + P[c.p] + " — " + c.name + " (" + f2(c.ppg) + " נק׳ למשחק היסטורית)").join("\n")
-  });
+  const q = drawLuck(t);
+  if (q && q[0].luck != null) {
+    const who = t.players.length;
+    const hardTxt = h => h ? "נגד " + P[h.a] + " ו" + P[h.b] + " (" + CLUBS[h.c] + ") · " + pct(h.win) + "% לנצח" : "";
+    const hardHtml = h => h ? "נגד " + esc(P[h.a]) + " ו" + esc(P[h.b]) + " " + clubTag(h.c) +
+      ' <span class="ltr">' + pct(h.win) + "%</span> לנצח" : "";
+    items.push({
+      tag: "ההגרלה", head: esc(P[q[0].p]) + " יצא הכי מרוצה מההגרלה", hero: false, icon: "🎲",
+      who: [q[0].p, q[who - 1].p],
+      body: "<div>כמה נקודות ההגרלה \"נתנה\" לכל שחקן: הקבוצה שלו, השותפים, הזוגות שמולו והקבוצות שלהם — " +
+        "לעומת הגרלה אקראית ממוצעת. <b>פלוס</b> = דרך נוחה, <b>מינוס</b> = דרך קשה.</div>" +
+        '<div class="dluck">' + q.map((c, i) =>
+          '<div class="dl-row"><div class="dl-top"><span class="mut">' + (i + 1) + "</span><span>" + plate(c.p) + " " +
+          clubTag(c.ci) + '</span><span class="qval ' + (c.luck >= 0 ? "up" : "down") + '">' + sgn1(c.luck) + " נק׳</span></div>" +
+          '<div class="dl-sub">הצמדים שלו <b class="ltr">' + f2(c.mate) + '</b> · הקבוצה <b class="ltr">' + f2(c.club) + "</b> · זוגות מולו <b class=\"ltr\">" + f2(c.opp) +
+          '</b> · קבוצות מולו <b class="ltr">' + f2(c.oppClub) + "</b></div>" +
+          '<div class="dl-sub">הכי קשה: ' + hardHtml(c.hard) + "</div></div>").join("") + "</div>" +
+        "<div class=\"mut\">המספרים הם נקודות למשחק לאורך ההיסטוריה: של הצמדים שהוא משחק בהם, של הקבוצה שלו, ושל הזוגות והקבוצות שמולו. " +
+        "הממוצע הוא בערך " + f2(q.reduce((s2, c) => s2 + c.opp, 0) / who) + " — מעליו, היריבים קשים יותר.</div>",
+      plain: "🎲 מי יצא מרוצה מההגרלה\n" + q.map((c, i) =>
+        (i + 1) + ". " + P[c.p] + " (" + c.name + ") " + (c.luck >= 0 ? "+" : "") + c.luck.toFixed(1) +
+        " נק׳ · הצמדים שלו " + f2(c.mate) + " · זוגות מולו " + f2(c.opp) + " · קבוצות מולו " + f2(c.oppClub) +
+        (c.hard ? "\n   הכי קשה: " + hardTxt(c.hard) : "")).join("\n")
+    });
+  }
 
   return { items, played, total, sim, stand };
 }

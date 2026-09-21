@@ -965,6 +965,14 @@ tr.hl{background:#1E2A3C !important; box-shadow:inset -3px 0 0 var(--blue)}
 .nstory .nhead{font-size:22px; line-height:1.3; font-weight:800}
 .nstory .sbody{display:flex; flex-direction:column; gap:10px; font-size:15px; line-height:1.6}
 .nstory .btn{align-self:flex-start}
+/* ---------- draw luck ---------- */
+.dluck{display:flex; flex-direction:column; gap:8px}
+.dl-row{background:#141A22; border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:3px}
+.dl-top{display:grid; grid-template-columns:18px 1fr auto; gap:8px; align-items:center}
+.dl-top .qval{font-weight:800}
+.dl-top .qval.up{color:#3DDC84}
+.dl-top .qval.down{color:#FF6B6B}
+.dl-sub{font-size:12.5px; color:#9AA4B2; padding-inline-start:26px; line-height:1.5}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -2473,6 +2481,88 @@ function clubQuality(t) {
     return { p, ci, name: CLUBS[ci], ppg: T.ppg || 0, g: T.g || 0, att: f.att, def: f.def,
              index: f.att / f.def };
   }).sort((a, b) => b.ppg - a.ppg || b.index - a.index);   // sort by the number shown
+}
+
+/* ==========================================================================
+   Draw luck — did the draw hand this player an easy road or a hard one?
+   --------------------------------------------------------------------------
+   For every league match the player is in, the odds model gives expected
+   points (3·win + draw) from everything the draw decided: his club, his
+   partner, the pair across and that pair's club. Summed over his fixtures
+   that is his expected haul. The same player in an average RANDOM draw of
+   this tournament (players and clubs shuffled over the same fixture list)
+   is the baseline, so a strong player is not called lucky for being strong.
+   luck = expected points with this draw − expected points in a random one.
+   The parts behind it — his club, the pairs and clubs he meets, his hardest
+   match — are shown so the number can be read, not just trusted.
+   ========================================================================== */
+const DRAWLUCK = {};
+function drawLuck(t) {
+  if (!MODEL || !MODEL.matches || !t || !t.m.length) return null;
+  const ck = t.i + ":" + MODEL.matches + ":" + t.d.map(x => x.join(".")).join(",");
+  if (DRAWLUCK[t.i] && DRAWLUCK[t.i].ck === ck) return DRAWLUCK[t.i].v;
+
+  const xp = (h1, h2, hc, a1, a2, ac) => {
+    const f = forecast([h1, h2, hc, a1, a2, ac]);
+    return f ? [3 * f.w + f.d, 3 * f.l + f.d, f.w, f.l] : null;
+  };
+  const key = (a, b) => Math.min(a, b) + "-" + Math.max(a, b);
+  /* a pair's strength as points per game, pulled toward the average so a
+     pair with three games does not read as a monster or a walkover */
+  let pg = 0, pp = 0;
+  Object.values(MODEL.pf).forEach(p => { pg += p.g; pp += 3 * p.w + p.d; });
+  const avg = pg ? pp / pg : 1.35, K = 6;
+  const pairPpg = (a, b) => { const p = MODEL.pf[key(a, b)]; return p ? (3 * p.w + p.d + K * avg) / (p.g + K) : avg; };
+  const TEAMS = allTimeTeams();
+  const clubPpg = ci => (TEAMS[ci] && TEAMS[ci].g ? TEAMS[ci].ppg : avg);
+
+  const out = {};
+  t.players.forEach(p => { out[p] = { p, ci: t.teamOf[p], xp: 0, g: 0, opp: 0, oppClub: 0, mate: 0, hard: null }; });
+  let ok = true;
+  t.m.forEach((m, k) => {
+    const e = xp(m[0], m[1], m[2], m[3], m[4], m[5]);
+    if (!e) { ok = false; return; }
+    [[m[0], m[1], m[3], m[4], m[5], e[0], e[2]], [m[1], m[0], m[3], m[4], m[5], e[0], e[2]],
+     [m[3], m[4], m[0], m[1], m[2], e[1], e[3]], [m[4], m[3], m[0], m[1], m[2], e[1], e[3]]].forEach(r => {
+      const o = out[r[0]]; if (!o) return;
+      o.xp += r[5]; o.g++;
+      o.opp += pairPpg(r[2], r[3]); o.oppClub += clubPpg(r[4]); o.mate += pairPpg(r[0], r[1]);
+      if (!o.hard || r[6] < o.hard.win) o.hard = { k, win: r[6], a: r[2], b: r[3], c: r[4] };
+    });
+  });
+  if (!ok) return null;
+
+  /* the baseline: the same fixture list, players and clubs shuffled */
+  const tpl = (t.rec && TPL[t.rec.tpl]) || TPL[String(t.size)];
+  const base = {}; t.players.forEach(p => { base[p] = 0; });
+  let runs = 0;
+  if (tpl) {
+    const clubs = t.d.map(x => x[1]);
+    let seed = 7 + t.i;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; } return a; };
+    for (let r = 0; r < 300; r++) {
+      const sl = shuffle(t.players.slice()), cl = shuffle(clubs.slice());
+      let bad = false;
+      tpl.forEach(f => {
+        if (bad) return;
+        const h1 = sl[f.h[0] - 1], h2 = sl[f.h[1] - 1], a1 = sl[f.a[0] - 1], a2 = sl[f.a[1] - 1];
+        const e = xp(h1, h2, cl[f.hc - 1], a1, a2, cl[f.ac - 1]);
+        if (!e) { bad = true; return; }
+        base[h1] += e[0]; base[h2] += e[0]; base[a1] += e[1]; base[a2] += e[1];
+      });
+      if (bad) break;
+      runs++;
+    }
+  }
+  const v = t.players.map(p => {
+    const o = out[p], n = o.g || 1;
+    return { p, ci: o.ci, name: CLUBS[o.ci], club: clubPpg(o.ci), xp: o.xp, g: o.g,
+             luck: runs ? o.xp - base[p] / runs : null,
+             opp: o.opp / n, oppClub: o.oppClub / n, mate: o.mate / n, hard: o.hard };
+  }).sort((a, b) => (b.luck != null ? b.luck - a.luck : b.xp - a.xp));
+  DRAWLUCK[t.i] = { ck, v };
+  return v;
 }
 
 function copyText(txt, btn) {
@@ -5267,17 +5357,31 @@ function newsItems(t) {
       r.a.gf + ":" + r.a.ga).join("\n")
   });
 
-  const q = clubQuality(t);
-  items.push({
-    tag: "ההגרלה", head: "מי יצא מרוצה מהקבוצה שלו", hero: false, icon: "🎲", who: [q[0].p],
-    body: '<div class="qbar">' + q.map((c, i) =>
-      '<div class="qrow" style="grid-template-columns:20px 1fr auto"><span class="mut">' + (i + 1) +
-      "</span><span>" + plate(c.p) + " " + clubTag(c.ci) + '</span><span class="qval">' +
-      f2(c.ppg) + "</span></div>").join("") + "</div>" +
-      "<div>הדירוג הוא נקודות למשחק שהקבוצה הביאה לאורך ההיסטוריה, בכל הידיים שהחזיקו בה.</div>",
-    plain: "🎲 איכות ההגרלה\n" + q.map((c, i) =>
-      (i + 1) + ". " + P[c.p] + " — " + c.name + " (" + f2(c.ppg) + " נק׳ למשחק היסטורית)").join("\n")
-  });
+  const q = drawLuck(t);
+  if (q && q[0].luck != null) {
+    const who = t.players.length;
+    const hardTxt = h => h ? "נגד " + P[h.a] + " ו" + P[h.b] + " (" + CLUBS[h.c] + ") · " + pct(h.win) + "% לנצח" : "";
+    const hardHtml = h => h ? "נגד " + esc(P[h.a]) + " ו" + esc(P[h.b]) + " " + clubTag(h.c) +
+      ' <span class="ltr">' + pct(h.win) + "%</span> לנצח" : "";
+    items.push({
+      tag: "ההגרלה", head: esc(P[q[0].p]) + " יצא הכי מרוצה מההגרלה", hero: false, icon: "🎲",
+      who: [q[0].p, q[who - 1].p],
+      body: "<div>כמה נקודות ההגרלה \"נתנה\" לכל שחקן: הקבוצה שלו, השותפים, הזוגות שמולו והקבוצות שלהם — " +
+        "לעומת הגרלה אקראית ממוצעת. <b>פלוס</b> = דרך נוחה, <b>מינוס</b> = דרך קשה.</div>" +
+        '<div class="dluck">' + q.map((c, i) =>
+          '<div class="dl-row"><div class="dl-top"><span class="mut">' + (i + 1) + "</span><span>" + plate(c.p) + " " +
+          clubTag(c.ci) + '</span><span class="qval ' + (c.luck >= 0 ? "up" : "down") + '">' + sgn1(c.luck) + " נק׳</span></div>" +
+          '<div class="dl-sub">הצמדים שלו <b class="ltr">' + f2(c.mate) + '</b> · הקבוצה <b class="ltr">' + f2(c.club) + "</b> · זוגות מולו <b class=\"ltr\">" + f2(c.opp) +
+          '</b> · קבוצות מולו <b class="ltr">' + f2(c.oppClub) + "</b></div>" +
+          '<div class="dl-sub">הכי קשה: ' + hardHtml(c.hard) + "</div></div>").join("") + "</div>" +
+        "<div class=\"mut\">המספרים הם נקודות למשחק לאורך ההיסטוריה: של הצמדים שהוא משחק בהם, של הקבוצה שלו, ושל הזוגות והקבוצות שמולו. " +
+        "הממוצע הוא בערך " + f2(q.reduce((s2, c) => s2 + c.opp, 0) / who) + " — מעליו, היריבים קשים יותר.</div>",
+      plain: "🎲 מי יצא מרוצה מההגרלה\n" + q.map((c, i) =>
+        (i + 1) + ". " + P[c.p] + " (" + c.name + ") " + (c.luck >= 0 ? "+" : "") + c.luck.toFixed(1) +
+        " נק׳ · הצמדים שלו " + f2(c.mate) + " · זוגות מולו " + f2(c.opp) + " · קבוצות מולו " + f2(c.oppClub) +
+        (c.hard ? "\n   הכי קשה: " + hardTxt(c.hard) : "")).join("\n")
+    });
+  }
 
   return { items, played, total, sim, stand };
 }
