@@ -123,5 +123,30 @@ def pwa(s):
     print('all assets present')
 
 
+def stamp_worker():
+    """Give the service worker a version derived from what it serves.
+
+    The worker only replaces its cache when sw.js itself changes, so a new
+    index.html behind an unchanged sw.js can sit stale on a phone. Hashing the
+    shipped files into VERSION means every real change produces a new worker —
+    and the "יש גרסה חדשה · רענן" bar — while a rebuild with no change leaves
+    sw.js byte-identical and triggers nothing."""
+    import hashlib, re
+    h = hashlib.sha256()
+    for rel in ('index.html', 'db.js', 'firebase-config.js', 'manifest.webmanifest',
+                'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'):
+        h.update(rel.encode())
+        h.update(io.open(os.path.join(ROOT, rel), 'rb').read())
+    ver = 'fifa-' + h.hexdigest()[:10]
+    path = os.path.join(ROOT, 'sw.js')
+    sw = io.open(path, encoding='utf-8').read()
+    new = re.sub(r'const VERSION = "[^"]*";', 'const VERSION = "%s";' % ver, sw, count=1)
+    assert new != sw or ('"%s"' % ver) in sw, 'VERSION line not found in sw.js'
+    if new != sw:
+        io.open(path, 'w', encoding='utf-8', newline='\n').write(new)
+    print('sw.js VERSION', ver, '(changed)' if new != sw else '(unchanged)')
+
+
 if __name__ == '__main__':
     pwa(assemble())
+    stamp_worker()
