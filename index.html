@@ -5524,9 +5524,22 @@ function emptySeason() {
   return n;
 }
 
+/* Opening the app lands on what is happening now: the season of the running
+   tournament, else the newest season. A season picked by hand holds for the
+   rest of the visit (sessionStorage), not forever — a remembered 2026 would
+   hide the live tournament once 2027 starts. */
+function launchScope() {
+  const open = Object.values(LIVE).filter(t => !t.done).sort((a, b) => b.i - a.i)[0];
+  return open ? open.season : latestSeason();
+}
+const pickedScope = () => {
+  try { const v = sessionStorage.getItem("fifa-scope"); return v == null ? null : (v === "all" ? "all" : Number(v)); }
+  catch (e) { return null; }
+};
+
 function setScope(v) {
   SCOPE = v;
-  try { localStorage.setItem("fifa-scope", String(v)); } catch (e) {}
+  try { sessionStorage.setItem("fifa-scope", String(v)); } catch (e) {}
   curT = null;
   rebuild(); refreshChrome();
   const cur = VIEWS.find(x => !document.getElementById("v-" + x[0]).hidden);
@@ -5647,8 +5660,9 @@ function go(key) {
 }
 
 /* boot: render from history at once, then fold in anything the store holds */
-try { const sc = localStorage.getItem("fifa-scope"); if (sc != null) SCOPE = sc === "all" ? "all" : Number(sc); } catch (e) {}
+try { localStorage.removeItem("fifa-scope"); } catch (e) {}   // the old, permanent choice
 Store.initLocal();          // whatever this browser already holds, immediately
+SCOPE = pickedScope() != null ? pickedScope() : launchScope();
 installFaceStyles();
 rebuild(); refreshChrome();
 let start = "live:games";
@@ -5660,6 +5674,10 @@ go(start);
 
 (async () => {
   await Store.initCloud();
+  /* the store may know a newer season or a running tournament this phone
+     had not seen yet — land there unless the reader already picked one */
+  if (pickedScope() == null) SCOPE = launchScope();
+  else if (SCOPE !== "all" && !SEASONS.some(x => x.id === SCOPE)) SCOPE = launchScope();
   rebuild(); refreshChrome();
   /* never redraw over a field the user is in the middle of filling */
   const ae = document.activeElement;
