@@ -1496,17 +1496,21 @@ function bulletinFor(t) {
 let lastBulletin = "";
 function publishBulletin(t) {
   if (!Store.db || !t || !MODEL || !MODEL.matches) return;
+  /* Only a tournament that lives in the store may speak for the newsroom.
+     The newsroom SCREEN falls back to the last finished archive tournament
+     when nothing is open — showing that is fine, but publishing it would
+     overwrite the real bulletin with old news and set off a stale push. */
+  if (!t.live || !LIVE[t.i]) return;
   let b;
   try { b = bulletinFor(t); } catch (e) { return; }
   if (b.text === lastBulletin) return;      // nothing moved since the last write
   lastBulletin = b.text;
-  try {
-    Store.db.doc("meta/newsroom").set({
-      i: t.i, num: t.num, season: seasonById(t.season).name,
-      played: b.played, total: b.total, done: !!t.done,
-      headline: b.headline, text: b.text, at: new Date().toISOString()
-    });
-  } catch (e) {}
+  /* set() is async: a failure must not surface as an unexplained red bar */
+  Promise.resolve().then(() => Store.db.doc("meta/newsroom").set({
+    i: t.i, num: t.num, season: seasonById(t.season).name,
+    played: b.played, total: b.total, done: !!t.done,
+    headline: b.headline, text: b.text, at: new Date().toISOString()
+  })).catch(() => { lastBulletin = ""; });
 }
 
 function viewNews(root) {
