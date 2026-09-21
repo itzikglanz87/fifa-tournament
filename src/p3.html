@@ -1256,6 +1256,7 @@ function runCeremony(host, slots, clubs, done) {
 
 /* ---------- an open tournament ---------- */
 function livePanel(t) {
+  seedProgress(LIVE[t.i] || t);          // baseline for the next-match push
   const box = el("div", "view");
   const tplKey = t.rec.tpl, fixtures = TPL[tplKey];
   const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
@@ -1464,6 +1465,7 @@ function livePanel(t) {
       rebuild(); refreshChrome();
       Store.saveT(LIVE[t.i]);
       publishBulletin(LIVE[t.i]);
+      announceProgress(LIVE[t.i]);
       scheduleInsights(LIVE[t.i] || t);
     };
 
@@ -1493,6 +1495,7 @@ function livePanel(t) {
       /* the table first, from the record, before anything that might fail */
       step("paint", () => { if (wrote) quickPaint(wrote); });
       step("rebuild", () => { rebuild(); refreshChrome(); });
+      step("announce", () => announceProgress(LIVE[t.i]));
       step("redraw", () => refreshLive());
       let r = { ok: false, why: "לא בוצעה שמירה" };
       try { r = await Store.forceSave(LIVE[t.i]); }
@@ -1692,7 +1695,7 @@ function bracketEl(t, out) {
       const fresh = hydrate(t.rec);
       LIVE[t.i] = fresh;
       rebuild(); refreshChrome();
-      Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+      Store.saveT(fresh); publishBulletin(LIVE[t.i]); announceProgress(LIVE[t.i]);
       const fh = document.getElementById("liveFinal");
       if (fh) renderFinal(LIVE[t.i], fh);
       const sh = document.getElementById("liveStandings");
@@ -1737,7 +1740,7 @@ function bracketEl(t, out) {
         const fresh = hydrate(t.rec);
         LIVE[t.i] = fresh;
         rebuild(); refreshChrome();
-        Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+        Store.saveT(fresh); publishBulletin(LIVE[t.i]); announceProgress(LIVE[t.i]);
         const fh = document.getElementById("liveFinal");
         if (fh) renderFinal(LIVE[t.i], fh);
       };

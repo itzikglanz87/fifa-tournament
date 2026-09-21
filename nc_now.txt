@@ -1,0 +1,9 @@
+{
+ "news": true,
+ "why": "a different tournament",
+ "num": 1,
+ "played": 2,
+ "total": 12,
+ "done": false,
+ "message": "טורניר 1 · 2 מתוך 12 · רועי בורח בפסגה"
+}

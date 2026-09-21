@@ -2578,6 +2578,7 @@ function runCeremony(host, slots, clubs, done) {
 
 /* ---------- an open tournament ---------- */
 function livePanel(t) {
+  seedProgress(LIVE[t.i] || t);          // baseline for the next-match push
   const box = el("div", "view");
   const tplKey = t.rec.tpl, fixtures = TPL[tplKey];
   const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
@@ -2786,6 +2787,7 @@ function livePanel(t) {
       rebuild(); refreshChrome();
       Store.saveT(LIVE[t.i]);
       publishBulletin(LIVE[t.i]);
+      announceProgress(LIVE[t.i]);
       scheduleInsights(LIVE[t.i] || t);
     };
 
@@ -2815,6 +2817,7 @@ function livePanel(t) {
       /* the table first, from the record, before anything that might fail */
       step("paint", () => { if (wrote) quickPaint(wrote); });
       step("rebuild", () => { rebuild(); refreshChrome(); });
+      step("announce", () => announceProgress(LIVE[t.i]));
       step("redraw", () => refreshLive());
       let r = { ok: false, why: "לא בוצעה שמירה" };
       try { r = await Store.forceSave(LIVE[t.i]); }
@@ -3014,7 +3017,7 @@ function bracketEl(t, out) {
       const fresh = hydrate(t.rec);
       LIVE[t.i] = fresh;
       rebuild(); refreshChrome();
-      Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+      Store.saveT(fresh); publishBulletin(LIVE[t.i]); announceProgress(LIVE[t.i]);
       const fh = document.getElementById("liveFinal");
       if (fh) renderFinal(LIVE[t.i], fh);
       const sh = document.getElementById("liveStandings");
@@ -3059,7 +3062,7 @@ function bracketEl(t, out) {
         const fresh = hydrate(t.rec);
         LIVE[t.i] = fresh;
         rebuild(); refreshChrome();
-        Store.saveT(fresh); publishBulletin(LIVE[t.i]);
+        Store.saveT(fresh); publishBulletin(LIVE[t.i]); announceProgress(LIVE[t.i]);
         const fh = document.getElementById("liveFinal");
         if (fh) renderFinal(LIVE[t.i], fh);
       };
@@ -4927,6 +4930,84 @@ function bulletinFor(t, pre) {
       n.items.map(i => i.plain).filter(Boolean).join("\n\n"),
     played: n.played, total: n.total
   };
+}
+
+/* ==========================================================================
+   "The next match" push, sent the moment a new result is saved
+   --------------------------------------------------------------------------
+   Through ntfy.sh: a plain POST from the page, received by everyone who
+   subscribed to PUSH_TOPIC in the ntfy app, even with this app closed.
+
+   Only a NEW result sends. Progress is the count of results in the
+   tournament (group matches + final legs + a decided champion); a push goes
+   out only when this device's own save moves it forward. Correcting an old
+   score leaves it where it was, clearing one moves it back, and opening the
+   app on another phone sends nothing, because nothing moved there.
+   ========================================================================== */
+const PROGRESS = {};
+function progressOf(t) {
+  const g = t.m.filter(m => m[6] != null && m[7] != null).length;
+  const legs = (t.rec && t.rec.final && t.legs) ? t.legs.filter(l => l.s[0] != null && l.s[1] != null).length : 0;
+  const champ = (t.rec && t.rec.final && t.c && t.c.length === 2) ? 1 : 0;
+  return g + legs + champ;
+}
+/* The baseline, re-taken every time the control room is drawn from the data —
+   including after the cloud delivers results another phone entered, so a
+   later correction here does not re-announce what that phone already did.
+   Every save path announces BEFORE it redraws the panel. */
+function seedProgress(t) {
+  if (t && t.live) PROGRESS[t.i] = progressOf(t);
+}
+const pushPair = (a, b) => P[a] + " ו" + P[b];
+function nextEventText(t) {
+  const nx = nextFixture(t);
+  if (nx) {
+    const m = nx.m;
+    return "המשחק הבא - מחזור " + (nx.i + 1) + ", " + pushPair(m[0], m[1]) + " בבית עם " + CLUBS[m[2]] +
+           " נגד " + pushPair(m[3], m[4]) + " בחוץ עם " + CLUBS[m[5]];
+  }
+  if (!t.legs) return null;
+  const k = t.legs.findIndex(l => l.s[0] == null || l.s[1] == null);
+  if (k >= 0) {
+    const L = t.legs[k];
+    return (k === 0 ? "שלב הליגה הסתיים! " : "") + "הגמר - משחק " + (k + 1) + " מתוך 2, " +
+           pushPair(L.home[0], L.home[1]) + " בבית עם " + CLUBS[L.hc] +
+           " נגד " + pushPair(L.away[0], L.away[1]) + " בחוץ עם " + CLUBS[L.ac];
+  }
+  if (t.c && t.c.length === 2) return "טורניר " + t.num + " הסתיים! האלופים: " + pushPair(t.c[0], t.c[1]);
+  return "הגמר נגמר בשוויון - מי ניצח בשער הזהב?";
+}
+
+function sendPush(p) {
+  if (!window.PUSH_TOPIC) return Promise.resolve(false);
+  return fetch("https://ntfy.sh/", {
+    method: "POST",
+    body: JSON.stringify({ topic: window.PUSH_TOPIC, title: p.title, message: p.message, tags: ["soccer"] })
+  }).then(r => r.ok).catch(() => false);
+}
+/* no signal on the pitch: keep the latest push and send it when the network is back */
+function queuePush(p) { try { localStorage.setItem("fifa-push-pending", JSON.stringify(p)); } catch (e) {} }
+function flushPush() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem("fifa-push-pending") || "null"); } catch (e) {}
+  if (!p) return;
+  sendPush(p).then(ok => { if (ok) { try { localStorage.removeItem("fifa-push-pending"); } catch (e) {} } });
+}
+addEventListener("online", flushPush);
+setTimeout(flushPush, 4000);
+
+function announceProgress(t) {
+  if (!t || !t.live) return;
+  const now = progressOf(t), was = PROGRESS[t.i];
+  PROGRESS[t.i] = now;
+  if (was == null || now <= was) return;         // only a new result moves it forward
+  const message = nextEventText(t);
+  if (!message) return;
+  const p = { title: "טורניר " + t.num + " · " + seasonById(t.season).name, message };
+  sendPush(p).then(ok => {
+    if (ok) flash("נשלח פוש: " + message);
+    else { queuePush(p); flash("אין חיבור — הפוש יישלח כשהרשת תחזור", true); }
+  });
 }
 
 /* the scheduled task reads this doc and delivers it — the page is the only

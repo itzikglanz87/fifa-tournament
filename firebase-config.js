@@ -14,3 +14,12 @@ window.FIREBASE_CONFIG = {
   appId: "1:608346890313:web:1fc83f52a8ae299d4a9f98",
   measurementId: "G-9NHMF7RGB7"
 };
+
+/* ----------------------------------------------------------------------------
+   Pushes through ntfy.sh. Anyone subscribed to this topic in the ntfy app gets
+   "the next match" the moment a new result is saved. The topic is the only
+   key — it is in this public repo, so treat it as unlisted, not secret. To cut
+   off everyone, change it here and send the new subscribe link.
+   Subscribe: https://ntfy.sh/fifa-glanz-36439c219ca7
+   -------------------------------------------------------------------------- */
+window.PUSH_TOPIC = "fifa-glanz-36439c219ca7";
