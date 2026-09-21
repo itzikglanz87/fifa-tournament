@@ -88,6 +88,11 @@ button{cursor:pointer; border:0; background:none}
 
 main{padding-block:24px 60px}
 .view{display:flex; flex-direction:column; gap:28px}
+/* `hidden` is only a user-agent display:none, and any author display rule
+   beats it — so .view{display:flex} left every tab's view on screen, stacked
+   one under another. Tapping a tab filled its view far below the fold and the
+   phone appeared to do nothing. Hidden has to mean hidden. */
+[hidden]{display:none !important}
 section.block{display:flex; flex-direction:column; gap:12px}
 .bhead{display:flex; align-items:baseline; justify-content:space-between; gap:12px 18px; flex-wrap:wrap;
   border-bottom:1px solid var(--line); padding-bottom:8px}
@@ -4992,8 +4997,17 @@ function viewNews(root) {
    ========================================================================== */
 function emptySeason() {
   const n = el("div", "notice warn");
-  n.innerHTML = "<b>" + esc(SCOPE === "all" ? "אין נתונים" : seasonById(SCOPE).name + " טרם התחילה") +
-    "</b> פתח טורניר ראשון בחדר הבקרה, או עבור לעונה אחרת בבורר שלמעלה.";
+  /* The stats count finished tournaments only. A season whose first one is
+     still being played has started — saying otherwise reads like a wrong page. */
+  const open = SCOPE === "all" ? null : TS.filter(t => t.season === SCOPE && !t.done).slice(-1)[0];
+  if (open) {
+    n.innerHTML = "<b>" + esc(seasonById(SCOPE).name) + " · טורניר " + open.num + " בעיצומו</b> " +
+      "הנתונים כאן נספרים מטורנירים שהסתיימו, ולכן יופיעו כשטורניר " + open.num + " יסתיים. " +
+      "עד אז — התוצאות והטבלה בחדר הבקרה, והעונה הקודמת בבורר שלמעלה.";
+  } else {
+    n.innerHTML = "<b>" + esc(SCOPE === "all" ? "אין נתונים" : seasonById(SCOPE).name + " טרם התחילה") +
+      "</b> פתח טורניר ראשון בחדר הבקרה, או עבור לעונה אחרת בבורר שלמעלה.";
+  }
   return n;
 }
 
@@ -5076,6 +5090,15 @@ function go(id) {
   });
   hideTip();
   try { localStorage.setItem("fifa-tab", id); } catch (e) {}
+  /* A new tab starts at its top. The tab bar is pinned, so it is usually
+     tapped from deep inside a long page (the control room's fixtures); left
+     there, the reader lands in the middle — or past the end — of the new one.
+     Scroll only as far as the tab bar, so the header does not come back. */
+  const main = document.querySelector("main"), bar = document.querySelector(".tabbar");
+  if (main && bar) {
+    const top = Math.max(0, main.getBoundingClientRect().top + scrollY - bar.offsetHeight);
+    if (scrollY > top) window.scrollTo(0, top);
+  }
 }
 
 /* boot: render from history at once, then fold in anything the store holds */

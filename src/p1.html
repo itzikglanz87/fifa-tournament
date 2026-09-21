@@ -74,6 +74,11 @@ button{cursor:pointer; border:0; background:none}
 
 main{padding-block:24px 60px}
 .view{display:flex; flex-direction:column; gap:28px}
+/* `hidden` is only a user-agent display:none, and any author display rule
+   beats it — so .view{display:flex} left every tab's view on screen, stacked
+   one under another. Tapping a tab filled its view far below the fold and the
+   phone appeared to do nothing. Hidden has to mean hidden. */
+[hidden]{display:none !important}
 section.block{display:flex; flex-direction:column; gap:12px}
 .bhead{display:flex; align-items:baseline; justify-content:space-between; gap:12px 18px; flex-wrap:wrap;
   border-bottom:1px solid var(--line); padding-bottom:8px}
