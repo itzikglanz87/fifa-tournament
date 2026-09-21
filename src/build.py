@@ -75,7 +75,7 @@ if ("serviceWorker" in navigator) {
             const go = document.createElement("button");
             go.className = "btn sm";
             go.textContent = "רענן";
-            go.onclick = () => { w.postMessage("skipWaiting"); location.reload(); };
+            go.onclick = () => { try { sessionStorage.setItem("fifa-nointro", "1"); } catch (e) {} w.postMessage("skipWaiting"); location.reload(); };
             const no = document.createElement("button");
             no.className = "btn ghost sm";
             no.textContent = "אחר כך";

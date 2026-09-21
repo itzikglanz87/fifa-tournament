@@ -973,6 +973,63 @@ tr.hl{background:#1E2A3C !important; box-shadow:inset -3px 0 0 var(--blue)}
 .dl-top .qval.up{color:#3DDC84}
 .dl-top .qval.down{color:#FF6B6B}
 .dl-sub{font-size:12.5px; color:#9AA4B2; padding-inline-start:26px; line-height:1.5}
+/* chemistry rows on a phone: names and the number on top, the bar under them.
+   Their fixed column minimums added up wider than the screen and pushed the
+   whole page sideways (the rivalry card looked shrunk). */
+@media (max-width:560px){
+  .chemrow{grid-template-columns:1fr auto; grid-template-areas:"who val" "bar note"; row-gap:6px; column-gap:10px}
+  .chemrow .who{grid-area:who; min-width:0}
+  .chemrow .cbar{grid-area:bar}
+  .chemrow .cval{grid-area:val}
+  .chemrow .cnote{grid-area:note}
+}
+/* a safety net: whatever overflows inside a screen is clipped there, never
+   widening the page (clip, not hidden, so the sticky bars keep working) */
+main.wrap, .view{overflow-x:clip; max-width:100%}
+/* ---------- the intro ---------- */
+.intro{position:fixed; inset:0; z-index:200; overflow:hidden; background:radial-gradient(120% 70% at 50% 110%,#123A22 0%,#0A1A12 45%,#05080C 100%);
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  animation:i-leave .35s ease 2.25s forwards}
+.intro.i-out{animation:i-leave .35s ease forwards}
+@keyframes i-leave{to{opacity:0; visibility:hidden; pointer-events:none}}
+.i-beam{position:absolute; top:-20%; width:70vmax; height:140vmax; transform-origin:50% 0;
+  background:linear-gradient(180deg,rgba(255,255,240,.16),rgba(255,255,240,0) 65%); filter:blur(22px); opacity:0;
+  animation:i-beam 2.2s ease-out forwards}
+.i-b1{left:-30vmax; --r0:-38deg; --r1:-22deg} .i-b2{right:-30vmax; --r0:38deg; --r1:22deg; animation-delay:.12s}
+@keyframes i-beam{0%{opacity:0; transform:rotate(var(--r0))} 25%{opacity:1} 100%{opacity:.75; transform:rotate(var(--r1))}}
+.i-pitch{position:absolute; left:50%; bottom:-6%; width:180vmax; height:60vmax; transform:translateX(-50%) perspective(600px) rotateX(62deg);
+  background:repeating-linear-gradient(90deg,#15502C 0 9vmax,#124726 9vmax 18vmax); opacity:.9}
+.i-line{position:absolute; left:50%; top:0; bottom:0; width:3px; background:rgba(255,255,255,.55); transform:translateX(-50%)}
+.i-circle{position:absolute; left:50%; top:50%; width:24vmax; height:24vmax; border:3px solid rgba(255,255,255,.55); border-radius:50%; transform:translate(-50%,-50%)}
+.i-roll{position:absolute; left:50%; top:76%; width:92px; height:92px; margin:-46px 0 0 -46px;
+  animation:i-roll .7s cubic-bezier(.2,.7,.3,1) .15s both, i-shoot .4s cubic-bezier(.5,0,.9,.4) .85s forwards}
+@keyframes i-roll{from{transform:translateX(75vw)} to{transform:translateX(0)}}
+@keyframes i-shoot{0%{transform:translate(0,0) scale(1); opacity:1} 100%{transform:translate(0,-34vh) scale(9); opacity:0}}
+.i-ball{width:100%; height:100%; animation:i-spin .7s linear .15s both; filter:drop-shadow(0 10px 10px rgba(0,0,0,.6))}
+@keyframes i-spin{from{transform:rotate(0)} to{transform:rotate(-720deg)}}
+.ib-svg{width:100%; height:100%; display:block}
+.i-flash{position:absolute; inset:0; background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.9),rgba(255,255,255,0) 55%);
+  opacity:0; animation:i-flash .45s ease-out 1.1s}
+@keyframes i-flash{0%{opacity:0} 25%{opacity:1} 100%{opacity:0}}
+.i-title{position:relative; text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px;
+  opacity:0; transform:scale(.6); animation:i-pop .55s cubic-bezier(.2,1.6,.4,1) 1.15s forwards}
+@keyframes i-pop{to{opacity:1; transform:scale(1)}}
+.i-badge{width:66px; height:66px; display:grid; place-items:center; font-size:34px;
+  background:linear-gradient(135deg,var(--gold),var(--gold2)); clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%);
+  box-shadow:0 0 30px rgba(245,197,66,.5)}
+.i-name{font-family:"Secular One","Heebo",sans-serif; font-size:42px; line-height:1; color:#fff; text-shadow:0 4px 24px rgba(0,0,0,.7)}
+.i-six{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; font-size:13px; font-weight:700; max-width:320px}
+.i-six span{color:var(--c); opacity:0; animation:i-in .3s ease forwards}
+.i-six span:nth-child(1){animation-delay:1.45s} .i-six span:nth-child(2){animation-delay:1.52s}
+.i-six span:nth-child(3){animation-delay:1.59s} .i-six span:nth-child(4){animation-delay:1.66s}
+.i-six span:nth-child(5){animation-delay:1.73s} .i-six span:nth-child(6){animation-delay:1.8s}
+@keyframes i-in{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+/* motion kept to a minimum: just the name, briefly */
+@media (prefers-reduced-motion:reduce){
+  .intro{animation:i-leave .3s ease 1.1s forwards !important}
+  .i-roll,.i-flash,.i-beam{display:none}
+  .i-title,.i-six span{animation:none !important; opacity:1; transform:none}
+}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -989,6 +1046,118 @@ body{min-height:100svh;
 </head>
 <body>
 
+<!-- The intro: every cold start of the app. A stadium under floodlights, a
+     ball rolls in and is struck at the screen, the name lands. ~2.5 s, a tap
+     skips it. It fades itself out in CSS, so even a busy boot cannot leave it
+     hanging; the script below only adds the sound and removes the node. -->
+<div id="intro" class="intro" aria-hidden="true">
+  <div class="i-beam i-b1"></div><div class="i-beam i-b2"></div>
+  <div class="i-pitch"><i class="i-line"></i><i class="i-circle"></i></div>
+  <div class="i-roll"><div class="i-ball"><svg class="ib-svg" viewBox="-50 -50 100 100" aria-hidden="true">
+        <defs><clipPath id="ibclip"><circle r="47"/></clipPath>
+          <radialGradient id="ibshade" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#E6E9EE"/><stop offset="1" stop-color="#9AA3AF"/></radialGradient></defs>
+        <circle r="47" fill="url(#ibshade)"/>
+        <g clip-path="url(#ibclip)" fill="#141821" stroke="#141821" stroke-width="1.4" stroke-linejoin="round">
+          <polygon points="0.0,-15.0 14.3,-4.6 8.8,12.1 -8.8,12.1 -14.3,-4.6"/>
+          <polygon points="0.0,-26.0 -13.3,-35.7 -8.2,-51.3 8.2,-51.3 13.3,-35.7"/>
+          <polygon points="24.7,-8.0 29.8,-23.7 46.3,-23.7 51.4,-8.0 38.0,1.6"/>
+          <polygon points="15.3,21.0 31.7,21.0 36.8,36.7 23.5,46.4 10.2,36.7"/>
+          <polygon points="-15.3,21.0 -10.2,36.7 -23.5,46.4 -36.8,36.7 -31.7,21.0"/>
+          <polygon points="-24.7,-8.0 -38.0,1.6 -51.4,-8.0 -46.3,-23.7 -29.8,-23.7"/>
+          <g fill="none"><line x1="0" y1="-15" x2="0" y2="-26"/><line x1="14.3" y1="-4.6" x2="24.7" y2="-8"/>
+            <line x1="8.8" y1="12.1" x2="15.3" y2="21"/><line x1="-8.8" y1="12.1" x2="-15.3" y2="21"/>
+            <line x1="-14.3" y1="-4.6" x2="-24.7" y2="-8"/><line x1="13.3" y1="-35.7" x2="29.8" y2="-23.7"/><line x1="38" y1="1.6" x2="31.7" y2="21"/><line x1="15.3" y1="21" x2="-15.3" y2="21"/>
+            <line x1="-31.7" y1="21" x2="-38" y2="1.6"/><line x1="-29.8" y1="-23.7" x2="-13.3" y2="-35.7"/></g>
+        </g>
+        <circle r="47" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.5"/>
+      </svg></div></div>
+  <div class="i-flash"></div>
+  <div class="i-title">
+    <div class="i-badge">⚽</div>
+    <div class="i-name">טורניר פיפא</div>
+    <div class="i-six"><span style="--c:var(--p0)">נדב</span><span style="--c:var(--p1)">יקיר</span><span style="--c:var(--p2)">מיקי</span><span style="--c:var(--p3)">דביר</span><span style="--c:var(--p4)">רועי</span><span style="--c:var(--p5)">איציק</span></div>
+  </div>
+</div>
+<script id="introjs">
+(function () {
+  var box = document.getElementById("intro");
+  if (!box) return;
+  var skip = false;
+  try {
+    /* not after the "רענן" bar's reload, and not when a test asks */
+    if (sessionStorage.getItem("fifa-nointro")) { sessionStorage.removeItem("fifa-nointro"); skip = true; }
+  } catch (e) {}
+  if (/[?&]nointro\b/.test(location.search)) skip = true;
+  if (skip) { box.remove(); return; }
+
+  var gone = false;
+  function end() {
+    if (gone) return; gone = true;
+    box.classList.add("i-out");
+    setTimeout(function () { box.remove(); }, 380);
+    try { if (ctx) setTimeout(function () { ctx.close(); }, 1500); } catch (e) {}
+  }
+  box.addEventListener("pointerdown", end);
+  setTimeout(end, 2600);
+
+  /* ---- the sound, made on the spot (no files): a kick, the crowd, the whistle.
+     An installed app may play sound at launch; a plain browser tab may not,
+     and then the intro simply runs silent. */
+  var ctx = null;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ctx = new AC();
+    var play = function () {
+      if (gone || ctx.state !== "running") return;
+      var t0 = ctx.currentTime, out = ctx.createGain();
+      out.gain.value = 0.9; out.connect(ctx.destination);
+      var noise = function (sec) {
+        var n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+        for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+        var s = ctx.createBufferSource(); s.buffer = b; return s;
+      };
+      /* the kick at 0.85 s: a falling thump and a leather slap */
+      var kt = t0 + 0.85;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(160, kt); o.frequency.exponentialRampToValueAtTime(45, kt + 0.16);
+      g.gain.setValueAtTime(0.0001, kt); g.gain.exponentialRampToValueAtTime(0.9, kt + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, kt + 0.22);
+      o.connect(g); g.connect(out); o.start(kt); o.stop(kt + 0.25);
+      var slap = noise(0.06), sf = ctx.createBiquadFilter(), sg = ctx.createGain();
+      sf.type = "bandpass"; sf.frequency.value = 1800; sf.Q.value = 0.8;
+      sg.gain.setValueAtTime(0.5, kt); sg.gain.exponentialRampToValueAtTime(0.0001, kt + 0.05);
+      slap.connect(sf); sf.connect(sg); sg.connect(out); slap.start(kt);
+      /* the crowd: filtered noise that swells after the strike, with a slow sway */
+      var crowd = noise(2.4), cf = ctx.createBiquadFilter(), cl = ctx.createBiquadFilter(), cg = ctx.createGain();
+      cf.type = "bandpass"; cf.frequency.value = 700; cf.Q.value = 0.6;
+      cl.type = "lowpass"; cl.frequency.value = 2400;
+      cg.gain.setValueAtTime(0.0001, t0 + 0.2);
+      cg.gain.exponentialRampToValueAtTime(0.06, kt);
+      cg.gain.exponentialRampToValueAtTime(0.42, kt + 0.45);
+      cg.gain.setValueAtTime(0.42, t0 + 1.9);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.55);
+      var sway = ctx.createOscillator(), sw = ctx.createGain();
+      sway.frequency.value = 3.2; sw.gain.value = 0.07; sway.connect(sw); sw.connect(cg.gain);
+      crowd.connect(cf); cf.connect(cl); cl.connect(cg); cg.connect(out);
+      crowd.start(t0 + 0.2); sway.start(t0 + 0.2); sway.stop(t0 + 2.6);
+      /* the referee's whistle as the name lands: two close tones and the pea's trill */
+      var wt = t0 + 1.2, wg = ctx.createGain();
+      wg.gain.setValueAtTime(0.0001, wt); wg.gain.exponentialRampToValueAtTime(0.13, wt + 0.03);
+      wg.gain.setValueAtTime(0.13, wt + 0.42); wg.gain.exponentialRampToValueAtTime(0.0001, wt + 0.55);
+      wg.connect(out);
+      var trill = ctx.createOscillator(), tg = ctx.createGain();
+      trill.frequency.value = 34; tg.gain.value = 90; trill.connect(tg);
+      [2850, 3120].forEach(function (f) {
+        var w = ctx.createOscillator(); w.type = "sine"; w.frequency.value = f;
+        tg.connect(w.frequency); w.connect(wg); w.start(wt); w.stop(wt + 0.58);
+      });
+      trill.start(wt); trill.stop(wt + 0.58);
+    };
+    if (ctx.state === "running") play();
+    else if (ctx.resume) ctx.resume().then(play, function () {});
+  } catch (e) {}
+})();
+</script>
 <div dir="rtl">
   <!-- The layout of a scores app: a slim top bar with the current section's
        tabs under it, one screen at a time, and four sections at the bottom. -->
@@ -5940,7 +6109,7 @@ if ("serviceWorker" in navigator) {
             const go = document.createElement("button");
             go.className = "btn sm";
             go.textContent = "רענן";
-            go.onclick = () => { w.postMessage("skipWaiting"); location.reload(); };
+            go.onclick = () => { try { sessionStorage.setItem("fifa-nointro", "1"); } catch (e) {} w.postMessage("skipWaiting"); location.reload(); };
             const no = document.createElement("button");
             no.className = "btn ghost sm";
             no.textContent = "אחר כך";
