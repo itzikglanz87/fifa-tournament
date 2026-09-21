@@ -1,5 +1,5 @@
 <!-- The intro: every cold start of the app. A stadium under floodlights, a
-     ball rolls in and is struck at the screen, the name lands. ~4 s, a tap
+     ball rolls in and is struck at the screen, the name lands and holds with the six names. ~4 s, a tap
      skips it. It fades itself out in CSS, so even a busy boot cannot leave it
      hanging; the script below only adds the sound and removes the node. -->
 <div id="intro" class="intro" aria-hidden="true">
@@ -69,8 +69,8 @@
         for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
         var s = ctx.createBufferSource(); s.buffer = b; return s;
       };
-      /* the kick at 2.35 s: a falling thump and a leather slap */
-      var kt = t0 + 2.35;
+      /* the kick at 0.85 s: a falling thump and a leather slap */
+      var kt = t0 + 0.85;
       var o = ctx.createOscillator(), g = ctx.createGain();
       o.type = "sine"; o.frequency.setValueAtTime(160, kt); o.frequency.exponentialRampToValueAtTime(45, kt + 0.16);
       g.gain.setValueAtTime(0.0001, kt); g.gain.exponentialRampToValueAtTime(0.9, kt + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, kt + 0.22);
@@ -86,14 +86,14 @@
       cg.gain.setValueAtTime(0.0001, t0 + 0.2);
       cg.gain.exponentialRampToValueAtTime(0.06, kt);
       cg.gain.exponentialRampToValueAtTime(0.42, kt + 0.45);
-      cg.gain.setValueAtTime(0.42, t0 + 3.4);
+      cg.gain.setValueAtTime(0.42, t0 + 2.2);
       cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.05);
       var sway = ctx.createOscillator(), sw = ctx.createGain();
       sway.frequency.value = 3.2; sw.gain.value = 0.07; sway.connect(sw); sw.connect(cg.gain);
       crowd.connect(cf); cf.connect(cl); cl.connect(cg); cg.connect(out);
       crowd.start(t0 + 0.2); sway.start(t0 + 0.2); sway.stop(t0 + 4.1);
       /* the referee's whistle as the name lands: two close tones and the pea's trill */
-      var wt = t0 + 2.7, wg = ctx.createGain();
+      var wt = t0 + 1.2, wg = ctx.createGain();
       wg.gain.setValueAtTime(0.0001, wt); wg.gain.exponentialRampToValueAtTime(0.13, wt + 0.03);
       wg.gain.setValueAtTime(0.13, wt + 0.42); wg.gain.exponentialRampToValueAtTime(0.0001, wt + 0.55);
       wg.connect(out);
