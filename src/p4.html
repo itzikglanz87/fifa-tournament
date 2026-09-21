@@ -2199,8 +2199,12 @@ go(start);
   if (sharedStory) setTimeout(() => openSharedStory(sharedStory), 0);
   /* the store may know a newer season or a running tournament this phone
      had not seen yet — land there unless the reader already picked one */
-  if (pickedScope() == null) SCOPE = launchScope();
-  else if (SCOPE !== "all" && !SEASONS.some(x => x.id === SCOPE)) SCOPE = launchScope();
+  /* before the cloud answered, a season this phone had not stored yet was
+     swapped for one it had — put the reader's pick back now that it exists */
+  const pick = pickedScope();
+  if (pick == null) SCOPE = launchScope();
+  else if (pick === "all" || SEASONS.some(x => x.id === pick)) SCOPE = pick;
+  else SCOPE = launchScope();
   rebuild(); refreshChrome();
   /* never redraw over a field the user is in the middle of filling */
   const ae = document.activeElement;

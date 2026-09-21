@@ -2087,7 +2087,151 @@ function formOf(t, p) {
   return out.slice(-5);
 }
 
+/* Three looks for the same standings, picked with the switch on top and
+   remembered on this phone: the dressed-up cards, the plain table it
+   replaced, and charts (the points race and the goals). */
+const TABLE_MODES = [["fancy", "מפוארת"], ["classic", "קלאסית"], ["charts", "גרפים"]];
+const tableMode = () => { try { const v = localStorage.getItem("fifa-table-mode"); return TABLE_MODES.some(m => m[0] === v) ? v : "fancy"; } catch (e) { return "fancy"; } };
 function standingsTable(t, opts) {
+  const host = el("div", "ltwrap");
+  const draw = () => {
+    const mode = tableMode();
+    host.innerHTML = "";
+    const sw = el("div", "ltmodes");
+    sw.setAttribute("role", "tablist");
+    TABLE_MODES.forEach(([k, label]) => {
+      const b = el("button", "ltmode" + (k === mode ? " on" : ""), label);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(k === mode));
+      b.onclick = () => { try { localStorage.setItem("fifa-table-mode", k); } catch (e) {} draw(); };
+      sw.appendChild(b);
+    });
+    host.appendChild(sw);
+    host.appendChild(mode === "classic" ? classicTable(t, opts) : mode === "charts" ? chartTable(t, opts) : fancyTable(t, opts));
+  };
+  draw();
+  return host;
+}
+
+/* the plain table, as it was before the redesign */
+function classicTable(t, opts) {
+  opts = opts || {};
+  const box = el("div", "tscroll fit");
+  const tbl = el("table", "sttbl");
+  tbl.innerHTML = "<thead><tr>" +
+    "<th>#</th><th>שחקן</th><th>קבוצה</th>" +
+    '<th class="c-num">מאזן</th><th class="c-num">שערים</th>' +
+    '<th class="c-num">הפרש</th><th class="c-num">נק׳</th></tr></thead>';
+  const body = el("tbody");
+  t.table.forEach((p, i) => {
+    const a = t.acc[p], gd = a.gf - a.ga, champ = t.c.includes(p), adv = i < 4;
+    const tr = el("tr", (adv ? "qual" : "") + (opts.hl && opts.hl.has(p) ? " hl" : ""));
+    const club = CLUBS[t.teamOf[p]] || "—";
+    tr.innerHTML =
+      '<td class="rank">' + (i + 1) + "</td>" +
+      '<td><span class="who">' + plate(p) +
+        (champ ? '<span class="crown" title="אלוף הטורניר">★</span>' : "") + "</span></td>" +
+      '<td><span class="club" style="--c:' + clubCol(club) + '" title="' + esc(club) +
+        '"><i class="cdot"></i><span class="cn">' + esc(club) + "</span></span></td>" +
+      '<td class="c-num"><span class="ltr">' + a.w + "-" + a.dr + "-" + a.l + "</span></td>" +
+      '<td class="c-num">' + scoreTxt(a.gf, a.ga) + "</td>" +
+      '<td class="c-num ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</td>" +
+      '<td class="c-num strong">' + a.pts + "</td>";
+    body.appendChild(tr);
+  });
+  tbl.appendChild(body);
+  box.appendChild(tbl);
+  const wrap = el("div");
+  wrap.appendChild(box);
+  wrap.appendChild(el("div", "stlegend",
+    '<span><b>מאזן</b> נצחונות · תיקו · הפסדים</span>' +
+    '<span><b>שערים</b> זכות · חובה</span>' +
+    '<span><b style="color:var(--gold)">מספר מקום בזהב</b> עלה לגמר</span>' +
+    '<span><b style="color:var(--gold)">★</b> אלוף</span>'));
+  return wrap;
+}
+
+/* charts: the points race match by match, then the points and goals of each
+   player as bars. Drawn as plain SVG so it works offline. */
+function chartTable(t, opts) {
+  opts = opts || {};
+  const wrap = el("div", "ltcharts");
+  const order = t.m.map((m, k) => k).filter(k => t.m[k][6] != null && t.m[k][7] != null);
+  const pts = {}; t.players.forEach(p => { pts[p] = [0]; });
+  order.forEach(k => {
+    const m = t.m[k], hp = m[6] > m[7] ? 3 : m[6] === m[7] ? 1 : 0, ap = m[7] > m[6] ? 3 : m[6] === m[7] ? 1 : 0;
+    t.players.forEach(p => {
+      const last = pts[p][pts[p].length - 1];
+      const add = (m[0] === p || m[1] === p) ? hp : (m[3] === p || m[4] === p) ? ap : 0;
+      pts[p].push(last + add);
+    });
+  });
+
+  /* 1 — the points race */
+  const race = el("section", "ltc");
+  race.appendChild(el("div", "ltc-h", "<b>מרוץ הנקודות</b><span>נקודות מצטברות אחרי כל משחק</span>"));
+  if (!order.length) {
+    race.appendChild(el("div", "mut", "הגרף יתחיל אחרי התוצאה הראשונה."));
+  } else {
+    const W = 360, H = 220, L = 26, R = 62, T = 12, B = 24;
+    const n = order.length, maxP = Math.max(3, ...t.players.map(p => pts[p][n]));
+    const x = i => L + (W - L - R) * (i / n), y = v => T + (H - T - B) * (1 - v / maxP);
+    let g = "";
+    for (let v = 0; v <= maxP; v += maxP > 12 ? 6 : 3) {
+      g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" class="gl"/>' +
+           '<text x="' + (L - 6) + '" y="' + (y(v) + 3.5) + '" class="ax" text-anchor="end">' + v + "</text>";
+    }
+    for (let i = 1; i <= n; i++) {
+      if (n <= 12 || i % 2 === 0 || i === n)
+        g += '<text x="' + x(i) + '" y="' + (H - 8) + '" class="ax" text-anchor="middle">' + (order[i - 1] + 1) + "</text>";
+    }
+    /* end labels, nudged apart so names do not sit on each other */
+    const ends = t.table.map(p => ({ p, y: y(pts[p][n]) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+    const lines = t.table.slice().reverse().map(p => {
+      const d = pts[p].map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+      const on = opts.hl ? opts.hl.has(p) : true;
+      return '<path d="' + d + '" class="ln' + (on ? "" : " dim") + '" style="stroke:' + PC(p) + '"/>' +
+        '<circle cx="' + x(n) + '" cy="' + y(pts[p][n]) + '" r="3.5" style="fill:' + PC(p) + '"/>';
+    }).join("");
+    const labels = ends.map(e => '<text x="' + (x(n) + 8) + '" y="' + (e.y + 4) + '" class="lb" style="fill:' + PC(e.p) + '">' +
+      esc(P[e.p]) + " " + pts[e.p][n] + "</text>").join("");
+    race.appendChild(el("div", "ltc-svg",
+      '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="מרוץ הנקודות">' + g + lines + labels + "</svg>"));
+    race.appendChild(el("div", "ltc-note", "הציר התחתון: מספר המשחק בטורניר."));
+  }
+  wrap.appendChild(race);
+
+  /* 2 — points, as bars split into wins and draws */
+  const maxPts = Math.max(1, ...t.players.map(p => t.acc[p].pts));
+  const bars = el("section", "ltc");
+  bars.appendChild(el("div", "ltc-h", "<b>נקודות</b><span>ירוק מנצחונות, אפור מתיקו</span>"));
+  t.table.forEach((p, i) => {
+    const a = t.acc[p];
+    bars.appendChild(el("div", "ltc-row" + (opts.hl && opts.hl.has(p) ? " hl" : "") + (i === 3 && t.table.length > 4 ? " cut" : ""),
+      '<span class="ltc-n">' + (i + 1) + "</span><span>" + plate(p) + "</span>" +
+      '<span class="ltc-bar"><i class="w" style="width:' + (100 * 3 * a.w / maxPts) + '%"></i><i class="d" style="width:' + (100 * a.dr / maxPts) + '%"></i></span>' +
+      '<b class="ltc-v">' + a.pts + "</b>"));
+  });
+  wrap.appendChild(bars);
+
+  /* 3 — goals: scored to one side, conceded to the other */
+  const maxG = Math.max(1, ...t.players.map(p => Math.max(t.acc[p].gf, t.acc[p].ga)));
+  const goals = el("section", "ltc");
+  goals.appendChild(el("div", "ltc-h", '<b>שערים</b><span><b style="color:var(--pos)">זכות</b> מול <b style="color:var(--neg)">חובה</b></span>'));
+  t.table.forEach(p => {
+    const a = t.acc[p], gd = a.gf - a.ga;
+    goals.appendChild(el("div", "ltc-grow" + (opts.hl && opts.hl.has(p) ? " hl" : ""),
+      "<span>" + plate(p) + "</span>" +
+      '<span class="ltc-dual"><span class="ga"><i style="width:' + (100 * a.ga / maxG) + '%"></i><em>' + a.ga + "</em></span>" +
+      '<span class="gf"><i style="width:' + (100 * a.gf / maxG) + '%"></i><em>' + a.gf + "</em></span></span>" +
+      '<b class="ltc-v ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</b>"));
+  });
+  wrap.appendChild(goals);
+  return wrap;
+}
+
+function fancyTable(t, opts) {
   opts = opts || {};
   const played = t.m.filter(m => m[6] != null && m[7] != null).length, total = t.m.length;
   const league = played < total;

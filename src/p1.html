@@ -1080,4 +1080,40 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .spush-prev{display:flex; flex-direction:column; gap:3px; padding:10px 12px; border-radius:12px; background:#1F2630;
   border-inline-start:3px solid var(--blue); font-size:13px}
 .spush-prev span{color:#9AA4B2}
+/* ---------- table look switch + the charts look ---------- */
+.ltwrap{display:flex; flex-direction:column; gap:10px}
+.ltmodes{display:flex; gap:4px; padding:4px; border-radius:999px; background:#161C24; align-self:flex-start}
+.ltmode{border:0; background:transparent; color:#9AA4B2; font:inherit; font-size:12.5px; font-weight:700;
+  padding:6px 14px; border-radius:999px; cursor:pointer}
+.ltmode.on{background:var(--blue); color:#fff}
+.sttbl tr.hl td{background:rgba(61,126,245,.14)}
+.ltcharts{display:flex; flex-direction:column; gap:12px}
+.ltc{background:linear-gradient(180deg,#1E252F,#191F28); border-radius:14px; padding:12px 12px 10px; display:flex; flex-direction:column; gap:8px}
+.ltc-h{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap}
+.ltc-h b{font-size:15px} .ltc-h span{font-size:11.5px; color:#9AA4B2}
+.ltc-svg{direction:ltr}
+.ltc-svg svg{width:100%; height:auto; display:block; overflow:visible}
+.ltc-svg .gl{stroke:#2A333F; stroke-width:1}
+.ltc-svg .ax{fill:#6F7A88; font-size:9.5px; font-family:inherit}
+.ltc-svg .ln{fill:none; stroke-width:2.6; stroke-linejoin:round; stroke-linecap:round}
+.ltc-svg .ln.dim{opacity:.25}
+.ltc-svg .lb{font-size:10.5px; font-weight:800; font-family:inherit}
+.ltc-note{font-size:11px; color:#7D8795}
+.ltc-row{display:grid; grid-template-columns:16px 78px 1fr 26px; gap:8px; align-items:center; font-size:13px; padding:3px 0}
+.ltc-row.cut{border-bottom:1.5px dashed rgba(245,197,66,.5); padding-bottom:8px; margin-bottom:4px}
+.ltc-row.hl,.ltc-grow.hl{background:rgba(61,126,245,.12); border-radius:8px}
+.ltc-n{color:#7D8795; font-size:12px; text-align:center}
+.ltc-bar{display:flex; height:12px; border-radius:99px; background:#262E39; overflow:hidden}
+.ltc-bar i{display:block; height:100%}
+.ltc-bar i.w{background:linear-gradient(90deg,#2FB86F,#3DDC84)} .ltc-bar i.d{background:#8A94A3}
+.ltc-v{text-align:center; font-size:15px; font-variant-numeric:tabular-nums}
+.ltc-v.pos{color:var(--pos)} .ltc-v.neg{color:var(--neg)}
+.ltc-grow{display:grid; grid-template-columns:78px 1fr 32px; gap:8px; align-items:center; font-size:13px; padding:3px 0}
+.ltc-dual{display:grid; grid-template-columns:1fr 1fr; gap:2px; direction:ltr}
+.ltc-dual > span{position:relative; height:14px; display:flex; align-items:center}
+.ltc-dual .ga{justify-content:flex-end} .ltc-dual .gf{justify-content:flex-start}
+.ltc-dual i{display:block; height:100%; border-radius:4px}
+.ltc-dual .ga i{background:#FF6B6B} .ltc-dual .gf i{background:#3DDC84}
+.ltc-dual em{font-style:normal; font-size:10.5px; font-weight:800; color:#C9D1DB; padding:0 4px}
+.ltc-dual .ga em{order:-1}
 </style>
