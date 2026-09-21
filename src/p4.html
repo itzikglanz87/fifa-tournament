@@ -286,10 +286,21 @@ function allTimeBlock() {
   return sec;
 }
 
+/* the latest champions — used to sit in the header */
+function reignCard() {
+  if (!LAST) return null;
+  const c = el("section", "block reigncard");
+  c.innerHTML = '<div class="lbl">אלופי טורניר ' + LAST.num + "</div>" +
+    '<div class="row">' + LAST.c.map(p => '<span class="champ">' + plateFace(p, "big") + clubTag(LAST.teamOf[p]) + "</span>").join("") + "</div>";
+  return c;
+}
+
 function viewOverview(root) {
   root.innerHTML = "";
   const done = TSS.filter(t => t.done);
   if (!done.length) { root.appendChild(emptySeason()); return; }
+  const rc = reignCard();
+  if (rc) root.appendChild(rc);
 
   const b0 = el("section", "block");
   const strip = el("div", "strip4");
@@ -890,10 +901,12 @@ function tournamentDetail(t) {
     const fx = el("div", "fixture");
     const row = el("div", "mrow");
     /* RTL puts the home side on the right, so the LTR score chip prints away first */
-    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+    row.innerHTML = '<div class="mn">מחזור ' + (idx + 1) + "</div>" +
       '<div class="side' + (has && ag > hg ? " fade" : "") + '"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>" +
       '<div class="score">' + (has ? ag + " – " + hg : "— – —") + "</div>" +
       '<div class="side away' + (has && hg > ag ? " fade" : "") + '"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>";
+    if (has) fx.classList.add("played");
+    tapToOpen(row, t.i, idx);
     fx.appendChild(row);
     if (!has) { const o = oddsRow(m); if (o) fx.appendChild(o); }
     mc.appendChild(fx);
@@ -901,6 +914,131 @@ function tournamentDetail(t) {
   mb.appendChild(mc);
   box.appendChild(mb);
   return box;
+}
+
+/* ==========================================================================
+   The match page — tap a match, get its own screen, like a scores app
+   --------------------------------------------------------------------------
+   The two pairs and the score on top, then three tabs: the odds (with the
+   model's full reasoning), the head-to-head record of these exact two pairs,
+   and the table with the four of them marked. Android's back button closes
+   it, the same as the arrow.
+   ========================================================================== */
+function tapToOpen(row, tid, idx) {
+  row.querySelectorAll(".side").forEach(sd => {
+    sd.classList.add("tap");
+    sd.title = "פתח את המשחק";
+    sd.onclick = () => openMatch(tid, idx);
+  });
+}
+
+let matchOpen = false;
+addEventListener("popstate", () => { if (matchOpen) closeMatch(true); });
+function closeMatch(fromHistory) {
+  const pg = document.getElementById("matchPage");
+  if (pg) pg.remove();
+  document.body.style.overflow = "";
+  if (matchOpen && !fromHistory) { matchOpen = false; history.back(); return; }
+  matchOpen = false;
+}
+
+function h2hOf(pa, pb) {
+  const same = (x, y) => (x[0] === y[0] && x[1] === y[1]) || (x[0] === y[1] && x[1] === y[0]);
+  const games = [];
+  TS.forEach(t => t.m.forEach(m => {
+    if (m[6] == null || m[7] == null) return;
+    const H = [m[0], m[1]], A = [m[3], m[4]];
+    if (same(H, pa) && same(A, pb)) games.push({ t, gf: m[6], ga: m[7] });
+    else if (same(H, pb) && same(A, pa)) games.push({ t, gf: m[7], ga: m[6] });
+  }));
+  const r = { g: games.length, w: 0, d: 0, l: 0, gf: 0, ga: 0, games };
+  games.forEach(x => { r.gf += x.gf; r.ga += x.ga; if (x.gf > x.ga) r.w++; else if (x.gf < x.ga) r.l++; else r.d++; });
+  return r;
+}
+
+function openMatch(tid, idx, tab) {
+  const t = LIVE[tid] || TS.find(x => x.i === tid);
+  if (!t || !t.m[idx]) return;
+  const m = t.m[idx];
+  const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+  const played = hg != null && ag != null;
+  const had = !!document.getElementById("matchPage");
+  const old = document.getElementById("matchPage");
+  if (old) old.remove();
+
+  const pg = el("div", "mpage");
+  pg.id = "matchPage";
+  const top = el("div", "mp-top");
+  top.innerHTML = '<span></span><div class="mp-title"><div>טורניר ' + t.num + " · " +
+    esc(seasonById(t.season).name) + '</div><div class="mut">מחזור ' + (idx + 1) + "</div></div>";
+  const back = el("button", "mp-back", "←");
+  back.setAttribute("aria-label", "חזרה");
+  back.onclick = () => closeMatch(false);
+  top.appendChild(back);
+  pg.appendChild(top);
+
+  const side = (a, b, c) => '<div class="mp-side">' +
+    '<div class="mp-faces">' + [a, b].map(p => '<span class="mp-face" style="--c:' + PC(p) + '">' +
+      (photoOf(p) ? '<i class="pface pf' + p + '"></i>' : '<i class="dot"></i>') + "</span>").join("") + "</div>" +
+    '<div class="mp-names">' + esc(P[a]) + " ו" + esc(P[b]) + "</div>" + clubTag(c) + "</div>";
+  const teams = el("div", "mp-teams");
+  teams.innerHTML = side(h1, h2, ht) +
+    '<div class="mp-mid"><div class="mp-score ltr">' + (played ? ag + " - " + hg : "- : -") + "</div>" +
+    '<div class="mut">' + (played ? "הסתיים" : "טרם שוחק") + "</div></div>" +
+    side(a1, a2, at);
+  pg.appendChild(teams);
+
+  const tabs = el("div", "mp-tabs");
+  const body = el("div", "mp-body");
+  const TABS = [["odds", "סיכויים"], ["h2h", "ראש בראש"], ["table", "טבלה"]];
+  const show = k => {
+    tabs.querySelectorAll(".stab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.k === k)));
+    body.innerHTML = "";
+    if (k === "odds") {
+      const f = forecast(m);
+      if (!f) { body.appendChild(el("div", "mut", "אין מספיק היסטוריה לתחזית.")); return; }
+      body.appendChild(el("div", "mp-pills",
+        '<span class="mp-pill"><b>1</b>' + pct(f.w) + "%<small>" + esc(P[h1]) + " ו" + esc(P[h2]) + "</small></span>" +
+        '<span class="mp-pill"><b>X</b>' + pct(f.d) + "%<small>תיקו</small></span>" +
+        '<span class="mp-pill"><b>2</b>' + (100 - pct(f.w) - pct(f.d)) + "%<small>" + esc(P[a1]) + " ו" + esc(P[a2]) + "</small></span>"));
+      if (played) body.appendChild(el("div", "mut", "הסיכויים כפי שהמודל רואה את המשחק הזה, בלי התוצאה שלו."));
+      body.appendChild(el("div", "panel mp-why", oddsWhy(m, f)));
+    } else if (k === "h2h") {
+      const r = h2hOf([h1, h2], [a1, a2]);
+      const who = esc(P[h1]) + " ו" + esc(P[h2]);
+      if (!r.g) { body.appendChild(el("div", "mut", "שני הצמדים האלה עוד לא נפגשו.")); return; }
+      body.appendChild(el("div", "mp-pills",
+        '<span class="mp-pill"><b>נצחונות</b>' + r.w + "<small>" + who + "</small></span>" +
+        '<span class="mp-pill"><b>תיקו</b>' + r.d + "<small>" + r.g + " מפגשים</small></span>" +
+        '<span class="mp-pill"><b>נצחונות</b>' + r.l + "<small>" + esc(P[a1]) + " ו" + esc(P[a2]) + "</small></span>"));
+      body.appendChild(el("div", "mut", "שערים: " + scoreTxt(r.gf, r.ga) + " · מנקודת המבט של " + who));
+      const list = el("div", "panel mp-list");
+      r.games.slice(-10).reverse().forEach(x => {
+        const res = x.gf > x.ga ? "w" : x.gf < x.ga ? "l" : "d";
+        list.appendChild(el("div", "mp-row " + res,
+          "<span>טורניר " + x.t.num + ' <span class="mut">' + esc(seasonById(x.t.season).name) + "</span></span>" +
+          '<span class="ltr">' + x.gf + " - " + x.ga + "</span>"));
+      });
+      body.appendChild(list);
+    } else {
+      const wrap = standingsTable(t);
+      const mine = new Set([h1, h2, a1, a2]);
+      const rows = wrap.querySelectorAll("tbody tr");
+      t.table.forEach((p, i) => { if (mine.has(p) && rows[i]) rows[i].classList.add("hl"); });
+      body.appendChild(wrap);
+    }
+  };
+  TABS.forEach(([k, label]) => {
+    const b = el("button", "stab", label);
+    b.dataset.k = k;
+    b.onclick = () => show(k);
+    tabs.appendChild(b);
+  });
+  pg.append(tabs, body);
+  document.body.appendChild(pg);
+  document.body.style.overflow = "hidden";
+  if (!had) { history.pushState({ match: 1 }, ""); matchOpen = true; }
+  show(tab || "odds");
 }
 
 /* ==========================================================================
@@ -1786,17 +1924,14 @@ function refreshChrome() {
   sel.onchange = () => setScope(sel.value === "all" ? "all" : Number(sel.value));
   sp.appendChild(sel);
 
-  const r = document.getElementById("reign");
-  if (LAST) {
-    r.hidden = false;
-    r.innerHTML = '<div><div class="lbl">אלופי טורניר ' + LAST.num + "</div>" +
-      '<div class="row">' + LAST.c.map(p => '<span style="display:flex;flex-direction:column;gap:2px">' + plate(p, "lg") + clubTag(LAST.teamOf[p]) + "</span>").join("") + "</div></div>";
-  } else {
-    r.hidden = true;
-  }
+  /* the latest champions now open the summary tab (reignCard) */
   const open = Object.values(LIVE).filter(t => !t.done && (SCOPE === "all" || t.season === SCOPE)).length;
-  const tab = document.getElementById("tab-live");
-  if (tab) tab.innerHTML = "חדר הבקרה" + (open ? '<span class="badge">' + open + "</span>" : "");
+  const nav = document.getElementById("nav-results");
+  if (nav) {
+    const old = nav.querySelector(".badge");
+    if (old) old.remove();
+    if (open) nav.querySelector(".ico").insertAdjacentHTML("beforeend", '<span class="badge">' + open + "</span>");
+  }
   document.getElementById("foot").innerHTML =
     "כל המספרים מחושבים מחדש מתוך " + nf(totMatches) + " תוצאות המשחקים הגולמיות של " +
     (SCOPE === "all" ? "כל העונות" : esc(seasonById(SCOPE).name)) + ". " +
@@ -1813,32 +1948,67 @@ const VIEWS = [
   ["teams", "קבוצות", viewTeams],
   ["records", "שיאים", viewRecords]
 ];
+/* ==========================================================================
+   Navigation: four sections at the bottom, each with its own tabs at the top
+   --------------------------------------------------------------------------
+   The views above are unchanged; this only decides which one is on screen.
+   A key is a view id ("tournaments") or, for the control room, "live:<pane>".
+   Old calls such as go("players") keep working.
+   ========================================================================== */
+const ICON = {
+  results: '<span class="ico-score">3:2</span>',
+  news: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 8.5h6v4H7zM15.5 8.5H17M15.5 11.5H17M7 15.5h10"/></svg>',
+  players: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.2c1.3-2.2 3.2-3.2 5.5-3.2s4.2 1 5.5 3.2"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8M3.5 19.5h17"/></svg>'
+};
+const SECTIONS = [
+  { id: "results", label: "תוצאות", tabs: [["live:games", "משחקים"], ["live:table", "טבלה"], ["live:final", "גמר"], ["live:manage", "ניהול"]] },
+  { id: "news", label: "חדשות", tabs: [["news", "חדשות"]] },
+  { id: "players", label: "שחקנים", tabs: [["players", "שחקנים"]] },
+  { id: "stats", label: "סטטיסטיקות", tabs: [["overview", "סיכום"], ["tournaments", "טורנירים"], ["pairs", "צמדים"], ["teams", "קבוצות"], ["records", "שיאים"]] }
+];
+const SECTION_LAST = {};
+
 const tabsHost = document.getElementById("tabs");
-VIEWS.forEach(([id, label]) => {
-  const b = el("button", "tab", label);
-  b.setAttribute("role", "tab"); b.id = "tab-" + id;
-  b.onclick = () => go(id);
+SECTIONS.forEach(sec => {
+  const b = el("button", "navbtn", '<span class="ico">' + ICON[sec.id] + '</span><span class="nl">' + sec.label + "</span>");
+  b.setAttribute("role", "tab"); b.id = "nav-" + sec.id;
+  b.onclick = () => go(SECTION_LAST[sec.id] || sec.tabs[0][0]);
   tabsHost.appendChild(b);
 });
-function go(id) {
+
+function go(key) {
+  key = String(key || "live:games");
+  const parts = key.split(":"), view = parts[0];
+  if (view === "live") { if (parts[1]) LIVE_PANE = parts[1]; key = "live:" + LIVE_PANE; }
+  const sec = SECTIONS.find(x => x.tabs.some(t => t[0] === key)) || SECTIONS[0];
+  SECTION_LAST[sec.id] = key;
+
+  SECTIONS.forEach(x => {
+    const b = document.getElementById("nav-" + x.id);
+    if (b) b.setAttribute("aria-selected", String(x === sec));
+  });
+  const st = document.getElementById("subtabs");
+  st.innerHTML = "";
+  st.closest(".subtabs").hidden = sec.tabs.length < 2;       // one screen: no tab row
+  sec.tabs.forEach(([k, label]) => {
+    const b = el("button", "stab", label);
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(k === key));
+    b.onclick = () => go(k);
+    st.appendChild(b);
+    if (k === key) setTimeout(() => b.scrollIntoView({ block: "nearest", inline: "center" }), 0);
+  });
+
   VIEWS.forEach(([vid, , fn]) => {
-    const host = document.getElementById("v-" + vid), tab = document.getElementById("tab-" + vid);
-    const on = vid === id;
-    tab.setAttribute("aria-selected", String(on));
+    const host = document.getElementById("v-" + vid);
+    const on = vid === view;
     host.hidden = !on;
     if (on) fn(host);
   });
   hideTip();
-  try { localStorage.setItem("fifa-tab", id); } catch (e) {}
-  /* A new tab starts at its top. The tab bar is pinned, so it is usually
-     tapped from deep inside a long page (the control room's fixtures); left
-     there, the reader lands in the middle — or past the end — of the new one.
-     Scroll only as far as the tab bar, so the header does not come back. */
-  const main = document.querySelector("main"), bar = document.querySelector(".tabbar");
-  if (main && bar) {
-    const top = Math.max(0, main.getBoundingClientRect().top + scrollY - bar.offsetHeight);
-    if (scrollY > top) window.scrollTo(0, top);
-  }
+  try { localStorage.setItem("fifa-tab", key); } catch (e) {}
+  window.scrollTo(0, 0);                                      // every screen starts at its top
 }
 
 /* boot: render from history at once, then fold in anything the store holds */
@@ -1846,8 +2016,11 @@ try { const sc = localStorage.getItem("fifa-scope"); if (sc != null) SCOPE = sc 
 Store.initLocal();          // whatever this browser already holds, immediately
 installFaceStyles();
 rebuild(); refreshChrome();
-let start = "overview";
-try { const v = localStorage.getItem("fifa-tab"); if (v && VIEWS.some(x => x[0] === v)) start = v; } catch (e) {}
+let start = "live:games";
+try {
+  const v = localStorage.getItem("fifa-tab");
+  if (v && SECTIONS.some(x => x.tabs.some(t => t[0] === v || t[0].split(":")[0] === v))) start = v;
+} catch (e) {}
 go(start);
 
 (async () => {

@@ -733,4 +733,182 @@ footer{border-top:1px solid var(--line); padding-block:22px 6px; color:var(--mut
   .duel{grid-template-columns:1fr; }
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+
+/* ==========================================================================
+   THE SCORES-APP LOOK — layered over everything above
+   --------------------------------------------------------------------------
+   A quiet dark surface, rounded cards, one blue accent for "selected", grey
+   pills for secondary numbers, and plain sans-serif type. Gold stays only
+   where it means something: trophies and champions.
+   ========================================================================== */
+:root{
+  --pitch:#0E1218; --panel:#1B2129; --panel2:#222931; --panel3:#2A313A;
+  --line:#12171D; --line2:#2E3640;
+  --ink:#FFFFFF; --ink2:#AAB3BF; --muted:#7D8896;
+  --blue:#3D7EF5; --blue-dim:#1E3A6B;
+  --cut:0px; --r:14px;
+}
+body{background:var(--pitch); font-family:"Heebo","Segoe UI",system-ui,sans-serif}
+h1,h2,h3,.disp,.bhead h2,.stat .v{font-family:"Heebo","Segoe UI",system-ui,sans-serif}
+.bhead h2{font-size:17px; font-weight:700; letter-spacing:0}
+.bhead .note{color:var(--muted)}
+.lbl{letter-spacing:.04em; font-weight:600}
+
+/* ---------- top bar ---------- */
+.appbar{position:sticky; top:0; z-index:50; background:#151B22; box-shadow:0 1px 0 #0B0F14}
+.appbar-in{display:flex; align-items:center; justify-content:space-between; gap:12px; padding-block:10px 6px}
+.appbar .mark{display:flex; align-items:center; gap:10px}
+.appbar .mark .glyph{width:34px; height:34px; font-size:15px}
+.appbar .mark h1{font-size:18px; font-weight:800}
+.appbar .mark .sub{font-size:11px; letter-spacing:.02em; color:var(--muted); font-weight:500; margin-top:1px}
+.appbar .seasonbar .lbl{display:none}
+.appbar .seasonbar select{background:var(--panel2); border:0; border-radius:999px; padding:7px 14px;
+  font-size:13px; font-weight:600; color:var(--ink)}
+
+/* ---------- the current section's tabs ---------- */
+.subtabs{background:#151B22}
+.subtabs-in{display:flex; overflow-x:auto; scrollbar-width:none}
+.subtabs-in::-webkit-scrollbar{display:none}
+.stab{flex:1 0 auto; padding:11px 16px 10px; font-size:16px; font-weight:600; color:var(--muted);
+  border-bottom:3px solid transparent; white-space:nowrap; transition:color .15s, border-color .15s}
+.stab[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--blue)}
+
+/* ---------- one screen at a time ---------- */
+main{padding-block:16px calc(92px + env(safe-area-inset-bottom))}
+.view{gap:18px}
+footer{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+
+/* ---------- the four sections ---------- */
+.bottomnav{position:fixed; bottom:0; inset-inline:0; z-index:60; background:#1A2027;
+  border-top:1px solid #232A33; padding-bottom:env(safe-area-inset-bottom)}
+.bottomnav-in{display:grid; grid-template-columns:repeat(4,1fr); max-width:680px; margin-inline:auto}
+.navbtn{display:flex; flex-direction:column; align-items:center; gap:4px; padding:9px 0 8px;
+  color:#8A94A3; font-size:12px; font-weight:500}
+.navbtn .ico{position:relative; height:26px; display:grid; place-items:center}
+.navbtn svg{width:25px; height:25px; fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round}
+.navbtn .ico-score{font-size:19px; font-weight:800; letter-spacing:.02em; direction:ltr}
+.navbtn[aria-selected="true"]{color:var(--ink)}
+.navbtn[aria-selected="true"] .nl{font-weight:800}
+.navbtn .badge{position:absolute; top:-5px; inset-inline-end:-12px; min-width:17px; height:17px; padding:0 5px;
+  border-radius:999px; background:var(--blue); color:#fff; font-size:10.5px; font-weight:800;
+  display:grid; place-items:center; line-height:1}
+
+/* ---------- surfaces: rounded, no cut corners ---------- */
+.panel,.tscroll,.rec,.notice,.stat,.chart-card,.award,.rivside,.modalcard,.peakcard,.tlmatch,.meet,.fcverdict{
+  border-radius:var(--r); clip-path:none}
+.tscroll{border:0; background:var(--panel)}
+.strip4{border-radius:var(--r); overflow:hidden; background:var(--line)}
+.rec{background:var(--panel); border:0}
+.panel{border:0}
+.notice{border:0}
+
+/* ---------- buttons, chips, pills ---------- */
+.btn{background:var(--blue); color:#fff; border-radius:999px; clip-path:none; font-weight:700}
+.btn:hover{filter:brightness(1.12)}
+.btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line2)}
+.btn.ghost:hover{border-color:var(--blue); color:#fff}
+.chip{border-radius:999px; clip-path:none}
+.chip[aria-pressed="true"]{background:var(--blue); color:#fff; border-color:var(--blue)}
+
+/* ---------- tournament picker, like a date strip ---------- */
+.picker{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px}
+.picker::-webkit-scrollbar{display:none}
+.pick{flex:none; padding:7px 15px; border-radius:999px; background:var(--panel); color:var(--ink2);
+  font-size:13.5px; font-weight:600}
+.pick[aria-pressed="true"]{background:var(--blue); color:#fff}
+
+/* ---------- tables, 365 style ---------- */
+table th{color:var(--muted); font-weight:600; background:transparent}
+table tbody tr{border-top:2px solid var(--line)}
+table tbody tr:hover{background:var(--panel2)}
+
+/* ---------- the latest champions, at the top of the summary ---------- */
+.reigncard{background:linear-gradient(180deg,#1E1A0E,#16140D); border-radius:var(--r); padding:14px 16px}
+.reigncard .lbl{color:var(--gold)}
+.reigncard .row{display:flex; gap:22px; margin-top:10px; flex-wrap:wrap}
+.reigncard .champ{display:flex; flex-direction:column; gap:4px}
+.block.empty{background:var(--panel); border-radius:var(--r); padding:18px}
+
+/* ---------- the league strip over the fixtures ---------- */
+.leaguehead{display:flex; align-items:center; gap:10px; background:var(--panel); border-radius:var(--r) var(--r) 0 0;
+  padding:12px 16px; margin-bottom:-18px; font-weight:700; font-size:15px}
+.leaguehead .lg-ico{font-size:17px}
+.leaguehead .lg-name{flex:1}
+.leaguehead .lg-count{font-size:12.5px; font-weight:500; color:var(--muted)}
+#v-live .leaguehead + section.block .panel.matches{border-top-left-radius:0; border-top-right-radius:0}
+
+/* ---------- match cards ---------- */
+.panel.matches{background:var(--panel); overflow:hidden}
+.panel.matches .oddskey{display:none}                  /* 1 · X · 2 says it */
+.fixture{position:relative; border-bottom:2px solid var(--line); background:none !important; padding-top:24px}
+.fixture .mrow{grid-template-columns:1fr auto 1fr; gap:10px; padding:4px 16px 10px}
+.fixture .mrow .mn{position:absolute; top:7px; inset-inline:0; text-align:center; font-size:12px;
+  font-weight:500; color:var(--muted)}
+.fixture.played .mrow .mn::after{content:" · הסתיים"}
+.side .duo{flex-direction:column; gap:6px}
+.side .plate{font-size:15px; font-weight:600}
+.side.tap{cursor:pointer; border-radius:10px}
+.side.tap:active{background:var(--panel2)}
+.entry{gap:6px}
+.entry input{width:46px; height:44px; border:0; border-radius:10px; background:var(--pitch);
+  color:var(--ink); font-size:24px; font-weight:300; text-align:center}
+.entry input.filled{background:transparent; border:0; font-weight:400}
+.entry .mut{font-size:20px; font-weight:300}
+.rowsave{width:32px; height:32px; border-radius:50%; background:var(--panel2); border:0; font-size:13px}
+.rowsave:hover{color:#fff; background:var(--blue)}
+.score{font-family:"Heebo",sans-serif; font-size:26px; font-weight:300; background:none; border:0; padding:0 6px}
+.side.fade{opacity:.55}
+
+/* 1 · X · 2 pills instead of the coloured bar */
+.odds{padding:0 16px 14px}
+.odds .cap{display:none}
+.oddsbar{display:flex; gap:10px; height:auto; background:none}
+.oddsbar i{flex:1 !important; height:34px; border-radius:999px; background:var(--pitch) !important;
+  color:var(--ink) !important; font-size:14px; font-weight:500; font-style:normal; direction:ltr}
+.oddsbar .oh::before{content:"1 · "; color:var(--muted)}
+.oddsbar .od::before{content:"X · "; color:var(--muted)}
+.oddsbar .oa::before{content:"2 · "; color:var(--muted)}
+
+/* saved + clear, quietly */
+.doneline{justify-content:center; padding:0 16px 12px; gap:12px}
+.doneline .ok{font-weight:600; font-size:12px}
+.doneline .grow{display:none}
+.doneline .btn.sm{padding:4px 12px; font-size:12px}
+.gravity{border-top:0; border-radius:10px; margin:0 12px 12px; width:auto}
+
+/* ---------- the match page ---------- */
+.mpage{position:fixed; inset:0; z-index:90; background:var(--pitch); overflow-y:auto;
+  padding-bottom:env(safe-area-inset-bottom)}
+.mp-top{display:grid; grid-template-columns:44px 1fr 44px; align-items:center; padding:10px 8px 0;
+  background:linear-gradient(180deg,#1D2A3E 0%,#141C28 100%)}
+.mp-title{text-align:center; font-size:14px; font-weight:600; line-height:1.4}
+.mp-back{font-size:24px; color:var(--ink); height:44px}
+.mp-teams{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; padding:18px 14px 20px;
+  background:linear-gradient(180deg,#141C28 0%,#101620 100%)}
+.mp-side{display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center}
+.mp-faces{display:flex; gap:6px}
+.mp-face{display:inline-flex}
+.mp-face .pface{width:46px; height:46px}
+.mp-face .dot{width:30px; height:30px; border-radius:50%}
+.mp-names{font-weight:700; font-size:15px}
+.mp-mid{text-align:center}
+.mp-score{font-size:40px; font-weight:400; letter-spacing:.02em}
+.mp-tabs{display:flex; background:#101620; border-bottom:1px solid #1C2530; position:sticky; top:0; z-index:2}
+.mp-tabs .stab{flex:1}
+.mp-body{padding:16px; display:flex; flex-direction:column; gap:12px; max-width:760px; margin-inline:auto}
+.mp-pills{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+.mp-pill{display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 6px; border-radius:var(--r);
+  background:var(--panel); font-size:22px; font-weight:400}
+.mp-pill b{font-size:12px; color:var(--muted); font-weight:700}
+.mp-pill small{font-size:11.5px; color:var(--muted); text-align:center}
+.mp-why{padding:14px 16px; font-size:13px; line-height:1.7}
+.mp-why .th{font-weight:700; margin-bottom:6px}
+.mp-why table{margin:6px 0 10px}
+.mp-why .hint{color:var(--ink2)}
+.mp-list{overflow:hidden}
+.mp-row{display:flex; justify-content:space-between; padding:11px 16px; border-bottom:2px solid var(--line); font-size:14px}
+.mp-row:last-child{border-bottom:0}
+.mp-row.w .ltr{color:var(--pos)} .mp-row.l .ltr{color:var(--neg)}
+tr.hl{background:#1E2A3C !important; box-shadow:inset -3px 0 0 var(--blue)}
 </style>

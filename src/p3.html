@@ -967,42 +967,81 @@ function story(tag, head, bodyHtml, plain, hero) {
 let draft = null;   // {size, players:[], clubs:[], slots:[]}  before it is saved
 let liveId = null;  // which stored tournament is open
 
+/* Which of the control room's four tabs is showing: games · table · final ·
+   manage. Set by the router (go("live:table")); the new-tournament flow
+   switches it to games so the draw appears where the fixtures will be. */
+let LIVE_PANE = "games";
+
 function viewLive(root) {
   root.innerHTML = "";
+  const pane = LIVE_PANE;
+  const inScope = Object.values(LIVE).filter(t => SCOPE === "all" || t.season === SCOPE)
+    .sort((a, b) => b.i - a.i);
+  /* open straight onto a tournament, like a scores app: the running one if
+     there is one, otherwise the latest */
+  if (!draft && (liveId == null || !LIVE[liveId] || inScope.indexOf(LIVE[liveId]) < 0)) {
+    const pick = inScope.find(t => !t.done) || inScope[0];
+    liveId = pick ? pick.i : null;
+  }
   const open = liveId != null ? LIVE[liveId] : null;
 
-  const bar = el("section", "block");
-  const bh = el("div", "bhead");
-  bh.innerHTML = '<h2>חדר הבקרה</h2><span class="note">' +
-    "כל תוצאה נשמרת תוך כדי הקלדה. שורת המצב למטה אומרת אם השמירה הצליחה.</span>";
-  bar.appendChild(bh);
+  if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
 
+  /* several tournaments in this season: a compact picker, like a date strip */
+  if (inScope.length > 1 && !draft) {
+    const row = el("div", "picker");
+    inScope.forEach(t => {
+      const c = el("button", "pick", "טורניר " + t.num + (t.done ? " ✓" : ""));
+      c.setAttribute("aria-pressed", String(liveId === t.i));
+      c.onclick = () => { liveId = t.i; viewLive(root); };
+      row.appendChild(c);
+    });
+    root.appendChild(row);
+  }
+
+  if (draft) {
+    if (pane === "games") root.appendChild(draftPanel());
+    else root.appendChild(el("div", "notice", "יש הגרלה פתוחה — היא בלשונית <b>משחקים</b>."));
+    return;
+  }
+  if (!open) {
+    const n = el("section", "block empty");
+    n.innerHTML = '<div class="bhead"><h2>אין טורניר פתוח</h2>' +
+      '<span class="note">פותחים טורניר חדש מהלשונית ניהול.</span></div>';
+    const b = el("button", "btn", "＋ טורניר חדש");
+    b.onclick = () => { draft = null; liveId = null; startDraft(6); };
+    n.appendChild(b);
+    root.appendChild(n);
+    return;
+  }
+  root.appendChild(livePanel(open, pane));
+}
+
+/* ניהול: everything that is not the match itself — saving, the new
+   tournament, the squad, notifications and the admin box, seasons, clubs */
+function managePanel(open, inScope) {
+  const box = el("div", "view");
+  const bar = el("section", "block");
+  bar.innerHTML = '<div class="bhead"><h2>ניהול</h2><span class="note">' +
+    "כל תוצאה נשמרת תוך כדי הקלדה. שורת המצב אומרת אם השמירה הצליחה.</span></div>";
   const sb = el("div", "notice savebar");
   sb.id = "saveStatus";
   bar.appendChild(sb);
-
   const row = el("div", "chips");
   const bNew = el("button", "btn", "＋ טורניר חדש");
   bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
   row.appendChild(bNew);
-  Object.values(LIVE).filter(t => SCOPE === "all" || t.season === SCOPE)
-    .sort((a, b) => b.i - a.i).forEach(t => {
-    const c = el("button", "chip", "טורניר " + t.num + (t.done ? " ✓" : " · בעיצומו"));
-    c.setAttribute("aria-pressed", String(liveId === t.i));
-    c.onclick = () => { draft = null; liveId = t.i; viewLive(root); };
-    row.appendChild(c);
-  });
   bar.appendChild(row);
-  root.appendChild(bar);
-  Store.paint();
-  root.appendChild(pushPanel());
-
-  if (draft) { root.appendChild(draftPanel()); return; }
-  if (open) { root.appendChild(livePanel(open)); return; }
-  root.appendChild(idlePanel());
+  box.appendChild(bar);
+  box.appendChild(pushPanel());
+  if (open) box.appendChild(livePanel(open, "manage"));
+  box.appendChild(idlePanel(!!open));
+  setTimeout(() => Store.paint(), 0);
+  return box;
 }
 
-function idlePanel() {
+/* hasOpen: the open tournament's panel already shows the club pool */
+function idlePanel(hasOpen) {
   const b = el("section", "block");
   b.innerHTML = '<div class="bhead"><h2>איך זה עובד</h2></div>';
   const g = el("div", "recs");
@@ -1014,14 +1053,14 @@ function idlePanel() {
   ].forEach(([k, v]) => g.appendChild(el("div", "rec", '<div class="lbl">' + esc(k) + '</div><div class="d" style="font-size:13.5px">' + esc(v) + "</div>")));
   b.appendChild(g);
   b.appendChild(seasonManager());
-  b.appendChild(clubManager());
+  if (!hasOpen) b.appendChild(clubManager());
   return b;
 }
 
 function startDraft(size) {
   const base = ORDER.slice(0, size);
   draft = { size, players: base.slice(), clubs: CLUB_POOL.slice(0, size), slots: null, blocked: null, relaxed: false };
-  go("live");
+  go("live:games");
 }
 
 function draftPanel() {
@@ -1256,15 +1295,22 @@ function runCeremony(host, slots, clubs, done) {
 }
 
 /* ---------- an open tournament ---------- */
-function livePanel(t) {
+/* The control room, cut into the four tabs of the new layout. Everything is
+   still built exactly as before; `pane` only decides what goes on screen, so
+   no behaviour changes — the fixtures, the table, the final and the admin
+   parts simply stop sharing one endless page. */
+function livePanel(t, pane) {
+  pane = pane || "games";
   const box = el("div", "view");
+  const add = (node, p) => { if (p === pane) box.appendChild(node); };
   const tplKey = t.rec.tpl, fixtures = TPL[tplKey];
   const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
 
-  const head = el("section", "block");
-  head.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
-    '</h2><span class="note" id="liveProgress">' +
-    filled + " מתוך " + t.m.length + " משחקים הוזנו" + (t.done ? " · הסתיים" : "") + "</span></div>";
+  /* the competition header over the fixtures, like a league strip */
+  const head = el("div", "leaguehead");
+  head.innerHTML = '<span class="lg-ico">🏆</span><span class="lg-name">טורניר ' + t.num + " · " +
+    esc(seasonById(t.season).name) + '</span><span class="lg-count" id="liveProgress">' +
+    filled + " מתוך " + t.m.length + " משחקים הוזנו" + (t.done ? " · הסתיים" : "") + "</span>";
   const actions = el("div", "chips");
 
   const bSave = el("button", "btn sm", "שמור הכל");
@@ -1313,8 +1359,13 @@ function livePanel(t) {
     flash("טורניר " + t.num + " נמחק.");
   };
   actions.appendChild(bDel);
-  head.appendChild(actions);
-  box.appendChild(head);
+  /* save / backup / delete live under ניהול, not above the fixtures */
+  const adm = el("section", "block");
+  adm.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
+    '</h2><span class="note">שמירה, גיבוי ומחיקה של הטורניר.</span></div>';
+  adm.appendChild(actions);
+  add(head, "games");
+  add(adm, "manage");
 
   /* squads */
   const sq = el("section", "block");
@@ -1340,7 +1391,7 @@ function livePanel(t) {
     tr.appendChild(td); sbody.appendChild(tr);
   });
   stb.appendChild(sbody); sbox.appendChild(stb); sq.appendChild(sbox);
-  box.appendChild(sq);
+  add(sq, "manage");
 
   /* live table */
   const st = el("section", "block");
@@ -1348,15 +1399,13 @@ function livePanel(t) {
   const stHost = el("div"); stHost.id = "liveStandings";
   stHost.appendChild(standingsTable(t));
   st.appendChild(stHost);
-  box.appendChild(st);
+  add(st, "table");
 
-  if (!filled) box.appendChild(forecastBlock(t));
-  if (filled) box.appendChild(timelineBlock(t));
+  if (pane === "table") add(filled ? timelineBlock(t) : forecastBlock(t), "table");
 
   /* fixtures with score entry */
   const mb = el("section", "block");
-  mb.innerHTML = '<div class="bhead"><h2>לוח משחקים</h2><span class="note">תבנית קבועה של ' + t.m.length +
-    " משחקים. כל תוצאה נשמרת תוך כדי הקלדה וניתנת לתיקון בכל רגע.</span></div>";
+  /* no heading: the league strip above says what this is */
   const mc = el("div", "panel matches");
   if (t.m.some(m => m[6] == null || m[7] == null)) mc.appendChild(oddsKey());
   t.m.forEach((m, idx) => {
@@ -1364,7 +1413,7 @@ function livePanel(t) {
     const fx = el("div", "fixture");
     fx.setAttribute("data-fx", t.i + "-" + idx);
     const row = el("div", "mrow");
-    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+    row.innerHTML = '<div class="mn">מחזור ' + (idx + 1) + "</div>" +
       '<div class="side"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>";
     const mid = el("div", "entry");
     const mkScore = which => {
@@ -1399,6 +1448,7 @@ function livePanel(t) {
       const filled = sc[0] != null && sc[1] != null;
       iA.classList.toggle("filled", filled);
       iH.classList.toggle("filled", filled);
+      fx.classList.toggle("played", filled);
       if (!filled) {
         const o = oddsRow((LIVE[t.i] || t).m[idx]);
         if (o) fx.appendChild(o);
@@ -1408,10 +1458,10 @@ function livePanel(t) {
       d.setAttribute("data-t", String(t.i));
       const pend = !!Store.dirty[t.i];
       d.innerHTML = '<span class="ok' + (pend ? " pend" : "") + '">' +
-        (pend ? "⏳ ממתין לענן" : "✓ נשמר בענן") + "</span>" +
-        '<span class="grow">אפשר לתקן בכל רגע — שנה את המספר, או נקה כדי להחזיר את המשחק לרשימת הצפויים.</span>';
+        (pend ? "⏳ ממתין לענן" : "✓ נשמר בענן") + "</span>";
 
-      const clr = el("button", "btn ghost sm", "נקה תוצאה");
+      const clr = el("button", "btn ghost sm", "נקה");
+      clr.title = "נקה את התוצאה — המשחק יחזור לרשימת הצפויים";
       clr.onclick = () => { iA.value = ""; iH.value = ""; onType(); heavy(); };
       d.appendChild(clr);
       fx.appendChild(d);
@@ -1513,12 +1563,13 @@ function livePanel(t) {
     row.appendChild(mid);
     row.insertAdjacentHTML("beforeend",
       '<div class="side away"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>");
+    tapToOpen(row, t.i, idx);            // tap a pair to open the match page
     fx.appendChild(row);
     stateLine();
     mc.appendChild(fx);
   });
   mb.appendChild(mc);
-  box.appendChild(mb);
+  add(mb, "games");
 
   /* the final */
   const fb = el("section", "block");
@@ -1526,8 +1577,8 @@ function livePanel(t) {
   const fHost = el("div"); fHost.id = "liveFinal";
   renderFinal(t, fHost);
   fb.appendChild(fHost);
-  box.appendChild(fb);
-  box.appendChild(clubManager());
+  add(fb, "final");
+  if (pane === "manage") add(clubManager(), "manage");
 
   setTimeout(() => step("gravity", () => paintGravity(LIVE[t.i] || t)), 90);
 

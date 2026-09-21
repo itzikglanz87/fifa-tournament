@@ -1,7 +1,8 @@
-
 <div dir="rtl">
-  <header class="rail">
-    <div class="wrap rail-in">
+  <!-- The layout of a scores app: a slim top bar with the current section's
+       tabs under it, one screen at a time, and four sections at the bottom. -->
+  <header class="appbar">
+    <div class="wrap appbar-in">
       <div class="mark">
         <div class="glyph">51</div>
         <div>
@@ -10,13 +11,9 @@
         </div>
       </div>
       <div class="seasonbar" id="seasonPick"></div>
-      <div class="reign" id="reign"></div>
     </div>
+    <nav class="subtabs" aria-label="לשוניות"><div class="wrap subtabs-in" id="subtabs" role="tablist"></div></nav>
   </header>
-
-  <nav class="tabbar" aria-label="ניווט ראשי">
-    <div class="wrap tabbar-in" id="tabs" role="tablist"></div>
-  </nav>
 
   <main class="wrap">
     <div class="view" id="v-live" hidden></div>
@@ -30,6 +27,8 @@
   </main>
 
   <div class="wrap"><footer id="foot"></footer></div>
+
+  <nav class="bottomnav" aria-label="ניווט ראשי"><div class="bottomnav-in" id="tabs" role="tablist"></div></nav>
 </div>
 
 <script id="seed" type="application/json">__DATA__</script>

@@ -748,6 +748,184 @@ footer{border-top:1px solid var(--line); padding-block:22px 6px; color:var(--mut
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
 
+/* ==========================================================================
+   THE SCORES-APP LOOK — layered over everything above
+   --------------------------------------------------------------------------
+   A quiet dark surface, rounded cards, one blue accent for "selected", grey
+   pills for secondary numbers, and plain sans-serif type. Gold stays only
+   where it means something: trophies and champions.
+   ========================================================================== */
+:root{
+  --pitch:#0E1218; --panel:#1B2129; --panel2:#222931; --panel3:#2A313A;
+  --line:#12171D; --line2:#2E3640;
+  --ink:#FFFFFF; --ink2:#AAB3BF; --muted:#7D8896;
+  --blue:#3D7EF5; --blue-dim:#1E3A6B;
+  --cut:0px; --r:14px;
+}
+body{background:var(--pitch); font-family:"Heebo","Segoe UI",system-ui,sans-serif}
+h1,h2,h3,.disp,.bhead h2,.stat .v{font-family:"Heebo","Segoe UI",system-ui,sans-serif}
+.bhead h2{font-size:17px; font-weight:700; letter-spacing:0}
+.bhead .note{color:var(--muted)}
+.lbl{letter-spacing:.04em; font-weight:600}
+
+/* ---------- top bar ---------- */
+.appbar{position:sticky; top:0; z-index:50; background:#151B22; box-shadow:0 1px 0 #0B0F14}
+.appbar-in{display:flex; align-items:center; justify-content:space-between; gap:12px; padding-block:10px 6px}
+.appbar .mark{display:flex; align-items:center; gap:10px}
+.appbar .mark .glyph{width:34px; height:34px; font-size:15px}
+.appbar .mark h1{font-size:18px; font-weight:800}
+.appbar .mark .sub{font-size:11px; letter-spacing:.02em; color:var(--muted); font-weight:500; margin-top:1px}
+.appbar .seasonbar .lbl{display:none}
+.appbar .seasonbar select{background:var(--panel2); border:0; border-radius:999px; padding:7px 14px;
+  font-size:13px; font-weight:600; color:var(--ink)}
+
+/* ---------- the current section's tabs ---------- */
+.subtabs{background:#151B22}
+.subtabs-in{display:flex; overflow-x:auto; scrollbar-width:none}
+.subtabs-in::-webkit-scrollbar{display:none}
+.stab{flex:1 0 auto; padding:11px 16px 10px; font-size:16px; font-weight:600; color:var(--muted);
+  border-bottom:3px solid transparent; white-space:nowrap; transition:color .15s, border-color .15s}
+.stab[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--blue)}
+
+/* ---------- one screen at a time ---------- */
+main{padding-block:16px calc(92px + env(safe-area-inset-bottom))}
+.view{gap:18px}
+footer{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+
+/* ---------- the four sections ---------- */
+.bottomnav{position:fixed; bottom:0; inset-inline:0; z-index:60; background:#1A2027;
+  border-top:1px solid #232A33; padding-bottom:env(safe-area-inset-bottom)}
+.bottomnav-in{display:grid; grid-template-columns:repeat(4,1fr); max-width:680px; margin-inline:auto}
+.navbtn{display:flex; flex-direction:column; align-items:center; gap:4px; padding:9px 0 8px;
+  color:#8A94A3; font-size:12px; font-weight:500}
+.navbtn .ico{position:relative; height:26px; display:grid; place-items:center}
+.navbtn svg{width:25px; height:25px; fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round}
+.navbtn .ico-score{font-size:19px; font-weight:800; letter-spacing:.02em; direction:ltr}
+.navbtn[aria-selected="true"]{color:var(--ink)}
+.navbtn[aria-selected="true"] .nl{font-weight:800}
+.navbtn .badge{position:absolute; top:-5px; inset-inline-end:-12px; min-width:17px; height:17px; padding:0 5px;
+  border-radius:999px; background:var(--blue); color:#fff; font-size:10.5px; font-weight:800;
+  display:grid; place-items:center; line-height:1}
+
+/* ---------- surfaces: rounded, no cut corners ---------- */
+.panel,.tscroll,.rec,.notice,.stat,.chart-card,.award,.rivside,.modalcard,.peakcard,.tlmatch,.meet,.fcverdict{
+  border-radius:var(--r); clip-path:none}
+.tscroll{border:0; background:var(--panel)}
+.strip4{border-radius:var(--r); overflow:hidden; background:var(--line)}
+.rec{background:var(--panel); border:0}
+.panel{border:0}
+.notice{border:0}
+
+/* ---------- buttons, chips, pills ---------- */
+.btn{background:var(--blue); color:#fff; border-radius:999px; clip-path:none; font-weight:700}
+.btn:hover{filter:brightness(1.12)}
+.btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line2)}
+.btn.ghost:hover{border-color:var(--blue); color:#fff}
+.chip{border-radius:999px; clip-path:none}
+.chip[aria-pressed="true"]{background:var(--blue); color:#fff; border-color:var(--blue)}
+
+/* ---------- tournament picker, like a date strip ---------- */
+.picker{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px}
+.picker::-webkit-scrollbar{display:none}
+.pick{flex:none; padding:7px 15px; border-radius:999px; background:var(--panel); color:var(--ink2);
+  font-size:13.5px; font-weight:600}
+.pick[aria-pressed="true"]{background:var(--blue); color:#fff}
+
+/* ---------- tables, 365 style ---------- */
+table th{color:var(--muted); font-weight:600; background:transparent}
+table tbody tr{border-top:2px solid var(--line)}
+table tbody tr:hover{background:var(--panel2)}
+
+/* ---------- the latest champions, at the top of the summary ---------- */
+.reigncard{background:linear-gradient(180deg,#1E1A0E,#16140D); border-radius:var(--r); padding:14px 16px}
+.reigncard .lbl{color:var(--gold)}
+.reigncard .row{display:flex; gap:22px; margin-top:10px; flex-wrap:wrap}
+.reigncard .champ{display:flex; flex-direction:column; gap:4px}
+.block.empty{background:var(--panel); border-radius:var(--r); padding:18px}
+
+/* ---------- the league strip over the fixtures ---------- */
+.leaguehead{display:flex; align-items:center; gap:10px; background:var(--panel); border-radius:var(--r) var(--r) 0 0;
+  padding:12px 16px; margin-bottom:-18px; font-weight:700; font-size:15px}
+.leaguehead .lg-ico{font-size:17px}
+.leaguehead .lg-name{flex:1}
+.leaguehead .lg-count{font-size:12.5px; font-weight:500; color:var(--muted)}
+#v-live .leaguehead + section.block .panel.matches{border-top-left-radius:0; border-top-right-radius:0}
+
+/* ---------- match cards ---------- */
+.panel.matches{background:var(--panel); overflow:hidden}
+.panel.matches .oddskey{display:none}                  /* 1 · X · 2 says it */
+.fixture{position:relative; border-bottom:2px solid var(--line); background:none !important; padding-top:24px}
+.fixture .mrow{grid-template-columns:1fr auto 1fr; gap:10px; padding:4px 16px 10px}
+.fixture .mrow .mn{position:absolute; top:7px; inset-inline:0; text-align:center; font-size:12px;
+  font-weight:500; color:var(--muted)}
+.fixture.played .mrow .mn::after{content:" · הסתיים"}
+.side .duo{flex-direction:column; gap:6px}
+.side .plate{font-size:15px; font-weight:600}
+.side.tap{cursor:pointer; border-radius:10px}
+.side.tap:active{background:var(--panel2)}
+.entry{gap:6px}
+.entry input{width:46px; height:44px; border:0; border-radius:10px; background:var(--pitch);
+  color:var(--ink); font-size:24px; font-weight:300; text-align:center}
+.entry input.filled{background:transparent; border:0; font-weight:400}
+.entry .mut{font-size:20px; font-weight:300}
+.rowsave{width:32px; height:32px; border-radius:50%; background:var(--panel2); border:0; font-size:13px}
+.rowsave:hover{color:#fff; background:var(--blue)}
+.score{font-family:"Heebo",sans-serif; font-size:26px; font-weight:300; background:none; border:0; padding:0 6px}
+.side.fade{opacity:.55}
+
+/* 1 · X · 2 pills instead of the coloured bar */
+.odds{padding:0 16px 14px}
+.odds .cap{display:none}
+.oddsbar{display:flex; gap:10px; height:auto; background:none}
+.oddsbar i{flex:1 !important; height:34px; border-radius:999px; background:var(--pitch) !important;
+  color:var(--ink) !important; font-size:14px; font-weight:500; font-style:normal; direction:ltr}
+.oddsbar .oh::before{content:"1 · "; color:var(--muted)}
+.oddsbar .od::before{content:"X · "; color:var(--muted)}
+.oddsbar .oa::before{content:"2 · "; color:var(--muted)}
+
+/* saved + clear, quietly */
+.doneline{justify-content:center; padding:0 16px 12px; gap:12px}
+.doneline .ok{font-weight:600; font-size:12px}
+.doneline .grow{display:none}
+.doneline .btn.sm{padding:4px 12px; font-size:12px}
+.gravity{border-top:0; border-radius:10px; margin:0 12px 12px; width:auto}
+
+/* ---------- the match page ---------- */
+.mpage{position:fixed; inset:0; z-index:90; background:var(--pitch); overflow-y:auto;
+  padding-bottom:env(safe-area-inset-bottom)}
+.mp-top{display:grid; grid-template-columns:44px 1fr 44px; align-items:center; padding:10px 8px 0;
+  background:linear-gradient(180deg,#1D2A3E 0%,#141C28 100%)}
+.mp-title{text-align:center; font-size:14px; font-weight:600; line-height:1.4}
+.mp-back{font-size:24px; color:var(--ink); height:44px}
+.mp-teams{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; padding:18px 14px 20px;
+  background:linear-gradient(180deg,#141C28 0%,#101620 100%)}
+.mp-side{display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center}
+.mp-faces{display:flex; gap:6px}
+.mp-face{display:inline-flex}
+.mp-face .pface{width:46px; height:46px}
+.mp-face .dot{width:30px; height:30px; border-radius:50%}
+.mp-names{font-weight:700; font-size:15px}
+.mp-mid{text-align:center}
+.mp-score{font-size:40px; font-weight:400; letter-spacing:.02em}
+.mp-tabs{display:flex; background:#101620; border-bottom:1px solid #1C2530; position:sticky; top:0; z-index:2}
+.mp-tabs .stab{flex:1}
+.mp-body{padding:16px; display:flex; flex-direction:column; gap:12px; max-width:760px; margin-inline:auto}
+.mp-pills{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+.mp-pill{display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 6px; border-radius:var(--r);
+  background:var(--panel); font-size:22px; font-weight:400}
+.mp-pill b{font-size:12px; color:var(--muted); font-weight:700}
+.mp-pill small{font-size:11.5px; color:var(--muted); text-align:center}
+.mp-why{padding:14px 16px; font-size:13px; line-height:1.7}
+.mp-why .th{font-weight:700; margin-bottom:6px}
+.mp-why table{margin:6px 0 10px}
+.mp-why .hint{color:var(--ink2)}
+.mp-list{overflow:hidden}
+.mp-row{display:flex; justify-content:space-between; padding:11px 16px; border-bottom:2px solid var(--line); font-size:14px}
+.mp-row:last-child{border-bottom:0}
+.mp-row.w .ltr{color:var(--pos)} .mp-row.l .ltr{color:var(--neg)}
+tr.hl{background:#1E2A3C !important; box-shadow:inset -3px 0 0 var(--blue)}
+
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
 body{min-height:100svh;
@@ -763,10 +941,11 @@ body{min-height:100svh;
 </head>
 <body>
 
-
 <div dir="rtl">
-  <header class="rail">
-    <div class="wrap rail-in">
+  <!-- The layout of a scores app: a slim top bar with the current section's
+       tabs under it, one screen at a time, and four sections at the bottom. -->
+  <header class="appbar">
+    <div class="wrap appbar-in">
       <div class="mark">
         <div class="glyph">51</div>
         <div>
@@ -775,13 +954,9 @@ body{min-height:100svh;
         </div>
       </div>
       <div class="seasonbar" id="seasonPick"></div>
-      <div class="reign" id="reign"></div>
     </div>
+    <nav class="subtabs" aria-label="לשוניות"><div class="wrap subtabs-in" id="subtabs" role="tablist"></div></nav>
   </header>
-
-  <nav class="tabbar" aria-label="ניווט ראשי">
-    <div class="wrap tabbar-in" id="tabs" role="tablist"></div>
-  </nav>
 
   <main class="wrap">
     <div class="view" id="v-live" hidden></div>
@@ -795,6 +970,8 @@ body{min-height:100svh;
   </main>
 
   <div class="wrap"><footer id="foot"></footer></div>
+
+  <nav class="bottomnav" aria-label="ניווט ראשי"><div class="bottomnav-in" id="tabs" role="tablist"></div></nav>
 </div>
 
 <script id="seed" type="application/json">{"P":["נדב","יקיר","מיקי","דביר","רועי","איציק"],"C":["באיירן","ברצלונה","פסז","ליברפול","ריאל","סיטי","ארסנל","אתלטיקו","צרפת","פורטוגל","ברזיל","אנגליה","ספרד","ארגנטינה","גרמניה"],"T":[{"i":1,"d":[[4,0],[3,1],[1,2],[0,3],[5,4],[2,5]],"t":[5,1,0,3,4,2],"m":[[4,3,0,0,1,3,2,4],[5,2,4,1,4,2,1,1],[4,0,0,5,3,4,2,2],[3,0,1,2,1,5,3,1],[2,4,5,1,5,2,2,3],[3,2,1,0,5,3,4,5],[1,0,2,3,4,1,3,4],[4,1,0,2,5,5,3,3],[3,5,1,0,4,3,3,3],[1,2,2,0,3,3,2,0],[5,1,4,4,2,0,4,1],[5,0,4,2,3,5,2,2]],"c":[1,5]},{"i":2,"d":[[4,0],[2,5],[0,2],[5,1],[3,3],[1,4]],"t":[3,0,4,5,1,2],"m":[[4,2,0,5,0,1,3,2],[3,1,3,0,4,2,1,1],[4,5,0,3,2,3,4,2],[2,5,5,1,0,4,3,5],[1,4,4,0,3,2,5,7],[2,1,5,5,3,1,1,5],[0,5,2,2,4,5,2,3],[4,0,0,1,3,4,0,2],[2,3,5,5,4,1,2,3],[0,1,2,5,2,1,4,2],[3,0,3,4,1,0,4,2],[3,5,3,1,2,4,3,1]],"c":[0,3]},{"i":3,"d":[[2,5],[0,4],[5,6],[3,3],[4,0]],"t":[4,3,0,2,5],"m":[[2,0,5,5,3,6,2,2],[0,5,4,2,4,0,0,1],[5,4,6,3,0,3,0,2],[2,5,5,3,4,3,1,3],[0,4,4,2,3,5,4,2],[5,3,3,2,0,4,2,2],[2,4,5,0,5,6,3,3],[3,0,4,5,4,0,3,5],[3,4,0,2,5,6,4,1],[2,3,3,0,4,0,2,2]],"c":[0,2]},{"i":4,"d":[[5,1],[3,4],[0,3],[1,2],[4,0]],"t":[3,0,5,1,4],"m":[[5,3,1,0,1,3,3,0],[3,0,4,5,4,0,3,0],[0,4,3,1,3,2,3,3],[5,0,1,1,4,2,3,3],[3,4,4,5,1,1,2,4],[0,1,2,5,3,4,0,1],[5,4,1,3,0,3,2,5],[1,3,4,0,4,0,1,2],[1,4,0,5,0,3,0,0],[5,1,2,3,4,0,3,3]],"c":[1,5]},{"i":5,"d":[[0,0],[5,4],[4,2],[3,1],[1,3]],"t":[5,3,0,1,4],"m":[[0,5,0,4,3,2,5,3],[5,4,4,0,1,3,3,1],[4,1,2,3,5,1,2,5],[0,4,0,3,1,1,0,2],[5,1,4,0,3,0,5,2],[4,3,1,0,5,4,2,5],[0,1,0,5,4,2,4,4],[3,5,4,4,1,3,3,0],[3,1,3,0,4,2,4,4],[0,3,1,5,1,3,0,0]],"c":[3,5]},{"i":6,"d":[[2,4],[5,2],[3,0],[0,1],[4,6],[1,3]],"t":[3,4,0,1,2,5],"m":[[2,5,4,0,3,1,1,2],[4,1,6,3,2,0,3,1],[2,0,4,4,5,6,3,1],[5,0,2,1,3,3,2,3],[1,2,3,3,4,0,0,1],[5,1,2,0,4,1,2,3],[3,0,0,5,2,2,3,3],[2,3,4,1,4,3,3,0],[5,4,2,0,2,1,4,3],[3,1,0,0,5,1,5,2],[4,3,6,2,1,4,1,0],[4,0,6,1,5,3,0,0]],"c":[0,1]},{"i":7,"d":[[0,4],[5,1],[2,5],[1,0],[4,3],[3,2]],"t":[0,5,1,3,2,4],"m":[[0,5,4,1,2,0,4,2],[4,3,3,2,0,5,1,6],[0,1,4,4,5,3,2,1],[5,1,1,3,2,2,4,0],[3,0,2,2,4,5,2,1],[5,3,1,1,4,0,2,2],[2,1,5,5,0,1,1,3],[0,2,4,3,4,2,3,1],[5,4,1,1,0,0,0,2],[2,3,5,1,5,0,1,1],[4,2,3,0,3,4,1,1],[4,1,3,3,5,2,3,4]],"c":[1,3]},{"i":8,"d":[[0,1],[4,4],[1,3],[2,5],[5,2]],"t":[1,0,2,4,5],"m":[[0,4,1,1,2,3,1,3],[4,1,4,0,5,2,5,2],[1,5,3,2,4,5,2,0],[0,1,1,2,5,5,1,2],[4,5,4,0,2,1,1,3],[1,2,5,0,4,4,1,4],[0,5,1,4,1,3,0,3],[2,4,4,1,5,2,0,2],[2,5,2,0,1,3,3,5],[0,2,5,4,5,2,4,2]],"c":[0,1]},{"i":9,"d":[[0,2],[1,1],[5,4],[2,3],[4,5]],"t":[0,2,4,1,5],"m":[[0,1,2,5,2,4,4,3],[1,5,1,0,4,5,1,2],[5,4,4,2,1,3,2,2],[0,5,2,2,4,3,1,2],[1,4,1,0,2,2,3,4],[5,2,3,0,1,1,3,3],[0,4,2,1,5,4,3,1],[2,1,1,5,4,5,3,2],[2,4,5,0,5,4,1,1],[0,2,3,1,4,5,3,2]],"c":[0,2]},{"i":10,"d":[[4,5],[0,0],[3,1],[1,2],[5,4],[2,3]],"t":[3,1,5,2,4,0],"m":[[4,0,5,1,3,2,2,2],[5,2,4,3,4,1,1,2],[4,1,5,5,0,4,4,4],[0,1,0,2,3,3,1,2],[2,4,3,3,5,1,1,3],[0,2,0,1,5,2,2,2],[3,1,1,0,4,0,4,1],[4,3,5,2,5,3,0,2],[0,5,0,1,4,2,2,3],[3,2,1,1,0,2,1,1],[5,3,4,4,2,5,1,2],[5,1,4,2,0,3,4,1]],"c":[1,3]},{"i":11,"d":[[0,3],[5,0],[1,1],[4,2],[2,5],[3,4]],"t":[3,1,4,0,2,5],"m":[[0,5,3,4,1,2,1,3],[2,3,5,1,0,1,4,3],[0,4,3,2,5,5,4,2],[5,4,0,3,1,4,1,2],[3,0,4,1,2,1,1,2],[5,3,0,4,2,2,2,2],[1,4,1,5,0,0,4,0],[0,1,3,3,2,4,1,1],[5,2,0,4,0,2,0,6],[1,3,1,4,5,2,2,1],[2,1,5,0,3,3,1,3],[2,4,5,3,5,4,3,4]],"c":[0,4]},{"i":12,"d":[[5,5],[4,3],[1,2],[2,1],[0,4]],"t":[0,2,1,5,4],"m":[[5,4,5,1,2,2,1,1],[4,1,3,5,0,4,1,4],[1,0,2,2,4,1,3,0],[5,1,5,2,0,1,4,1],[4,0,3,5,2,5,4,4],[1,2,1,5,4,3,5,1],[5,0,5,4,1,2,3,3],[2,4,3,1,0,4,4,3],[2,0,4,5,1,2,3,0],[5,2,1,4,0,4,2,2]],"c":[1,5]},{"i":13,"d":[[1,4],[4,1],[5,3],[0,5],[3,6],[2,2]],"t":[1,4,2,0,5,3],"m":[[1,4,4,0,5,5,2,1],[3,2,6,5,1,3,3,3],[1,0,4,3,4,6,6,2],[4,0,1,2,5,2,4,0],[2,1,2,5,3,3,3,3],[4,2,1,0,3,5,3,2],[5,0,3,4,1,1,1,3],[1,5,4,2,3,2,4,2],[4,3,1,0,1,5,0,3],[5,2,3,0,4,5,3,1],[3,5,6,1,2,4,0,3],[3,0,6,2,4,2,0,0]],"c":[1,4]},{"i":14,"d":[[1,0],[3,3],[4,4],[5,5],[0,2],[2,1]],"t":[0,3,2,5,4,1],"m":[[1,3,0,5,4,5,3,1],[0,2,2,4,1,4,2,1],[1,5,0,0,3,2,2,3],[3,5,3,2,4,1,3,2],[2,1,1,4,0,4,3,2],[3,2,3,5,0,5,2,2],[4,5,4,3,1,3,2,1],[1,4,0,2,0,1,2,2],[3,0,3,5,1,5,3,1],[4,2,4,5,3,5,4,1],[0,4,2,1,2,0,2,2],[0,5,2,2,3,1,4,3]],"c":[0,3]},{"i":15,"d":[[1,1],[2,4],[3,5],[4,0],[5,2],[0,3]],"t":[0,2,1,3,4,5],"m":[[1,2,1,4,3,0,3,1],[5,0,2,3,1,5,3,2],[1,4,1,5,2,2,5,2],[2,4,4,0,3,3,3,0],[0,1,3,3,5,5,2,1],[2,0,4,4,5,0,5,1],[3,4,5,2,1,4,3,1],[1,3,1,0,5,3,3,1],[2,5,4,4,1,0,4,0],[3,0,5,4,2,0,2,1],[5,3,2,1,0,1,2,3],[5,4,2,0,2,3,1,3]],"c":[1,3]},{"i":16,"d":[[0,1],[3,2],[4,3],[5,4],[2,5]],"t":[0,4,2,5,3],"m":[[0,3,1,4,5,3,3,3],[3,4,2,0,2,5,0,2],[4,2,3,5,3,4,2,1],[0,4,1,5,2,4,2,1],[3,2,2,0,5,1,1,4],[4,5,4,0,3,2,2,2],[0,2,1,3,4,3,3,3],[5,3,2,4,2,5,1,1],[5,2,5,0,4,3,2,5],[0,5,4,3,2,5,2,2]],"c":[0,4]},{"i":17,"d":[[3,2],[0,4],[2,0],[5,1],[1,5],[4,3]],"t":[0,2,4,1,3,5],"m":[[3,0,2,5,2,1,2,0],[1,4,5,2,3,0,3,1],[3,5,2,1,0,5,2,1],[0,5,4,4,2,3,1,2],[4,3,3,2,1,0,3,3],[0,4,4,5,1,1,2,0],[2,5,0,0,3,4,3,1],[3,2,2,4,1,3,3,0],[0,1,4,5,3,1,4,1],[2,4,0,5,0,1,1,4],[1,2,5,3,4,2,3,1],[1,5,5,4,0,3,2,3]],"c":[0,2]},{"i":18,"d":[[0,0],[5,4],[3,1],[4,5],[2,3],[1,2]],"t":[1,3,4,2,0,5],"m":[[0,5,0,4,3,5,1,1],[2,1,3,3,0,1,1,1],[0,4,0,2,5,3,2,2],[5,4,4,1,3,2,0,2],[1,0,2,3,2,1,1,1],[5,1,4,4,2,5,3,1],[3,4,1,5,0,4,2,1],[0,3,0,1,2,2,3,6],[5,2,4,4,0,5,3,4],[3,1,1,4,5,5,4,1],[2,3,3,0,1,0,3,3],[2,4,3,1,5,2,2,1]],"c":[1,3]},{"i":19,"d":[[0,3],[4,2],[5,0],[3,4],[1,1],[2,5]],"t":[3,1,0,4,2,5],"m":[[0,4,3,3,5,4,4,1],[1,2,1,5,0,0,1,0],[0,3,3,1,4,1,1,0],[4,3,2,2,5,5,5,1],[2,0,5,5,1,0,1,0],[4,2,2,3,1,4,1,3],[5,3,0,4,0,2,2,3],[0,5,3,2,1,5,0,4],[4,1,2,3,0,4,2,2],[5,2,0,3,4,4,2,3],[1,5,1,0,2,3,3,3],[1,3,1,2,4,5,4,2]],"c":[1,3]},{"i":20,"d":[[2,2],[0,5],[5,3],[4,1],[1,4],[3,0]],"t":[3,2,0,5,1,4],"m":[[2,0,2,1,3,0,1,1],[2,5,3,0,4,5,4,2],[1,3,4,5,4,1,6,1],[2,1,2,0,3,0,1,1],[5,1,3,4,3,1,5,2],[0,5,5,2,4,2,2,2],[2,3,0,0,1,4,2,1],[4,1,4,5,3,3,2,4],[5,4,1,2,0,5,1,4],[0,3,0,2,1,4,1,1],[0,4,5,2,5,2,6,2],[4,3,1,5,1,3,2,1]],"c":[0,5]},{"i":21,"d":[[3,5],[0,1],[2,3],[1,4],[4,2]],"t":[0,4,1,2,3],"m":[[2,0,1,1,4,2,3,0],[4,2,3,3,1,4,1,1],[1,0,4,3,4,5,4,0],[2,3,5,0,4,1,0,2],[0,3,1,2,1,3,1,1],[4,2,3,0,1,4,2,2],[4,1,2,3,2,5,2,1],[1,3,5,0,4,2,3,4],[4,3,2,0,2,1,2,2],[1,0,4,3,2,3,0,0]],"c":[1,2]},{"i":22,"d":[[3,3],[0,2],[2,1],[4,4],[1,0],[5,5]],"t":[3,1,0,4,2,5],"m":[[3,0,3,1,5,5,3,1],[3,2,1,0,4,2,1,0],[1,5,0,2,4,4,1,1],[3,1,3,0,5,5,3,1],[2,1,1,4,5,4,3,1],[0,2,2,3,4,3,1,6],[3,5,5,0,1,0,1,2],[4,1,0,2,5,1,2,2],[2,4,4,3,0,2,2,2],[0,5,5,3,1,0,2,2],[0,4,2,3,2,3,4,2],[4,5,4,2,1,1,2,2]],"c":[0,4]},{"i":23,"d":[[0,2],[1,5],[2,1],[4,4],[3,3]],"t":[2,4,1,0,3],"m":[[0,1,2,2,4,1,2,2],[1,2,5,0,3,3,1,1],[2,3,1,4,1,4,2,3],[0,2,2,4,3,4,0,2],[1,3,5,0,4,2,2,4],[2,4,4,0,1,5,4,2],[0,3,2,1,2,1,0,5],[4,1,5,2,3,3,1,5],[4,3,3,0,2,1,0,2],[0,4,4,1,3,3,3,3]],"c":[0,1]},{"i":24,"d":[[4,5],[1,3],[3,1],[0,4],[2,2]],"t":[0,3,4,2,1],"m":[[4,1,5,3,0,1,2,3],[1,3,3,4,2,2,1,2],[3,2,1,0,1,4,2,4],[4,3,5,0,2,4,2,2],[1,2,3,4,0,5,3,4],[3,0,4,4,1,3,4,3],[4,2,5,1,3,1,0,2],[0,1,3,3,2,2,0,2],[0,2,2,4,3,1,3,3],[4,0,4,1,2,2,1,1]],"c":[0,3]},{"i":25,"d":[[5,2],[2,4],[4,5],[0,1],[1,3],[3,0]],"t":[2,3,5,0,4,1],"m":[[5,2,2,1,3,0,4,3],[5,4,5,2,0,4,3,1],[1,3,3,4,0,1,2,2],[5,1,2,2,3,0,0,6],[4,1,5,0,3,1,1,3],[2,4,4,5,0,2,0,4],[5,3,0,2,1,3,1,5],[0,1,3,4,3,5,1,1],[4,0,1,5,2,4,2,4],[2,3,0,5,1,3,5,2],[2,0,4,5,4,2,0,0],[0,3,1,4,1,5,2,1]],"c":[2,3]},{"i":26,"d":[[4,1],[3,4],[2,3],[5,0],[0,2]],"t":[2,5,4,0,3],"m":[[4,3,1,2,5,3,2,5],[3,2,4,4,0,2,1,2],[2,0,3,5,3,0,9,4],[4,2,1,5,0,0,2,1],[3,0,4,4,5,1,1,4],[2,5,0,4,3,4,2,0],[4,0,1,3,2,3,1,2],[5,3,4,2,0,2,1,0],[5,0,2,4,2,3,3,3],[4,5,0,3,0,2,0,0]],"c":[2,5]},{"i":27,"d":[[0,4],[4,3],[3,2],[5,1],[2,5],[1,0]],"t":[2,0,1,5,3,4],"m":[[0,4,4,2,1,0,0,2],[0,3,2,4,5,3,3,6],[2,1,5,3,5,1,3,2],[0,2,4,4,1,0,3,0],[3,2,2,5,1,1,1,3],[4,3,3,0,5,4,1,3],[0,1,0,4,2,5,4,4],[5,2,5,3,1,2,4,5],[3,5,1,0,4,3,1,3],[4,1,0,0,2,5,2,3],[4,5,3,0,3,4,2,4],[5,1,1,3,2,2,2,4]],"c":[0,2]},{"i":28,"d":[[5,4],[2,3],[1,2],[3,1],[0,0],[4,5]],"t":[2,0,1,4,3,5],"m":[[5,2,4,0,4,5,2,5],[5,1,2,2,3,3,3,5],[0,4,0,1,3,1,1,1],[5,0,4,2,4,5,1,3],[1,0,2,3,4,1,0,0],[2,1,3,5,3,4,6,3],[5,4,5,2,0,0,3,4],[3,0,0,1,4,2,1,3],[1,3,1,5,2,3,2,4],[2,4,5,5,0,0,2,3],[2,3,3,5,1,4,5,3],[3,4,1,1,0,2,1,4]],"c":[0,2]},{"i":29,"d":[[4,2],[0,4],[5,3],[3,0],[2,1]],"t":[5,2,4,0,3],"m":[[4,0,2,5,3,3,3,2],[0,5,4,4,2,1,2,2],[5,2,3,3,0,0,3,2],[4,5,2,3,2,0,3,2],[0,2,4,4,3,2,2,1],[5,3,0,4,0,4,1,1],[4,2,2,0,5,3,1,1],[3,0,4,5,2,1,3,4],[3,2,1,4,5,3,0,0],[4,3,0,0,2,1,0,0]],"c":[2,5]},{"i":30,"d":[[3,4],[0,3],[4,2],[1,1],[5,0],[2,6]],"t":[0,4,5,3,2,1],"m":[[3,1,1,0,4,2,2,3],[0,1,3,5,2,6,4,1],[4,2,2,3,0,4,1,5],[1,5,1,3,4,2,2,3],[3,2,6,0,5,3,2,4],[4,1,2,5,2,0,2,2],[0,2,6,3,1,4,4,2],[4,5,0,3,0,3,2,2],[0,4,3,1,2,1,3,2],[3,2,4,1,5,0,1,1],[0,5,0,4,1,1,4,2],[3,5,4,4,2,6,1,4]],"c":[0,4]},{"i":31,"d":[[0,0],[4,1],[1,4],[5,3],[2,2],[3,7]],"t":[1,4,0,3,5,2],"m":[[0,5,3,4,1,4,1,5],[4,5,1,2,3,7,4,1],[1,3,4,0,4,0,2,2],[5,2,3,0,1,4,1,3],[0,3,7,4,2,1,5,1],[1,5,4,2,3,2,2,5],[4,3,7,0,5,0,4,4],[1,2,2,0,4,1,1,1],[4,1,1,5,3,3,3,0],[0,3,0,5,2,2,2,2],[4,2,2,1,5,3,2,4],[0,2,0,1,3,7,0,0]],"c":[1,4]},{"i":32,"d":[[3,3],[2,1],[0,2],[4,4],[1,5],[5,0]],"t":[2,0,1,5,3,4],"m":[[3,4,4,2,0,2,2,6],[2,4,1,1,5,0,3,1],[0,5,2,3,2,3,4,1],[4,1,4,3,0,2,2,3],[3,5,0,2,1,1,3,7],[0,4,2,1,5,5,3,3],[2,5,0,3,4,3,4,2],[0,1,5,3,2,1,3,1],[2,0,1,4,5,4,6,2],[3,5,3,4,1,5,4,2],[2,1,5,0,4,4,3,0],[3,1,3,0,5,0,0,0]],"c":[0,2]},{"i":33,"d":[[0,1],[4,5],[5,2],[2,4],[1,3],[3,0]],"t":[5,1,0,2,4,3],"m":[[0,2,4,4,5,2,3,4],[4,2,5,1,3,0,0,1],[5,3,2,0,4,1,4,3],[2,1,4,0,5,2,2,2],[0,3,0,4,1,5,0,1],[5,2,2,1,3,3,1,0],[4,3,0,0,2,1,1,3],[5,1,3,0,4,5,2,1],[4,5,5,2,3,4,3,2],[0,3,1,2,1,3,4,1],[4,1,3,5,2,4,0,1],[0,1,1,5,3,0,4,1]],"c":[1,5]},{"i":34,"d":[[2,5],[5,1],[3,2],[0,4],[4,3],[1,0]],"t":[3,0,1,2,5,4],"m":[[2,0,4,5,3,2,0,2],[5,0,1,4,1,0,2,0],[3,1,2,2,5,5,6,2],[0,4,4,2,3,2,0,2],[2,1,0,5,4,1,5,3],[3,0,2,4,1,3,5,3],[5,1,0,2,0,5,1,3],[3,4,3,2,5,1,2,1],[5,3,1,0,1,4,2,2],[2,1,5,0,4,3,2,3],[5,4,3,3,0,4,2,4],[2,4,5,3,1,0,1,4]],"c":[0,3]},{"i":35,"d":[[4,0],[3,1],[0,5],[1,2],[2,3],[5,4]],"t":[1,3,4,0,2,5],"m":[[4,1,2,3,0,5,3,1],[3,1,1,2,5,4,4,1],[0,5,5,4,3,0,1,1],[1,2,2,4,0,5,3,3],[4,5,4,3,2,1,2,2],[0,1,5,2,5,3,6,4],[3,5,4,4,1,0,1,1],[0,2,3,4,3,1,1,4],[3,0,1,1,5,2,1,1],[4,5,0,1,2,3,1,2],[3,2,3,0,1,2,3,2],[4,2,0,0,5,4,2,3]],"c":[1,3]},{"i":36,"d":[[5,0],[1,1],[0,3],[4,2],[3,4],[2,5]],"t":[1,4,5,3,0,2],"m":[[5,4,2,1,0,3,6,0],[1,4,1,3,2,5,5,1],[0,2,3,5,1,0,1,5],[4,3,2,5,0,3,3,2],[5,2,5,1,3,1,1,1],[0,4,3,3,2,4,2,2],[1,2,5,5,4,0,3,2],[0,3,4,5,1,1,4,1],[1,0,1,4,2,2,2,1],[5,2,0,4,3,4,3,2],[1,3,4,0,4,2,3,3],[5,3,0,0,2,5,1,1]],"c":[1,4]},{"i":37,"d":[[4,1],[2,2],[3,7],[1,4],[0,0],[5,3]],"t":[2,0,4,5,1,3],"m":[[4,1,4,2,3,7,4,0],[2,1,2,0,5,3,2,3],[3,5,7,4,2,1,0,4],[1,0,4,4,3,7,4,0],[4,5,3,2,0,2,3,4],[3,1,7,0,5,0,4,0],[2,5,3,4,1,1,1,0],[3,0,0,4,2,2,2,2],[2,3,2,1,5,4,4,0],[4,5,1,1,0,0,2,0],[2,0,0,3,1,4,4,1],[4,0,1,3,5,3,2,2]],"c":[0,2]},{"i":38,"d":[[3,3],[2,0],[1,4],[4,1],[5,2]],"t":[1,4,2,3,5],"m":[[3,2,3,1,4,4,2,5],[2,1,0,3,5,2,4,1],[1,5,4,4,2,1,2,3],[3,1,3,4,5,1,2,1],[2,5,0,3,4,3,0,2],[1,4,1,3,2,0,2,1],[3,5,3,2,1,4,2,3],[4,2,0,1,5,2,0,0],[4,5,2,3,1,4,1,3],[3,4,1,2,5,2,0,0]],"c":[1,4]},{"i":39,"d":[[1,5],[5,0],[0,2],[2,1],[3,3],[4,4]],"t":[1,2,3,0,4,5],"m":[[1,2,1,5,0,2,5,1],[5,2,0,3,4,4,1,1],[0,4,2,1,5,5,4,1],[2,3,1,1,0,2,1,3],[1,4,4,5,3,0,2,2],[0,2,2,3,4,3,2,1],[5,4,4,1,2,5,2,3],[0,3,3,1,5,0,3,6],[5,0,0,2,4,1,1,3],[1,4,5,2,3,3,2,3],[5,3,3,0,2,1,3,2],[1,3,5,0,4,4,3,1]],"c":[1,2]},{"i":40,"d":[[5,2],[0,1],[2,4],[3,0],[4,6],[1,3]],"t":[5,0,2,1,3,4],"m":[[5,3,0,0,2,4,3,5],[0,3,1,4,1,3,2,0],[2,1,4,5,0,2,2,4],[3,4,0,5,2,4,2,5],[5,1,3,0,4,1,3,2],[2,3,4,4,1,6,2,2],[0,1,3,5,3,2,3,3],[2,4,6,5,0,1,1,3],[0,2,1,3,1,0,2,2],[5,1,2,3,4,6,3,2],[0,4,6,2,3,0,0,3],[5,4,2,2,1,3,3,3]],"c":[1,2]},{"i":41,"d":[[4,8],[2,9],[3,10],[1,11],[0,12],[5,13]],"t":[2,3,0,4,1,5],"m":[[4,1,11,2,3,10,3,3],[2,1,9,0,5,13,3,1],[3,5,10,4,2,8,6,2],[1,0,11,4,3,10,2,4],[4,5,13,2,0,9,3,5],[3,1,10,0,5,12,2,5],[2,5,13,4,1,8,0,0],[3,0,12,4,2,9,3,4],[2,3,9,1,5,11,3,2],[4,5,8,1,0,12,4,5],[2,0,12,3,1,11,1,5],[4,0,8,3,5,13,8,2]],"c":[0,4]},{"i":42,"d":[[1,9],[0,12],[5,8],[4,14],[3,11],[2,10]],"t":[1,0,2,4,3,5],"m":[[1,4,14,0,5,8,4,1],[0,4,12,3,2,10,4,0],[5,2,8,1,0,9,2,2],[4,3,14,1,5,8,0,4],[1,2,10,0,3,12,5,2],[5,4,8,3,2,11,0,1],[0,2,10,1,4,9,2,2],[5,3,11,1,0,12,4,5],[0,5,12,4,2,14,4,4],[1,2,9,4,3,11,2,3],[0,3,11,5,4,14,5,1],[1,3,9,5,2,10,2,3]],"c":[0,1]},{"i":43,"d":[[1,14],[2,11],[4,9],[5,10],[3,8],[0,12]],"t":[1,4,3,0,2,5],"m":[[1,5,10,2,4,9,4,0],[2,5,11,3,0,12,2,2],[4,0,9,1,2,14,3,1],[5,3,10,1,4,9,1,3],[1,0,12,2,3,11,1,1],[4,5,9,3,0,8,2,4],[2,0,12,1,5,14,2,3],[4,3,8,1,2,11,5,2],[2,4,11,5,0,10,3,2],[1,0,14,5,3,8,2,1],[2,3,8,4,5,10,4,3],[1,3,14,4,0,12,0,0]],"c":[0,3]},{"i":44,"d":[[2,3],[5,4],[1,0],[4,2],[3,1]],"t":[1,3,5,2,4],"m":[[2,5,3,1,4,0,4,2],[5,1,4,2,3,1,3,1],[1,3,0,4,5,2,1,0],[2,1,3,4,3,2,0,4],[5,3,4,2,4,3,2,2],[1,4,2,2,5,4,0,4],[2,3,3,5,1,0,0,0],[4,5,4,1,3,1,0,4],[4,3,1,2,1,0,3,5],[2,4,2,5,3,1,0,0]],"c":[1,3]},{"i":45,"d":[[0,4],[1,0],[5,1],[4,3],[3,2],[2,5]],"t":[3,5,1,0,4,2],"m":[[0,4,3,1,5,1,2,3],[1,4,0,3,2,5,0,1],[5,2,1,0,1,4,2,2],[4,3,3,0,5,1,1,6],[0,2,5,1,3,0,0,3],[5,4,1,3,2,2,2,2],[1,2,5,0,4,4,1,2],[5,3,2,0,1,0,4,3],[1,5,0,4,2,3,1,3],[0,2,4,4,3,2,2,5],[1,3,2,5,4,3,4,1],[0,3,4,5,2,5,4,3]],"c":[3,5]},{"i":46,"d":[[4,3],[1,2],[3,4],[0,0],[2,1]],"t":[3,1,0,4,2],"m":[[4,1,3,3,0,4,3,2],[1,3,2,4,2,1,5,1],[3,2,4,0,1,0,1,1],[4,3,3,0,2,0,0,4],[1,2,2,4,0,3,3,3],[3,0,0,4,1,2,1,0],[4,2,3,1,3,4,0,3],[0,1,2,3,2,1,1,1],[0,2,1,4,3,4,1,2],[4,0,0,1,2,1,2,0]],"c":[0,4]},{"i":47,"d":[[4,1],[0,3],[2,2],[1,4],[3,0]],"t":[1,2,0,4,3],"m":[[4,0,1,2,1,2,2,5],[0,2,3,4,3,0,5,3],[2,3,2,1,0,4,1,1],[4,2,1,1,3,4,1,2],[0,3,3,4,1,1,2,2],[2,1,4,4,0,3,3,3],[4,3,1,0,2,2,1,3],[1,0,3,2,3,0,3,1],[1,3,0,4,2,2,2,4],[4,1,4,0,3,0,4,3]],"c":[0,4]},{"i":48,"d":[[0,1],[1,0],[2,4],[4,2],[3,3]],"t":[4,1,3,0,2],"m":[[0,1,1,2,4,4,2,3],[1,2,0,0,3,3,3,0],[2,3,4,4,1,2,1,4],[0,2,1,4,3,2,2,2],[1,3,0,0,4,1,2,2],[2,4,2,0,1,0,2,3],[0,3,1,1,2,4,3,0],[4,1,0,2,3,3,2,2],[4,3,3,0,2,4,3,2],[0,4,2,1,3,3,2,2]],"c":[1,4]},{"i":49,"d":[[5,4],[2,3],[3,1],[1,2],[4,5],[0,0]],"t":[1,3,4,0,5,2],"m":[[5,1,2,2,3,1,4,1],[2,1,3,4,0,0,3,1],[3,0,1,5,2,4,2,1],[1,4,2,5,3,1,3,1],[5,0,0,2,4,3,4,4],[3,1,1,4,0,5,2,1],[2,0,0,5,1,4,2,3],[3,4,5,5,2,3,6,2],[2,3,3,1,0,2,1,1],[5,0,4,1,4,5,2,3],[2,4,5,3,1,2,2,3],[5,4,4,3,0,0,1,2]],"c":[1,3]},{"i":50,"d":[[0,3],[5,0],[3,4],[4,2],[1,1],[2,5]],"t":[1,4,2,0,3,5],"m":[[0,4,2,5,3,4,6,2],[5,4,0,1,2,5,0,2],[3,2,4,0,5,3,4,1],[4,1,2,0,3,4,4,1],[0,2,5,5,1,0,2,3],[3,4,4,1,2,1,2,4],[5,2,5,0,4,3,1,4],[3,1,1,0,5,0,4,0],[5,3,0,4,2,2,1,4],[0,2,3,4,1,1,2,2],[5,1,1,3,4,2,2,1],[0,1,3,3,2,5,3,0]],"c":[1,4]},{"i":51,"d":[[0,0],[4,1],[1,4],[2,2],[3,5],[5,3]],"t":[2,1,5,0,3,4],"m":[[0,2,2,4,1,4,1,1],[4,2,1,3,5,3,3,1],[1,5,4,0,4,0,3,1],[2,3,2,0,1,4,3,1],[0,5,3,4,3,1,4,2],[1,2,4,3,5,5,3,0],[4,5,3,0,2,0,1,2],[1,3,5,0,4,1,5,1],[4,1,1,2,5,2,0,2],[0,5,0,2,3,5,1,1],[4,3,5,1,2,2,3,4],[0,3,0,1,5,3,2,3]],"c":[0,5]}],"Y":[{"year":2023,"rows":[{"player":"רועי","value":20},{"player":"מיקי","value":18},{"player":"דביר","value":17},{"player":"נדב","value":8},{"player":"יקיר","value":7},{"player":"איציק","value":3}]},{"year":2024,"rows":[{"player":"דביר","value":24},{"player":"יקיר","value":23},{"player":"נדב","value":19},{"player":"רועי","value":18},{"player":"מיקי","value":13},{"player":"איציק","value":11}]},{"year":2025,"rows":[{"player":"דביר","value":22},{"player":"יקיר","value":19},{"player":"רועי","value":18},{"player":"נדב","value":16},{"player":"מיקי","value":16},{"player":"איציק","value":13}]}],"TPL":{"6":[{"h":[1,4],"hc":4,"a":[2,3],"ac":3},{"h":[2,4],"hc":2,"a":[5,6],"ac":6},{"h":[3,6],"hc":3,"a":[1,2],"ac":1},{"h":[4,5],"hc":4,"a":[1,3],"ac":3},{"h":[1,6],"hc":6,"a":[2,5],"ac":2},{"h":[3,4],"hc":3,"a":[5,6],"ac":5},{"h":[2,6],"hc":6,"a":[1,4],"ac":1},{"h":[3,5],"hc":5,"a":[1,2],"ac":2},{"h":[2,3],"hc":2,"a":[4,6],"ac":4},{"h":[1,6],"hc":1,"a":[4,5],"ac":5},{"h":[2,5],"hc":5,"a":[3,4],"ac":4},{"h":[1,5],"hc":1,"a":[3,6],"ac":6}],"5":[{"h":[1,2],"hc":1,"a":[3,4],"ac":3},{"h":[2,3],"hc":2,"a":[1,5],"ac":5},{"h":[3,5],"hc":3,"a":[4,2],"ac":4},{"h":[1,3],"hc":1,"a":[4,5],"ac":4},{"h":[2,5],"hc":2,"a":[1,4],"ac":1},{"h":[3,4],"hc":4,"a":[1,2],"ac":2},{"h":[1,5],"hc":1,"a":[2,3],"ac":3},{"h":[4,2],"hc":2,"a":[3,5],"ac":5},{"h":[4,5],"hc":5,"a":[1,3],"ac":3},{"h":[1,4],"hc":4,"a":[2,5],"ac":5}]},"POOL":["באיירן","ברצלונה","פסז","ליברפול","ריאל","סיטי"]}</script>
@@ -2289,42 +2466,81 @@ function story(tag, head, bodyHtml, plain, hero) {
 let draft = null;   // {size, players:[], clubs:[], slots:[]}  before it is saved
 let liveId = null;  // which stored tournament is open
 
+/* Which of the control room's four tabs is showing: games · table · final ·
+   manage. Set by the router (go("live:table")); the new-tournament flow
+   switches it to games so the draw appears where the fixtures will be. */
+let LIVE_PANE = "games";
+
 function viewLive(root) {
   root.innerHTML = "";
+  const pane = LIVE_PANE;
+  const inScope = Object.values(LIVE).filter(t => SCOPE === "all" || t.season === SCOPE)
+    .sort((a, b) => b.i - a.i);
+  /* open straight onto a tournament, like a scores app: the running one if
+     there is one, otherwise the latest */
+  if (!draft && (liveId == null || !LIVE[liveId] || inScope.indexOf(LIVE[liveId]) < 0)) {
+    const pick = inScope.find(t => !t.done) || inScope[0];
+    liveId = pick ? pick.i : null;
+  }
   const open = liveId != null ? LIVE[liveId] : null;
 
-  const bar = el("section", "block");
-  const bh = el("div", "bhead");
-  bh.innerHTML = '<h2>חדר הבקרה</h2><span class="note">' +
-    "כל תוצאה נשמרת תוך כדי הקלדה. שורת המצב למטה אומרת אם השמירה הצליחה.</span>";
-  bar.appendChild(bh);
+  if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
 
+  /* several tournaments in this season: a compact picker, like a date strip */
+  if (inScope.length > 1 && !draft) {
+    const row = el("div", "picker");
+    inScope.forEach(t => {
+      const c = el("button", "pick", "טורניר " + t.num + (t.done ? " ✓" : ""));
+      c.setAttribute("aria-pressed", String(liveId === t.i));
+      c.onclick = () => { liveId = t.i; viewLive(root); };
+      row.appendChild(c);
+    });
+    root.appendChild(row);
+  }
+
+  if (draft) {
+    if (pane === "games") root.appendChild(draftPanel());
+    else root.appendChild(el("div", "notice", "יש הגרלה פתוחה — היא בלשונית <b>משחקים</b>."));
+    return;
+  }
+  if (!open) {
+    const n = el("section", "block empty");
+    n.innerHTML = '<div class="bhead"><h2>אין טורניר פתוח</h2>' +
+      '<span class="note">פותחים טורניר חדש מהלשונית ניהול.</span></div>';
+    const b = el("button", "btn", "＋ טורניר חדש");
+    b.onclick = () => { draft = null; liveId = null; startDraft(6); };
+    n.appendChild(b);
+    root.appendChild(n);
+    return;
+  }
+  root.appendChild(livePanel(open, pane));
+}
+
+/* ניהול: everything that is not the match itself — saving, the new
+   tournament, the squad, notifications and the admin box, seasons, clubs */
+function managePanel(open, inScope) {
+  const box = el("div", "view");
+  const bar = el("section", "block");
+  bar.innerHTML = '<div class="bhead"><h2>ניהול</h2><span class="note">' +
+    "כל תוצאה נשמרת תוך כדי הקלדה. שורת המצב אומרת אם השמירה הצליחה.</span></div>";
   const sb = el("div", "notice savebar");
   sb.id = "saveStatus";
   bar.appendChild(sb);
-
   const row = el("div", "chips");
   const bNew = el("button", "btn", "＋ טורניר חדש");
   bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
   row.appendChild(bNew);
-  Object.values(LIVE).filter(t => SCOPE === "all" || t.season === SCOPE)
-    .sort((a, b) => b.i - a.i).forEach(t => {
-    const c = el("button", "chip", "טורניר " + t.num + (t.done ? " ✓" : " · בעיצומו"));
-    c.setAttribute("aria-pressed", String(liveId === t.i));
-    c.onclick = () => { draft = null; liveId = t.i; viewLive(root); };
-    row.appendChild(c);
-  });
   bar.appendChild(row);
-  root.appendChild(bar);
-  Store.paint();
-  root.appendChild(pushPanel());
-
-  if (draft) { root.appendChild(draftPanel()); return; }
-  if (open) { root.appendChild(livePanel(open)); return; }
-  root.appendChild(idlePanel());
+  box.appendChild(bar);
+  box.appendChild(pushPanel());
+  if (open) box.appendChild(livePanel(open, "manage"));
+  box.appendChild(idlePanel(!!open));
+  setTimeout(() => Store.paint(), 0);
+  return box;
 }
 
-function idlePanel() {
+/* hasOpen: the open tournament's panel already shows the club pool */
+function idlePanel(hasOpen) {
   const b = el("section", "block");
   b.innerHTML = '<div class="bhead"><h2>איך זה עובד</h2></div>';
   const g = el("div", "recs");
@@ -2336,14 +2552,14 @@ function idlePanel() {
   ].forEach(([k, v]) => g.appendChild(el("div", "rec", '<div class="lbl">' + esc(k) + '</div><div class="d" style="font-size:13.5px">' + esc(v) + "</div>")));
   b.appendChild(g);
   b.appendChild(seasonManager());
-  b.appendChild(clubManager());
+  if (!hasOpen) b.appendChild(clubManager());
   return b;
 }
 
 function startDraft(size) {
   const base = ORDER.slice(0, size);
   draft = { size, players: base.slice(), clubs: CLUB_POOL.slice(0, size), slots: null, blocked: null, relaxed: false };
-  go("live");
+  go("live:games");
 }
 
 function draftPanel() {
@@ -2578,15 +2794,22 @@ function runCeremony(host, slots, clubs, done) {
 }
 
 /* ---------- an open tournament ---------- */
-function livePanel(t) {
+/* The control room, cut into the four tabs of the new layout. Everything is
+   still built exactly as before; `pane` only decides what goes on screen, so
+   no behaviour changes — the fixtures, the table, the final and the admin
+   parts simply stop sharing one endless page. */
+function livePanel(t, pane) {
+  pane = pane || "games";
   const box = el("div", "view");
+  const add = (node, p) => { if (p === pane) box.appendChild(node); };
   const tplKey = t.rec.tpl, fixtures = TPL[tplKey];
   const filled = t.m.filter(m => m[6] != null && m[7] != null).length;
 
-  const head = el("section", "block");
-  head.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
-    '</h2><span class="note" id="liveProgress">' +
-    filled + " מתוך " + t.m.length + " משחקים הוזנו" + (t.done ? " · הסתיים" : "") + "</span></div>";
+  /* the competition header over the fixtures, like a league strip */
+  const head = el("div", "leaguehead");
+  head.innerHTML = '<span class="lg-ico">🏆</span><span class="lg-name">טורניר ' + t.num + " · " +
+    esc(seasonById(t.season).name) + '</span><span class="lg-count" id="liveProgress">' +
+    filled + " מתוך " + t.m.length + " משחקים הוזנו" + (t.done ? " · הסתיים" : "") + "</span>";
   const actions = el("div", "chips");
 
   const bSave = el("button", "btn sm", "שמור הכל");
@@ -2635,8 +2858,13 @@ function livePanel(t) {
     flash("טורניר " + t.num + " נמחק.");
   };
   actions.appendChild(bDel);
-  head.appendChild(actions);
-  box.appendChild(head);
+  /* save / backup / delete live under ניהול, not above the fixtures */
+  const adm = el("section", "block");
+  adm.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
+    '</h2><span class="note">שמירה, גיבוי ומחיקה של הטורניר.</span></div>';
+  adm.appendChild(actions);
+  add(head, "games");
+  add(adm, "manage");
 
   /* squads */
   const sq = el("section", "block");
@@ -2662,7 +2890,7 @@ function livePanel(t) {
     tr.appendChild(td); sbody.appendChild(tr);
   });
   stb.appendChild(sbody); sbox.appendChild(stb); sq.appendChild(sbox);
-  box.appendChild(sq);
+  add(sq, "manage");
 
   /* live table */
   const st = el("section", "block");
@@ -2670,15 +2898,13 @@ function livePanel(t) {
   const stHost = el("div"); stHost.id = "liveStandings";
   stHost.appendChild(standingsTable(t));
   st.appendChild(stHost);
-  box.appendChild(st);
+  add(st, "table");
 
-  if (!filled) box.appendChild(forecastBlock(t));
-  if (filled) box.appendChild(timelineBlock(t));
+  if (pane === "table") add(filled ? timelineBlock(t) : forecastBlock(t), "table");
 
   /* fixtures with score entry */
   const mb = el("section", "block");
-  mb.innerHTML = '<div class="bhead"><h2>לוח משחקים</h2><span class="note">תבנית קבועה של ' + t.m.length +
-    " משחקים. כל תוצאה נשמרת תוך כדי הקלדה וניתנת לתיקון בכל רגע.</span></div>";
+  /* no heading: the league strip above says what this is */
   const mc = el("div", "panel matches");
   if (t.m.some(m => m[6] == null || m[7] == null)) mc.appendChild(oddsKey());
   t.m.forEach((m, idx) => {
@@ -2686,7 +2912,7 @@ function livePanel(t) {
     const fx = el("div", "fixture");
     fx.setAttribute("data-fx", t.i + "-" + idx);
     const row = el("div", "mrow");
-    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+    row.innerHTML = '<div class="mn">מחזור ' + (idx + 1) + "</div>" +
       '<div class="side"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>";
     const mid = el("div", "entry");
     const mkScore = which => {
@@ -2721,6 +2947,7 @@ function livePanel(t) {
       const filled = sc[0] != null && sc[1] != null;
       iA.classList.toggle("filled", filled);
       iH.classList.toggle("filled", filled);
+      fx.classList.toggle("played", filled);
       if (!filled) {
         const o = oddsRow((LIVE[t.i] || t).m[idx]);
         if (o) fx.appendChild(o);
@@ -2730,10 +2957,10 @@ function livePanel(t) {
       d.setAttribute("data-t", String(t.i));
       const pend = !!Store.dirty[t.i];
       d.innerHTML = '<span class="ok' + (pend ? " pend" : "") + '">' +
-        (pend ? "⏳ ממתין לענן" : "✓ נשמר בענן") + "</span>" +
-        '<span class="grow">אפשר לתקן בכל רגע — שנה את המספר, או נקה כדי להחזיר את המשחק לרשימת הצפויים.</span>';
+        (pend ? "⏳ ממתין לענן" : "✓ נשמר בענן") + "</span>";
 
-      const clr = el("button", "btn ghost sm", "נקה תוצאה");
+      const clr = el("button", "btn ghost sm", "נקה");
+      clr.title = "נקה את התוצאה — המשחק יחזור לרשימת הצפויים";
       clr.onclick = () => { iA.value = ""; iH.value = ""; onType(); heavy(); };
       d.appendChild(clr);
       fx.appendChild(d);
@@ -2835,12 +3062,13 @@ function livePanel(t) {
     row.appendChild(mid);
     row.insertAdjacentHTML("beforeend",
       '<div class="side away"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>");
+    tapToOpen(row, t.i, idx);            // tap a pair to open the match page
     fx.appendChild(row);
     stateLine();
     mc.appendChild(fx);
   });
   mb.appendChild(mc);
-  box.appendChild(mb);
+  add(mb, "games");
 
   /* the final */
   const fb = el("section", "block");
@@ -2848,8 +3076,8 @@ function livePanel(t) {
   const fHost = el("div"); fHost.id = "liveFinal";
   renderFinal(t, fHost);
   fb.appendChild(fHost);
-  box.appendChild(fb);
-  box.appendChild(clubManager());
+  add(fb, "final");
+  if (pane === "manage") add(clubManager(), "manage");
 
   setTimeout(() => step("gravity", () => paintGravity(LIVE[t.i] || t)), 90);
 
@@ -3693,10 +3921,21 @@ function allTimeBlock() {
   return sec;
 }
 
+/* the latest champions — used to sit in the header */
+function reignCard() {
+  if (!LAST) return null;
+  const c = el("section", "block reigncard");
+  c.innerHTML = '<div class="lbl">אלופי טורניר ' + LAST.num + "</div>" +
+    '<div class="row">' + LAST.c.map(p => '<span class="champ">' + plateFace(p, "big") + clubTag(LAST.teamOf[p]) + "</span>").join("") + "</div>";
+  return c;
+}
+
 function viewOverview(root) {
   root.innerHTML = "";
   const done = TSS.filter(t => t.done);
   if (!done.length) { root.appendChild(emptySeason()); return; }
+  const rc = reignCard();
+  if (rc) root.appendChild(rc);
 
   const b0 = el("section", "block");
   const strip = el("div", "strip4");
@@ -4297,10 +4536,12 @@ function tournamentDetail(t) {
     const fx = el("div", "fixture");
     const row = el("div", "mrow");
     /* RTL puts the home side on the right, so the LTR score chip prints away first */
-    row.innerHTML = '<div class="mn">' + (idx + 1) + "</div>" +
+    row.innerHTML = '<div class="mn">מחזור ' + (idx + 1) + "</div>" +
       '<div class="side' + (has && ag > hg ? " fade" : "") + '"><div class="duo">' + plateFace(h1) + plateFace(h2) + "</div>" + clubTag(ht) + "</div>" +
       '<div class="score">' + (has ? ag + " – " + hg : "— – —") + "</div>" +
       '<div class="side away' + (has && hg > ag ? " fade" : "") + '"><div class="duo">' + plateFace(a1) + plateFace(a2) + "</div>" + clubTag(at) + "</div>";
+    if (has) fx.classList.add("played");
+    tapToOpen(row, t.i, idx);
     fx.appendChild(row);
     if (!has) { const o = oddsRow(m); if (o) fx.appendChild(o); }
     mc.appendChild(fx);
@@ -4308,6 +4549,131 @@ function tournamentDetail(t) {
   mb.appendChild(mc);
   box.appendChild(mb);
   return box;
+}
+
+/* ==========================================================================
+   The match page — tap a match, get its own screen, like a scores app
+   --------------------------------------------------------------------------
+   The two pairs and the score on top, then three tabs: the odds (with the
+   model's full reasoning), the head-to-head record of these exact two pairs,
+   and the table with the four of them marked. Android's back button closes
+   it, the same as the arrow.
+   ========================================================================== */
+function tapToOpen(row, tid, idx) {
+  row.querySelectorAll(".side").forEach(sd => {
+    sd.classList.add("tap");
+    sd.title = "פתח את המשחק";
+    sd.onclick = () => openMatch(tid, idx);
+  });
+}
+
+let matchOpen = false;
+addEventListener("popstate", () => { if (matchOpen) closeMatch(true); });
+function closeMatch(fromHistory) {
+  const pg = document.getElementById("matchPage");
+  if (pg) pg.remove();
+  document.body.style.overflow = "";
+  if (matchOpen && !fromHistory) { matchOpen = false; history.back(); return; }
+  matchOpen = false;
+}
+
+function h2hOf(pa, pb) {
+  const same = (x, y) => (x[0] === y[0] && x[1] === y[1]) || (x[0] === y[1] && x[1] === y[0]);
+  const games = [];
+  TS.forEach(t => t.m.forEach(m => {
+    if (m[6] == null || m[7] == null) return;
+    const H = [m[0], m[1]], A = [m[3], m[4]];
+    if (same(H, pa) && same(A, pb)) games.push({ t, gf: m[6], ga: m[7] });
+    else if (same(H, pb) && same(A, pa)) games.push({ t, gf: m[7], ga: m[6] });
+  }));
+  const r = { g: games.length, w: 0, d: 0, l: 0, gf: 0, ga: 0, games };
+  games.forEach(x => { r.gf += x.gf; r.ga += x.ga; if (x.gf > x.ga) r.w++; else if (x.gf < x.ga) r.l++; else r.d++; });
+  return r;
+}
+
+function openMatch(tid, idx, tab) {
+  const t = LIVE[tid] || TS.find(x => x.i === tid);
+  if (!t || !t.m[idx]) return;
+  const m = t.m[idx];
+  const [h1, h2, ht, a1, a2, at, hg, ag] = m;
+  const played = hg != null && ag != null;
+  const had = !!document.getElementById("matchPage");
+  const old = document.getElementById("matchPage");
+  if (old) old.remove();
+
+  const pg = el("div", "mpage");
+  pg.id = "matchPage";
+  const top = el("div", "mp-top");
+  top.innerHTML = '<span></span><div class="mp-title"><div>טורניר ' + t.num + " · " +
+    esc(seasonById(t.season).name) + '</div><div class="mut">מחזור ' + (idx + 1) + "</div></div>";
+  const back = el("button", "mp-back", "←");
+  back.setAttribute("aria-label", "חזרה");
+  back.onclick = () => closeMatch(false);
+  top.appendChild(back);
+  pg.appendChild(top);
+
+  const side = (a, b, c) => '<div class="mp-side">' +
+    '<div class="mp-faces">' + [a, b].map(p => '<span class="mp-face" style="--c:' + PC(p) + '">' +
+      (photoOf(p) ? '<i class="pface pf' + p + '"></i>' : '<i class="dot"></i>') + "</span>").join("") + "</div>" +
+    '<div class="mp-names">' + esc(P[a]) + " ו" + esc(P[b]) + "</div>" + clubTag(c) + "</div>";
+  const teams = el("div", "mp-teams");
+  teams.innerHTML = side(h1, h2, ht) +
+    '<div class="mp-mid"><div class="mp-score ltr">' + (played ? ag + " - " + hg : "- : -") + "</div>" +
+    '<div class="mut">' + (played ? "הסתיים" : "טרם שוחק") + "</div></div>" +
+    side(a1, a2, at);
+  pg.appendChild(teams);
+
+  const tabs = el("div", "mp-tabs");
+  const body = el("div", "mp-body");
+  const TABS = [["odds", "סיכויים"], ["h2h", "ראש בראש"], ["table", "טבלה"]];
+  const show = k => {
+    tabs.querySelectorAll(".stab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.k === k)));
+    body.innerHTML = "";
+    if (k === "odds") {
+      const f = forecast(m);
+      if (!f) { body.appendChild(el("div", "mut", "אין מספיק היסטוריה לתחזית.")); return; }
+      body.appendChild(el("div", "mp-pills",
+        '<span class="mp-pill"><b>1</b>' + pct(f.w) + "%<small>" + esc(P[h1]) + " ו" + esc(P[h2]) + "</small></span>" +
+        '<span class="mp-pill"><b>X</b>' + pct(f.d) + "%<small>תיקו</small></span>" +
+        '<span class="mp-pill"><b>2</b>' + (100 - pct(f.w) - pct(f.d)) + "%<small>" + esc(P[a1]) + " ו" + esc(P[a2]) + "</small></span>"));
+      if (played) body.appendChild(el("div", "mut", "הסיכויים כפי שהמודל רואה את המשחק הזה, בלי התוצאה שלו."));
+      body.appendChild(el("div", "panel mp-why", oddsWhy(m, f)));
+    } else if (k === "h2h") {
+      const r = h2hOf([h1, h2], [a1, a2]);
+      const who = esc(P[h1]) + " ו" + esc(P[h2]);
+      if (!r.g) { body.appendChild(el("div", "mut", "שני הצמדים האלה עוד לא נפגשו.")); return; }
+      body.appendChild(el("div", "mp-pills",
+        '<span class="mp-pill"><b>נצחונות</b>' + r.w + "<small>" + who + "</small></span>" +
+        '<span class="mp-pill"><b>תיקו</b>' + r.d + "<small>" + r.g + " מפגשים</small></span>" +
+        '<span class="mp-pill"><b>נצחונות</b>' + r.l + "<small>" + esc(P[a1]) + " ו" + esc(P[a2]) + "</small></span>"));
+      body.appendChild(el("div", "mut", "שערים: " + scoreTxt(r.gf, r.ga) + " · מנקודת המבט של " + who));
+      const list = el("div", "panel mp-list");
+      r.games.slice(-10).reverse().forEach(x => {
+        const res = x.gf > x.ga ? "w" : x.gf < x.ga ? "l" : "d";
+        list.appendChild(el("div", "mp-row " + res,
+          "<span>טורניר " + x.t.num + ' <span class="mut">' + esc(seasonById(x.t.season).name) + "</span></span>" +
+          '<span class="ltr">' + x.gf + " - " + x.ga + "</span>"));
+      });
+      body.appendChild(list);
+    } else {
+      const wrap = standingsTable(t);
+      const mine = new Set([h1, h2, a1, a2]);
+      const rows = wrap.querySelectorAll("tbody tr");
+      t.table.forEach((p, i) => { if (mine.has(p) && rows[i]) rows[i].classList.add("hl"); });
+      body.appendChild(wrap);
+    }
+  };
+  TABS.forEach(([k, label]) => {
+    const b = el("button", "stab", label);
+    b.dataset.k = k;
+    b.onclick = () => show(k);
+    tabs.appendChild(b);
+  });
+  pg.append(tabs, body);
+  document.body.appendChild(pg);
+  document.body.style.overflow = "hidden";
+  if (!had) { history.pushState({ match: 1 }, ""); matchOpen = true; }
+  show(tab || "odds");
 }
 
 /* ==========================================================================
@@ -5193,17 +5559,14 @@ function refreshChrome() {
   sel.onchange = () => setScope(sel.value === "all" ? "all" : Number(sel.value));
   sp.appendChild(sel);
 
-  const r = document.getElementById("reign");
-  if (LAST) {
-    r.hidden = false;
-    r.innerHTML = '<div><div class="lbl">אלופי טורניר ' + LAST.num + "</div>" +
-      '<div class="row">' + LAST.c.map(p => '<span style="display:flex;flex-direction:column;gap:2px">' + plate(p, "lg") + clubTag(LAST.teamOf[p]) + "</span>").join("") + "</div></div>";
-  } else {
-    r.hidden = true;
-  }
+  /* the latest champions now open the summary tab (reignCard) */
   const open = Object.values(LIVE).filter(t => !t.done && (SCOPE === "all" || t.season === SCOPE)).length;
-  const tab = document.getElementById("tab-live");
-  if (tab) tab.innerHTML = "חדר הבקרה" + (open ? '<span class="badge">' + open + "</span>" : "");
+  const nav = document.getElementById("nav-results");
+  if (nav) {
+    const old = nav.querySelector(".badge");
+    if (old) old.remove();
+    if (open) nav.querySelector(".ico").insertAdjacentHTML("beforeend", '<span class="badge">' + open + "</span>");
+  }
   document.getElementById("foot").innerHTML =
     "כל המספרים מחושבים מחדש מתוך " + nf(totMatches) + " תוצאות המשחקים הגולמיות של " +
     (SCOPE === "all" ? "כל העונות" : esc(seasonById(SCOPE).name)) + ". " +
@@ -5220,32 +5583,67 @@ const VIEWS = [
   ["teams", "קבוצות", viewTeams],
   ["records", "שיאים", viewRecords]
 ];
+/* ==========================================================================
+   Navigation: four sections at the bottom, each with its own tabs at the top
+   --------------------------------------------------------------------------
+   The views above are unchanged; this only decides which one is on screen.
+   A key is a view id ("tournaments") or, for the control room, "live:<pane>".
+   Old calls such as go("players") keep working.
+   ========================================================================== */
+const ICON = {
+  results: '<span class="ico-score">3:2</span>',
+  news: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 8.5h6v4H7zM15.5 8.5H17M15.5 11.5H17M7 15.5h10"/></svg>',
+  players: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.2c1.3-2.2 3.2-3.2 5.5-3.2s4.2 1 5.5 3.2"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8M3.5 19.5h17"/></svg>'
+};
+const SECTIONS = [
+  { id: "results", label: "תוצאות", tabs: [["live:games", "משחקים"], ["live:table", "טבלה"], ["live:final", "גמר"], ["live:manage", "ניהול"]] },
+  { id: "news", label: "חדשות", tabs: [["news", "חדשות"]] },
+  { id: "players", label: "שחקנים", tabs: [["players", "שחקנים"]] },
+  { id: "stats", label: "סטטיסטיקות", tabs: [["overview", "סיכום"], ["tournaments", "טורנירים"], ["pairs", "צמדים"], ["teams", "קבוצות"], ["records", "שיאים"]] }
+];
+const SECTION_LAST = {};
+
 const tabsHost = document.getElementById("tabs");
-VIEWS.forEach(([id, label]) => {
-  const b = el("button", "tab", label);
-  b.setAttribute("role", "tab"); b.id = "tab-" + id;
-  b.onclick = () => go(id);
+SECTIONS.forEach(sec => {
+  const b = el("button", "navbtn", '<span class="ico">' + ICON[sec.id] + '</span><span class="nl">' + sec.label + "</span>");
+  b.setAttribute("role", "tab"); b.id = "nav-" + sec.id;
+  b.onclick = () => go(SECTION_LAST[sec.id] || sec.tabs[0][0]);
   tabsHost.appendChild(b);
 });
-function go(id) {
+
+function go(key) {
+  key = String(key || "live:games");
+  const parts = key.split(":"), view = parts[0];
+  if (view === "live") { if (parts[1]) LIVE_PANE = parts[1]; key = "live:" + LIVE_PANE; }
+  const sec = SECTIONS.find(x => x.tabs.some(t => t[0] === key)) || SECTIONS[0];
+  SECTION_LAST[sec.id] = key;
+
+  SECTIONS.forEach(x => {
+    const b = document.getElementById("nav-" + x.id);
+    if (b) b.setAttribute("aria-selected", String(x === sec));
+  });
+  const st = document.getElementById("subtabs");
+  st.innerHTML = "";
+  st.closest(".subtabs").hidden = sec.tabs.length < 2;       // one screen: no tab row
+  sec.tabs.forEach(([k, label]) => {
+    const b = el("button", "stab", label);
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(k === key));
+    b.onclick = () => go(k);
+    st.appendChild(b);
+    if (k === key) setTimeout(() => b.scrollIntoView({ block: "nearest", inline: "center" }), 0);
+  });
+
   VIEWS.forEach(([vid, , fn]) => {
-    const host = document.getElementById("v-" + vid), tab = document.getElementById("tab-" + vid);
-    const on = vid === id;
-    tab.setAttribute("aria-selected", String(on));
+    const host = document.getElementById("v-" + vid);
+    const on = vid === view;
     host.hidden = !on;
     if (on) fn(host);
   });
   hideTip();
-  try { localStorage.setItem("fifa-tab", id); } catch (e) {}
-  /* A new tab starts at its top. The tab bar is pinned, so it is usually
-     tapped from deep inside a long page (the control room's fixtures); left
-     there, the reader lands in the middle — or past the end — of the new one.
-     Scroll only as far as the tab bar, so the header does not come back. */
-  const main = document.querySelector("main"), bar = document.querySelector(".tabbar");
-  if (main && bar) {
-    const top = Math.max(0, main.getBoundingClientRect().top + scrollY - bar.offsetHeight);
-    if (scrollY > top) window.scrollTo(0, top);
-  }
+  try { localStorage.setItem("fifa-tab", key); } catch (e) {}
+  window.scrollTo(0, 0);                                      // every screen starts at its top
 }
 
 /* boot: render from history at once, then fold in anything the store holds */
@@ -5253,8 +5651,11 @@ try { const sc = localStorage.getItem("fifa-scope"); if (sc != null) SCOPE = sc 
 Store.initLocal();          // whatever this browser already holds, immediately
 installFaceStyles();
 rebuild(); refreshChrome();
-let start = "overview";
-try { const v = localStorage.getItem("fifa-tab"); if (v && VIEWS.some(x => x[0] === v)) start = v; } catch (e) {}
+let start = "live:games";
+try {
+  const v = localStorage.getItem("fifa-tab");
+  if (v && SECTIONS.some(x => x.tabs.some(t => t[0] === v || t[0].split(":")[0] === v))) start = v;
+} catch (e) {}
 go(start);
 
 (async () => {
