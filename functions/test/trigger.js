@@ -202,6 +202,8 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const tagBase = sentTags.length;
   await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll" });
   expect("an admin push can carry a tag", sentTags[tagBase] === "poll", sentTags[tagBase]);
+  await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll", open: "poll" });
+  expect("…and open the poll page on tap", /#poll$/.test(sentUrls[sentUrls.length - 1]), sentUrls[sentUrls.length - 1]);
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

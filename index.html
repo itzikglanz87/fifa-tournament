@@ -1248,6 +1248,19 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .pday-face .pface{width:100%; height:100%} .pday-face b{font-size:10px}
 .pday-n{font-weight:800; text-align:center}
 .poll-foot{font-size:12.5px; margin-top:4px}
+/* ---------- poll card + page ---------- */
+.pollcard{cursor:pointer}
+.poll-open{width:100%; margin-top:10px; padding:13px; font-size:15px; background:#25D366; color:#0B1A10; border:0; font-weight:800}
+.pdays{display:flex; flex-direction:column; gap:8px; margin:10px 0}
+.pday-label{display:flex; flex-direction:column; gap:2px}
+.pday-names{font-size:11.5px; font-weight:500; color:#C9D1DB}
+.pp-title{font-size:22px; font-weight:800}
+.pp-who{display:flex; flex-direction:column; gap:6px; margin-top:6px}
+.pp-line{display:grid; grid-template-columns:90px 1fr; gap:10px; align-items:center; background:#1B2129; border-radius:10px; padding:8px 10px}
+.pp-line.none{opacity:.6}
+.pp-days{display:flex; flex-wrap:wrap; gap:5px}
+.pp-chip{font-style:normal; font-size:12px; background:rgba(37,211,102,.18); color:#9FE3BD; padding:3px 8px; border-radius:999px}
+#pollPageBody .pday{background:#1B2129}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -6653,6 +6666,8 @@ const Social = {
     document.querySelectorAll(".social[data-t]").forEach(n => fillSocial(n));
     const pc = document.getElementById("pollCard");
     if (pc) pc.replaceWith(pollCard());
+    const ppb = document.getElementById("pollPageBody");
+    if (ppb) fillPollPage(ppb);
     const lb = document.getElementById("predBoard");
     if (lb) { const t = LIVE[lb.getAttribute("data-t")]; if (t) lb.replaceWith(predBoard(t)); }
     const pp = document.getElementById("predPanel");
@@ -6987,21 +7002,18 @@ function pollTally(p) {
   const voted = Object.keys(Social.votes).map(Number).filter(w => (Social.votes[w] || []).length);
   return { by, voted, missing: P.map((_, w) => w).filter(w => voted.indexOf(w) < 0) };
 }
-function pollCard() {
-  const p = pollOpen();
-  const box = el("section", "block pollcard");
-  box.id = "pollCard";
-  if (!p) { box.hidden = true; return box; }
+/* the day rows, shared by the card and the page: tick to vote, names under */
+function pollRows(p, withNames) {
   const me = meWho(), mine = typeof me === "number" && me >= 0 ? (Social.votes[me] || []) : [];
   const T = pollTally(p), top = Math.max(0, ...T.by.map(v => v.length));
-  box.innerHTML = '<div class="poll-kicker">📊 סקר</div><div class="poll-when">' + esc(p.title || "איזה יום מתאים לטורניר?") + "</div>" +
-    '<div class="poll-sub">אפשר לבחור כמה ימים</div>';
+  const box = el("div", "pdays");
   p.days.forEach((label, k) => {
     const who = T.by[k], on = mine.indexOf(k) >= 0;
     const row = el("button", "pday" + (on ? " on" : "") + (top && who.length === top ? " best" : ""));
     row.innerHTML = '<span class="pday-fill" style="width:' + Math.round(100 * who.length / P.length) + '%"></span>' +
       '<span class="pday-check">' + (on ? "✓" : "") + "</span>" +
-      '<span class="pday-label">' + esc(label) + (top && who.length === top ? " ⭐" : "") + "</span>" +
+      '<span class="pday-label">' + esc(label) + (top && who.length === top ? " ⭐" : "") +
+        (withNames ? '<small class="pday-names">' + (who.length ? who.map(w => esc(P[w])).join(", ") : "אף אחד עדיין") + "</small>" : "") + "</span>" +
       '<span class="pday-faces">' + who.slice(0, 6).map(w => '<i class="pday-face" style="--c:' + PC(w) + '" title="' + esc(P[w]) + '">' +
         (photoOf(w) ? '<i class="pface pf' + w + '"></i>' : "<b>" + esc(P[w].slice(0, 1)) + "</b>") + "</i>").join("") + "</span>" +
       '<span class="pday-n">' + who.length + "</span>";
@@ -7018,9 +7030,70 @@ function pollCard() {
     };
     box.appendChild(row);
   });
-  box.appendChild(el("div", "poll-foot", "הצביעו " + T.voted.length + " מתוך " + P.length +
-    (T.missing.length ? ' · <span class="mut">עוד לא: ' + T.missing.map(w => esc(P[w])).join(", ") + "</span>" : " ✅")));
   return box;
+}
+
+/* the card at the top of משחקים: what the poll is, how it stands, and the way in */
+function pollCard() {
+  const p = pollOpen();
+  const box = el("section", "block pollcard");
+  box.id = "pollCard";
+  if (!p) { box.hidden = true; return box; }
+  const T = pollTally(p), top = Math.max(0, ...T.by.map(v => v.length));
+  const lead = top ? p.days.filter((_, k) => T.by[k].length === top) : [];
+  const me = meWho(), mine = typeof me === "number" && me >= 0 ? (Social.votes[me] || []) : [];
+  box.innerHTML = '<div class="poll-kicker">📊 סקר</div><div class="poll-when">' + esc(p.title || "איזה יום מתאים לטורניר?") + "</div>" +
+    '<div class="poll-sub">' + (lead.length ? "⭐ מוביל: " + lead.map(esc).join(", ") + " · " + top + " הצבעות" : "עוד אין הצבעות") +
+    " · הצביעו " + T.voted.length + " מתוך " + P.length + "</div>";
+  const go = el("button", "btn poll-open", mine.length ? "📊 הסקר · הצבעת " + (mine.length === 1 ? "ליום אחד" : "ל־" + mine.length + " ימים") : "📊 פתח את הסקר והצבע");
+  go.onclick = e => { e.stopPropagation(); openPollPage(); };
+  box.appendChild(go);
+  box.onclick = () => openPollPage();
+  return box;
+}
+
+/* the poll page: the days to tick, who picked each one, and each player's choice */
+function openPollPage() {
+  const p = pollOpen();
+  if (!p) { flash("אין סקר פתוח כרגע"); return; }
+  const had = !!document.getElementById("matchPage");
+  const old = document.getElementById("matchPage");
+  if (old) old.remove();
+  const pg = el("div", "mpage");
+  pg.id = "matchPage";
+  const top = el("div", "mp-top");
+  top.innerHTML = '<span></span><div class="mp-title"><div>סקר</div><div class="mut">כל אחד מסמן את כל הימים שהוא יכול</div></div>';
+  const back = el("button", "mp-back", "←");
+  back.setAttribute("aria-label", "חזרה");
+  back.onclick = () => closeMatch(false);
+  top.appendChild(back);
+  pg.appendChild(top);
+  const body = el("div", "mp-body");
+  body.id = "pollPageBody";
+  fillPollPage(body);
+  pg.appendChild(body);
+  document.body.appendChild(pg);
+  document.body.style.overflow = "hidden";
+  if (!had) { history.pushState({ match: 1 }, ""); matchOpen = true; }
+}
+function fillPollPage(body) {
+  const p = pollOpen();
+  body.innerHTML = "";
+  if (!p) { body.appendChild(el("div", "notice", "הסקר נסגר.")); return; }
+  const T = pollTally(p);
+  body.appendChild(el("div", "pp-title", esc(p.title || "איזה יום מתאים לטורניר?")));
+  body.appendChild(el("div", "mut", "לחץ על יום כדי לסמן או לבטל. אפשר כמה ימים."));
+  body.appendChild(pollRows(p, true));
+  const who = el("div", "pp-who");
+  who.appendChild(el("div", "lbl", "לפי שחקן"));
+  P.forEach((name, w) => {
+    const days = (Social.votes[w] || []).map(k => p.days[k]).filter(Boolean);
+    who.appendChild(el("div", "pp-line" + (days.length ? "" : " none"),
+      "<span>" + plateFace(w) + '</span><span class="pp-days">' +
+      (days.length ? days.map(d => '<i class="pp-chip">' + esc(d) + "</i>").join("") : '<span class="mut">עוד לא הצביע</span>') + "</span>"));
+  });
+  body.appendChild(who);
+  body.appendChild(el("div", "poll-foot", "הצביעו " + T.voted.length + " מתוך " + P.length));
 }
 
 /* under ניהול, admin only: open the poll (with a push), remind, delete */
@@ -7028,7 +7101,7 @@ function pollAdmin() {
   const sec = el("section", "block");
   sec.innerHTML = '<div class="bhead"><h2>סקר ימים</h2><span class="note">סקר של ראשון עד חמישי. כל אחד מסמן את הימים שהוא יכול. את הפושים שולח רק האדמין.</span></div>';
   const p = pollOpen();
-  const push = (title, body) => window.APP_PUSH.admin({ key: adminKey(), title, body, tag: "poll" });
+  const push = (title, body) => window.APP_PUSH.admin({ key: adminKey(), title, body, tag: "poll", open: "poll" });
   if (p) {
     const T = pollTally(p);
     sec.appendChild(el("div", "notice", "סקר פתוח: <b>" + esc(p.title || "") + "</b> · הצביעו " + T.voted.length + " מתוך " + P.length +
@@ -7372,9 +7445,17 @@ function storyFromHash() {
   return m[1];
 }
 addEventListener("hashchange", () => { const id = storyFromHash(); if (id) openSharedStory(id); });
+function pollFromHash() {
+  if (!/^#poll$/.test(location.hash || "")) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  return true;
+}
+const openPollWhenReady = () => Social.load(true).then(() => { go("live:games"); openPollPage(); });
+addEventListener("hashchange", () => { if (pollFromHash()) openPollWhenReady(); });
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", e => {
     if (e.data && typeof e.data.story === "string") openSharedStory(e.data.story);
+    if (e.data && e.data.poll) openPollWhenReady();
   });
 }
 
@@ -7601,8 +7682,10 @@ go(start);
 
 (async () => {
   const sharedStory = storyFromHash();   // read before anything rewrites the address
+  const sharedPoll = pollFromHash();
   await Store.initCloud();
   if (sharedStory) setTimeout(() => openSharedStory(sharedStory), 0);
+  if (sharedPoll) setTimeout(openPollWhenReady, 0);
   /* whose phone is this — asked once, after the intro — then log the visit */
   if (meWho() === undefined) setTimeout(() => askWho().then(() => logVisit(true)), document.getElementById("intro") ? 4300 : 300);
   else logVisit();

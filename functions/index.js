@@ -223,6 +223,7 @@ exports.adminPush = onCall(async req => {
   const body = String(d.body || "").slice(0, 400);
   if (!body.trim()) throw new HttpsError("invalid-argument", "ההודעה ריקה");
   let url = null, storyId = null;
+  if (d.open === "poll") url = APP_URL + "#poll";
   if (d.story) {
     storyId = await saveStory(d.story);
     url = APP_URL + "#story=" + storyId;
