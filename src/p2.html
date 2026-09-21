@@ -37,7 +37,8 @@
   var skip = false;
   try {
     /* not after the "רענן" bar's reload, and not when a test asks */
-    if (sessionStorage.getItem("fifa-nointro")) { sessionStorage.removeItem("fifa-nointro"); skip = true; }
+    var ni = sessionStorage.getItem("fifa-nointro");
+    if (ni) { sessionStorage.removeItem("fifa-nointro"); if (ni === "1" || Date.now() - Number(ni) < 15000) skip = true; }
   } catch (e) {}
   if (/[?&]nointro\b/.test(location.search)) skip = true;
   if (skip) { box.remove(); return; }

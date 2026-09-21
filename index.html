@@ -1192,7 +1192,7 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .shelf{background:linear-gradient(180deg,#1E252F,#161B23); border-radius:14px; padding:10px 12px 0; box-shadow:0 10px 0 -4px #3A2A12 inset}
 .shelf-name{font-size:12px; color:#9AA4B2; font-weight:700; margin-bottom:6px}
 .cups{display:flex; flex-wrap:wrap; gap:6px; padding-bottom:10px; border-bottom:6px solid #5A3F16; border-radius:0 0 4px 4px}
-.cup{border:0; background:transparent; width:46px; display:flex; flex-direction:column; align-items:center; cursor:pointer; padding:0; color:#F5C542}
+.cup{border:0; background:transparent; width:46px; display:flex; flex-direction:column; align-items:center; padding:0; color:#F5C542}
 .cup svg{width:40px; height:45px; filter:drop-shadow(0 4px 6px rgba(245,197,66,.25))}
 .cup-n{font-size:11px; font-weight:800; margin-top:-2px}
 .achs{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px}
@@ -1287,7 +1287,8 @@ body{min-height:100svh;
   var skip = false;
   try {
     /* not after the "רענן" bar's reload, and not when a test asks */
-    if (sessionStorage.getItem("fifa-nointro")) { sessionStorage.removeItem("fifa-nointro"); skip = true; }
+    var ni = sessionStorage.getItem("fifa-nointro");
+    if (ni) { sessionStorage.removeItem("fifa-nointro"); if (ni === "1" || Date.now() - Number(ni) < 15000) skip = true; }
   } catch (e) {}
   if (/[?&]nointro\b/.test(location.search)) skip = true;
   if (skip) { box.remove(); return; }
@@ -6379,9 +6380,8 @@ function trophyCabinet(p) {
     const cups = el("div", "cups");
     bySeason[sid].forEach(t => {
       const mate = t.c.find(x => x !== p);
-      const c = el("button", "cup", TROPHY_SVG + '<span class="cup-n">' + t.num + "</span>");
+      const c = el("span", "cup", TROPHY_SVG + '<span class="cup-n">' + t.num + "</span>");
       c.title = "טורניר " + t.num + (mate != null ? " · עם " + P[mate] : "");
-      c.onclick = () => { curT = t.i; go("tournaments"); };
       cups.appendChild(c);
     });
     row.appendChild(cups);
@@ -7570,13 +7570,34 @@ go(start);
 /* Register the worker, and offer the new version rather than swapping the
    page out from under someone in the middle of typing a score. */
 if ("serviceWorker" in navigator) {
+  /* Android keeps the app alive in the background, so "reopening" it only
+     resumes the old page. Coming back after a minute away: look for a new
+     version, and if one is ready, switch to it at once — nobody is typing a
+     score on a screen they just returned to. In the foreground, the bar
+     below still asks first. */
+  let hiddenSince = 0, waitingWorker = null;
+  const takeUpdate = w => {
+    try { sessionStorage.setItem("fifa-nointro", String(Date.now())); } catch (e) {}
+    w.postMessage("skipWaiting"); setTimeout(() => location.reload(), 150);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenSince = Date.now(); return; }
+    const away = hiddenSince && Date.now() - hiddenSince > 60e3;
+    if (!away) return;
+    if (waitingWorker) return takeUpdate(waitingWorker);
+    navigator.serviceWorker.getRegistration().then(reg => { if (reg) reg.update().catch(() => {}); });
+  });
   addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").then(reg => {
+      if (reg.waiting && navigator.serviceWorker.controller) waitingWorker = reg.waiting;
       reg.addEventListener("updatefound", () => {
         const w = reg.installing;
         if (!w) return;
         w.addEventListener("statechange", () => {
           if (w.state === "installed" && navigator.serviceWorker.controller) {
+            waitingWorker = w;
+            /* found while the app was in the background: take it now */
+            if (document.hidden) return takeUpdate(w);
             const bar = document.createElement("div");
             bar.className = "updatebar";
             bar.innerHTML = "<span>יש גרסה חדשה של האפליקציה.</span>";

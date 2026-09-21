@@ -1930,9 +1930,8 @@ function trophyCabinet(p) {
     const cups = el("div", "cups");
     bySeason[sid].forEach(t => {
       const mate = t.c.find(x => x !== p);
-      const c = el("button", "cup", TROPHY_SVG + '<span class="cup-n">' + t.num + "</span>");
+      const c = el("span", "cup", TROPHY_SVG + '<span class="cup-n">' + t.num + "</span>");
       c.title = "טורניר " + t.num + (mate != null ? " · עם " + P[mate] : "");
-      c.onclick = () => { curT = t.i; go("tournaments"); };
       cups.appendChild(c);
     });
     row.appendChild(cups);

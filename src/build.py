@@ -62,13 +62,34 @@ TAIL = '''
 /* Register the worker, and offer the new version rather than swapping the
    page out from under someone in the middle of typing a score. */
 if ("serviceWorker" in navigator) {
+  /* Android keeps the app alive in the background, so "reopening" it only
+     resumes the old page. Coming back after a minute away: look for a new
+     version, and if one is ready, switch to it at once — nobody is typing a
+     score on a screen they just returned to. In the foreground, the bar
+     below still asks first. */
+  let hiddenSince = 0, waitingWorker = null;
+  const takeUpdate = w => {
+    try { sessionStorage.setItem("fifa-nointro", String(Date.now())); } catch (e) {}
+    w.postMessage("skipWaiting"); setTimeout(() => location.reload(), 150);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenSince = Date.now(); return; }
+    const away = hiddenSince && Date.now() - hiddenSince > 60e3;
+    if (!away) return;
+    if (waitingWorker) return takeUpdate(waitingWorker);
+    navigator.serviceWorker.getRegistration().then(reg => { if (reg) reg.update().catch(() => {}); });
+  });
   addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").then(reg => {
+      if (reg.waiting && navigator.serviceWorker.controller) waitingWorker = reg.waiting;
       reg.addEventListener("updatefound", () => {
         const w = reg.installing;
         if (!w) return;
         w.addEventListener("statechange", () => {
           if (w.state === "installed" && navigator.serviceWorker.controller) {
+            waitingWorker = w;
+            /* found while the app was in the background: take it now */
+            if (document.hidden) return takeUpdate(w);
             const bar = document.createElement("div");
             bar.className = "updatebar";
             bar.innerHTML = "<span>יש גרסה חדשה של האפליקציה.</span>";
