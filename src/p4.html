@@ -1524,82 +1524,150 @@ function bulletinFor(t, pre) {
 }
 
 /* ==========================================================================
-   "The next match" push, sent the moment a new result is saved
+   Notifications panel (every phone) and the admin's send box (one phone)
    --------------------------------------------------------------------------
-   Through ntfy.sh: a plain POST from the page, received by everyone who
-   subscribed to PUSH_TOPIC in the ntfy app, even with this app closed.
-
-   Only a NEW result sends. Progress is the count of results in the
-   tournament (group matches + final legs + a decided champion); a push goes
-   out only when this device's own save moves it forward. Correcting an old
-   score leaves it where it was, clearing one moves it back, and opening the
-   app on another phone sends nothing, because nothing moved there.
+   Nobody's phone sends pushes any more. "The next match" goes out from the
+   server after any new result; the admin's own messages go through the
+   server too, which checks the admin key. This panel only lets a phone say
+   "notify me", and — on the admin's phone — write a message.
    ========================================================================== */
-const PROGRESS = {};
-function progressOf(t) {
-  const g = t.m.filter(m => m[6] != null && m[7] != null).length;
-  const legs = (t.rec && t.rec.final && t.legs) ? t.legs.filter(l => l.s[0] != null && l.s[1] != null).length : 0;
-  const champ = (t.rec && t.rec.final && t.c && t.c.length === 2) ? 1 : 0;
-  return g + legs + champ;
-}
-/* The baseline, re-taken every time the control room is drawn from the data —
-   including after the cloud delivers results another phone entered, so a
-   later correction here does not re-announce what that phone already did.
-   Every save path announces BEFORE it redraws the panel. */
-function seedProgress(t) {
-  if (t && t.live) PROGRESS[t.i] = progressOf(t);
-}
-const pushPair = (a, b) => P[a] + " ו" + P[b];
-function nextEventText(t) {
-  const nx = nextFixture(t);
-  if (nx) {
-    const m = nx.m;
-    return "המשחק הבא - מחזור " + (nx.i + 1) + ", " + pushPair(m[0], m[1]) + " בבית עם " + CLUBS[m[2]] +
-           " נגד " + pushPair(m[3], m[4]) + " בחוץ עם " + CLUBS[m[5]];
+const ADMIN_KEY_LS = "fifa-admin-key";
+const adminKey = () => { try { return localStorage.getItem(ADMIN_KEY_LS) || ""; } catch (e) { return ""; } };
+const pushErr = e => {
+  const m = String((e && (e.code || e.message)) || e);
+  if (/denied/.test(m)) return "ההתראות חסומות בטלפון הזה. אפשר לאשר אותן בהגדרות האתר ב־Chrome.";
+  if (/dismissed/.test(m)) return "לא אושר. אפשר לנסות שוב.";
+  if (/unsupported/.test(m)) return "הדפדפן הזה לא תומך בהתראות. פתח את האפליקציה ב־Chrome.";
+  if (/not-configured/.test(m)) return "ההתראות עוד לא הוגדרו בשרת.";
+  if (/permission-denied/.test(m)) return "מפתח האדמין שגוי.";
+  if (/not-found|internal|unavailable/.test(m)) return "שרת ההתראות לא זמין כרגע.";
+  return "משהו נכשל: " + m;
+};
+
+function pushPanel() {
+  const sec = el("section", "block");
+  const P_ = window.APP_PUSH;
+  const perm = P_ ? P_.permission() : "unsupported";
+  const on = perm === "granted" && P_ && P_.token();
+  sec.innerHTML = '<div class="bhead"><h2>התראות</h2><span class="note">' +
+    (on ? "פעילות בטלפון הזה — תקבל פוש על המשחק הבא אחרי כל תוצאה."
+        : "פוש על המשחק הבא אחרי כל תוצאה, גם כשהאפליקציה סגורה.") + "</span></div>";
+  const row = el("div", "chips");
+  const msg = el("div", "mut");
+  msg.style.fontSize = "12.5px";
+
+  if (!P_ || !P_.supported()) {
+    msg.textContent = "הדפדפן הזה לא תומך בהתראות. פתח את האפליקציה ב־Chrome.";
+  } else if (!P_.configured()) {
+    msg.textContent = "ההתראות עוד לא הוגדרו בשרת.";
+  } else if (perm === "denied") {
+    msg.textContent = "ההתראות חסומות בטלפון הזה. כדי לפתוח: Chrome ← ⋮ ← הגדרות ← הגדרות אתר ← התראות.";
+  } else {
+    const b = el("button", on ? "btn ghost sm" : "btn", on ? "✓ התראות פעילות" : "🔔 הפעל התראות");
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = "מפעיל…";
+      try {
+        await P_.enable();
+        flash("ההתראות פעילות בטלפון הזה");
+        viewLive(document.getElementById("v-live"));
+      } catch (e) {
+        b.disabled = false; b.textContent = "🔔 הפעל התראות";
+        flash(pushErr(e), true);
+      }
+    };
+    row.appendChild(b);
   }
-  if (!t.legs) return null;
-  const k = t.legs.findIndex(l => l.s[0] == null || l.s[1] == null);
-  if (k >= 0) {
-    const L = t.legs[k];
-    return (k === 0 ? "שלב הליגה הסתיים! " : "") + "הגמר - משחק " + (k + 1) + " מתוך 2, " +
-           pushPair(L.home[0], L.home[1]) + " בבית עם " + CLUBS[L.hc] +
-           " נגד " + pushPair(L.away[0], L.away[1]) + " בחוץ עם " + CLUBS[L.ac];
-  }
-  if (t.c && t.c.length === 2) return "טורניר " + t.num + " הסתיים! האלופים: " + pushPair(t.c[0], t.c[1]);
-  return "הגמר נגמר בשוויון - מי ניצח בשער הזהב?";
+  sec.append(row, msg);
+
+  /* the admin's box — only where the admin key was entered */
+  const key = adminKey();
+  if (key) sec.appendChild(adminBox(key));
+  const link = el("button", "btn ghost sm", key ? "יציאה ממצב אדמין" : "כניסת אדמין");
+  link.style.alignSelf = "flex-start";
+  link.onclick = async () => {
+    if (key) {
+      try { localStorage.removeItem(ADMIN_KEY_LS); } catch (e) {}
+      viewLive(document.getElementById("v-live"));
+      return;
+    }
+    const k = await askText({ title: "כניסת אדמין", body: "הזן את מפתח האדמין. הוא נשמר רק בטלפון הזה.",
+                              ok: "כניסה", placeholder: "מפתח אדמין" });
+    if (!k) return;
+    try {
+      await P_.admin({ key: k.trim(), check: true });   // the server says whether it is right
+      try { localStorage.setItem(ADMIN_KEY_LS, k.trim()); } catch (e) {}
+      flash("מצב אדמין פעיל בטלפון הזה");
+      viewLive(document.getElementById("v-live"));
+    } catch (e) { flash(pushErr(e), true); }
+  };
+  sec.appendChild(link);
+  return sec;
 }
 
-function sendPush(p) {
-  if (!window.PUSH_TOPIC) return Promise.resolve(false);
-  return fetch("https://ntfy.sh/", {
-    method: "POST",
-    body: JSON.stringify({ topic: window.PUSH_TOPIC, title: p.title, message: p.message, tags: ["soccer"] })
-  }).then(r => r.ok).catch(() => false);
+function adminBox(key) {
+  const box = el("div", "panel");
+  box.style.cssText = "padding:12px 14px;display:flex;flex-direction:column;gap:8px";
+  box.appendChild(el("div", "lbl", "שליחת פוש לכולם · אדמין"));
+  const title = textInput("טורניר פיפא");
+  title.setAttribute("aria-label", "כותרת");
+  const body = el("textarea");
+  body.rows = 3;
+  body.placeholder = "מה לכתוב בפוש…";
+  body.setAttribute("aria-label", "תוכן ההודעה");
+  body.style.cssText = "background:var(--panel2);border:1px solid var(--line2);color:var(--ink);padding:9px 11px;font:inherit;resize:vertical";
+  const out = el("div", "mut");
+  out.style.fontSize = "12.5px";
+  const row = el("div", "chips");
+  const send = async (onlyMe, btn) => {
+    const text = body.value.trim();
+    if (!text) { flash("ההודעה ריקה", true); return; }
+    const token = window.APP_PUSH && window.APP_PUSH.token();
+    if (onlyMe && !token) { flash("הפעל קודם התראות בטלפון הזה", true); return; }
+    btn.disabled = true;
+    try {
+      const r = await window.APP_PUSH.admin({ key, title: title.value.trim(), body: text, token: onlyMe ? token : undefined });
+      out.textContent = "נשלח ל־" + r.sent + " מתוך " + r.phones + " טלפונים" + (r.failed ? " · " + r.failed + " נכשלו" : "") + ".";
+      if (!onlyMe) body.value = "";
+    } catch (e) { out.textContent = pushErr(e); }
+    btn.disabled = false;
+  };
+  const all = el("button", "btn", "שלח לכולם");
+  all.onclick = () => send(false, all);
+  const me = el("button", "btn ghost sm", "שלח רק אליי (בדיקה)");
+  me.onclick = () => send(true, me);
+  row.append(all, me);
+  box.append(title, body, row, out);
+  return box;
 }
-/* no signal on the pitch: keep the latest push and send it when the network is back */
-function queuePush(p) { try { localStorage.setItem("fifa-push-pending", JSON.stringify(p)); } catch (e) {} }
-function flushPush() {
-  let p = null;
-  try { p = JSON.parse(localStorage.getItem("fifa-push-pending") || "null"); } catch (e) {}
-  if (!p) return;
-  sendPush(p).then(ok => { if (ok) { try { localStorage.removeItem("fifa-push-pending"); } catch (e) {} } });
-}
-addEventListener("online", flushPush);
-setTimeout(flushPush, 4000);
 
-function announceProgress(t) {
-  if (!t || !t.live) return;
-  const now = progressOf(t), was = PROGRESS[t.i];
-  PROGRESS[t.i] = now;
-  if (was == null || now <= was) return;         // only a new result moves it forward
-  const message = nextEventText(t);
-  if (!message) return;
-  const p = { title: "טורניר " + t.num + " · " + seasonById(t.season).name, message };
-  sendPush(p).then(ok => {
-    if (ok) flash("נשלח פוש: " + message);
-    else { queuePush(p); flash("אין חיבור — הפוש יישלח כשהרשת תחזור", true); }
+/* a text question in the page, like askConfirm */
+function askText(o) {
+  return new Promise(resolve => {
+    const back = el("div", "modalback");
+    const card = el("div", "modalcard");
+    card.innerHTML = "<h3>" + esc(o.title) + "</h3><p>" + esc(o.body) + "</p>";
+    const inp = textInput("", o.placeholder || "");
+    inp.type = "password";
+    inp.style.cssText = "width:100%;margin-top:10px";
+    const row = el("div", "modalrow");
+    const ok = el("button", "btn sm", o.ok || "אישור");
+    const no = el("button", "btn ghost sm", "ביטול");
+    const done = v => { document.removeEventListener("keydown", onKey); back.remove(); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(null); if (e.key === "Enter") done(inp.value); };
+    ok.onclick = () => done(inp.value);
+    no.onclick = () => done(null);
+    back.onclick = e => { if (e.target === back) done(null); };
+    document.addEventListener("keydown", onKey);
+    row.append(ok, no);
+    card.append(inp, row);
+    back.appendChild(card);
+    document.body.appendChild(back);
+    inp.focus();
   });
 }
+
+/* tokens rotate; keep this phone's current one registered */
+setTimeout(() => { if (window.APP_PUSH) window.APP_PUSH.refresh(); }, 5000);
 
 /* the scheduled task reads this doc and delivers it — the page is the only
    place that can compute it */

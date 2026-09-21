@@ -143,6 +143,21 @@ def stamp_worker():
     print('sw.js VERSION', ver, '(changed)' if new != sw else '(unchanged)')
 
 
+def server_data():
+    """The push server needs the fixture templates and the player names to
+    write "the next match". Hand it the very same values the app ships, from
+    the same file, so the two can never disagree about who plays whom."""
+    import json
+    d = json.load(io.open(P('data2.json'), encoding='utf-8'))
+    out = json.dumps({'P': d['P'], 'TPL': d['TPL']}, ensure_ascii=False, indent=1)
+    path = os.path.join(ROOT, 'functions', 'data.json')
+    old = io.open(path, encoding='utf-8').read() if os.path.exists(path) else None
+    if old != out:
+        io.open(path, 'w', encoding='utf-8', newline='\n').write(out)
+    print('functions/data.json', '(changed)' if old != out else '(unchanged)')
+
+
 if __name__ == '__main__':
     pwa(assemble())
     stamp_worker()
+    server_data()

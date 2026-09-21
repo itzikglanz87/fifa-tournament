@@ -16,10 +16,19 @@ window.FIREBASE_CONFIG = {
 };
 
 /* ----------------------------------------------------------------------------
-   Pushes through ntfy.sh. Anyone subscribed to this topic in the ntfy app gets
-   "the next match" the moment a new result is saved. The topic is the only
-   key — it is in this public repo, so treat it as unlisted, not secret. To cut
-   off everyone, change it here and send the new subscribe link.
-   Subscribe: https://ntfy.sh/fifa-glanz-36439c219ca7
+   Push notifications (Firebase Cloud Messaging).
+
+   VAPID_KEY: Firebase console → Project settings → Cloud Messaging → Web
+   configuration → "Generate key pair", then paste the key here. It is the
+   PUBLIC half of the pair; publishing it is how web push is meant to work.
+   Until it is filled in, the "הפעל התראות" button says push is not set up.
+
+   FUNCTIONS_REGION: where functions/index.js is deployed — must match the
+   REGION constant there.
+
+   Who may SEND: the server alone decides. Automatic "next match" pushes come
+   from the server after any new result; manual messages need the admin key,
+   which is never in this repo.
    -------------------------------------------------------------------------- */
-window.PUSH_TOPIC = "fifa-glanz-36439c219ca7";
+window.VAPID_KEY = "PASTE_VAPID_KEY";
+window.FUNCTIONS_REGION = "europe-west1";

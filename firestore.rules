@@ -21,6 +21,18 @@ service cloud.firestore {
       allow read, write: if request.auth != null && id in ['config', 'newsroom'];
     }
 
+    // a phone that enables notifications registers its own token; nobody
+    // can read the list — only the push server (admin SDK) does
+    match /pushTokens/{token} {
+      allow create, update: if request.auth != null
+        && request.resource.data.token == token
+        && request.resource.data.keys().hasOnly(['token', 'at', 'ua']);
+      allow delete: if request.auth != null;
+      allow read: if false;
+    }
+
+    // pushLog is the server's own bookkeeping: no client access at all
+
     // everything else stays shut
     match /{document=**} {
       allow read, write: if false;

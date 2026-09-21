@@ -1,0 +1,12 @@
+{
+  "name": "fifa-push",
+  "description": "Push server for the FIFA tournament app: next-match announcements and admin messages.",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "scripts": { "test": "node test/parity.js" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}

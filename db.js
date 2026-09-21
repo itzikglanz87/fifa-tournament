@@ -90,6 +90,8 @@
     } catch (e) {
       /* another tab already holds it, or the browser refuses — not fatal */
     }
+    /* kept for the push helpers below, which need the same app and store */
+    window.APP_FB = { app: app, fs: fs, fsMod: fsMod };
 
     return {
       doc: function (path) {
@@ -130,6 +132,67 @@
         });
       }
       return started;
+    }
+  };
+
+  /* ==========================================================================
+     Push notifications (Firebase Cloud Messaging).
+     A phone that says yes gets a token, stored at pushTokens/{token}; the
+     server (functions/index.js) sends "the next match" to every token after a
+     new result, and the admin's own messages after checking the admin key.
+     The app's service worker draws each notification (see sw.js).
+     ======================================================================== */
+  var TOKEN_KEY = "fifa-push-token";
+  function vapid() {
+    var k = window.VAPID_KEY;
+    return (k && String(k).indexOf("PASTE") !== 0) ? k : null;
+  }
+  async function getMessagingToken() {
+    var db = await window.APP_DB.open();
+    var fb = window.APP_FB;
+    if (!db || !fb) throw new Error("no-firebase");
+    var msgMod = await import(SDK + "firebase-messaging.js");
+    if (!(await msgMod.isSupported())) throw new Error("unsupported");
+    var reg = await navigator.serviceWorker.ready;
+    var token = await msgMod.getToken(msgMod.getMessaging(fb.app),
+      { vapidKey: vapid(), serviceWorkerRegistration: reg });
+    if (!token) throw new Error("no-token");
+    await fb.fsMod.setDoc(fb.fsMod.doc(fb.fs, "pushTokens", token),
+      { token: token, at: new Date().toISOString(), ua: String(navigator.userAgent).slice(0, 120) });
+    try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
+    return token;
+  }
+
+  window.APP_PUSH = {
+    supported: function () {
+      return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    },
+    /* the server side exists only once the VAPID key is filled in */
+    configured: function () { return configured() && !!vapid(); },
+    permission: function () { return ("Notification" in window) ? Notification.permission : "unsupported"; },
+    token: function () { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } },
+    /* must run from a tap: the browser only asks inside a user gesture */
+    enable: async function () {
+      if (!this.supported()) throw new Error("unsupported");
+      if (!this.configured()) throw new Error("not-configured");
+      var perm = await Notification.requestPermission();
+      if (perm !== "granted") throw new Error(perm === "denied" ? "denied" : "dismissed");
+      return getMessagingToken();
+    },
+    /* tokens rotate; refresh quietly on launch once permission was given */
+    refresh: function () {
+      if (!this.supported() || !this.configured() || this.permission() !== "granted") return Promise.resolve(null);
+      return getMessagingToken().catch(function () { return null; });
+    },
+    /* the admin's call; the server refuses it without the right key */
+    admin: async function (data) {
+      var db = await window.APP_DB.open();
+      var fb = window.APP_FB;
+      if (!db || !fb) throw new Error("no-firebase");
+      var fnMod = await import(SDK + "firebase-functions.js");
+      var call = fnMod.httpsCallable(fnMod.getFunctions(fb.app, window.FUNCTIONS_REGION || "europe-west1"), "adminPush");
+      var r = await call(data);
+      return r.data;
     }
   };
 })();

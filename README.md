@@ -157,3 +157,25 @@ python build_pwa.py    # בונה מחדש את pwa/index.html מאותו מקו
 ל‑Firebase, קריאה וכתיבה של טורניר, סירוב של הכללים לכתיבה אסורה, ורישום
 ה‑service worker — שמירה של כל שמונת קבצי האפליקציה במטמון לשימוש אופליין.
 מה שנשאר לבדוק בטלפון עצמו: מצב טיסה, סגירה ופתיחה מחדש.
+
+---
+
+## פושים (Firebase Cloud Messaging)
+
+**מה קורה:** אחרי כל תוצאה חדשה, השרת (`functions/`) שולח לכל הטלפונים
+שהפעילו התראות את "המשחק הבא". הודעות ידניות — רק מהאדמין, והשרת בודק את
+מפתח האדמין לפני ששולח.
+
+| חלק | קובץ |
+|---|---|
+| הכללים שהשרת מחשב לפיהם את המשחק הבא | `functions/tournament.js` (נבדק מול האפליקציה ב־`functions/test/parity.js`) |
+| הטריגר האוטומטי והשליחה של האדמין | `functions/index.js` (נבדק ב־`functions/test/trigger.js`) |
+| מפתח האדמין | `functions/.env` — **לא נכנס ל־git** |
+| הפעלת התראות בטלפון ושליחת אדמין | `db.js` (`APP_PUSH`) |
+| הצגת ההתראה גם כשהאפליקציה סגורה | `sw.js` |
+| מפתח VAPID הציבורי ואזור השרת | `firebase-config.js` |
+
+**הקמה (פעם אחת):** Blaze ← מפתח VAPID ל־`firebase-config.js` ←
+`npx firebase-tools login` ← `npx firebase-tools deploy --only functions,firestore:rules`.
+
+**אחרי שינוי בכללי הטורניר:** `node functions/test/parity.js` חייב לעבור לפני deploy.

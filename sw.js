@@ -8,7 +8,7 @@
    background. Firestore and the fonts are left alone — Firestore has its own
    offline queue, and the CSS names system fonts as a fallback.
    ========================================================================= */
-const VERSION = "fifa-4c9379e8f7";
+const VERSION = "fifa-0f56170bb5";
 const SHELL = [
   "./",
   "./index.html",
@@ -39,6 +39,42 @@ self.addEventListener("activate", e => {
 
 self.addEventListener("message", e => {
   if (e.data === "skipWaiting") self.skipWaiting();
+});
+
+/* ---------------------------------------------------------------------------
+   Push. The server sends data-only messages through Firebase Cloud Messaging,
+   and this worker draws every one of them — so a notification looks the same
+   whether the app is open, in the background or closed. Chrome requires a
+   visible notification for every push, and this always shows one.
+   ------------------------------------------------------------------------- */
+self.addEventListener("push", e => {
+  let d = {};
+  try {
+    const j = e.data ? e.data.json() : {};
+    d = j.data || j.notification || j;
+  } catch (err) {
+    d = { body: e.data ? e.data.text() : "" };
+  }
+  const title = d.title || "טורניר פיפא";
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || "",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    dir: "rtl",
+    lang: "he",
+    data: { url: d.url || "./" }
+  }));
+});
+
+/* a tap on the notification brings the app forward, or opens it */
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) { if ("focus" in w) return w.focus(); }
+    if (self.clients.openWindow) return self.clients.openWindow(url);
+  })());
 });
 
 self.addEventListener("fetch", e => {
