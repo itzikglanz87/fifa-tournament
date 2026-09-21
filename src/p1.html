@@ -1116,4 +1116,30 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .ltc-dual .ga i{background:#FF6B6B} .ltc-dual .gf i{background:#3DDC84}
 .ltc-dual em{font-style:normal; font-size:10.5px; font-weight:800; color:#C9D1DB; padding:0 4px}
 .ltc-dual .ga em{order:-1}
+/* ---------- who am I + activity log ---------- */
+.whocard{gap:12px}
+.whogrid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:6px 0}
+.whobtn{display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 4px; border-radius:14px;
+  background:#1B2129; border:1px solid #2A333F; color:var(--ink); font:inherit; font-weight:700; cursor:pointer}
+.whobtn:active{border-color:var(--c)}
+.whoface{width:54px; height:54px; border-radius:50%; border:2px solid var(--c); overflow:hidden; display:grid; place-items:center; background:#0E1218}
+.whoface .pface{width:100%; height:100%}
+.whoface b{font-size:22px; color:var(--c)}
+.act{display:flex; flex-direction:column; gap:10px}
+.act-sum{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+.act-sum div{background:#1B2129; border-radius:12px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:2px}
+.act-sum b{font-size:22px} .act-sum span{font-size:11.5px; color:#9AA4B2}
+.act-hours{background:#1B2129; border-radius:12px; padding:10px 10px 6px}
+.act-bars{display:grid; grid-template-columns:repeat(24,1fr); gap:2px; height:70px; align-items:end; direction:ltr}
+.act-bars span{height:100%; display:flex; align-items:flex-end}
+.act-bars i{display:block; width:100%; border-radius:3px 3px 0 0; background:linear-gradient(180deg,#7FB0FF,var(--blue))}
+.act-axis{display:flex; justify-content:space-between; direction:ltr; font-size:10px; color:#6F7A88; margin-top:4px}
+.act-row{background:#1B2129; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:5px}
+.act-top{display:flex; align-items:center; justify-content:space-between}
+.act-n{font-size:20px}
+.act-sub{font-size:12px; color:#9AA4B2}
+.act-heat{display:grid; grid-template-columns:repeat(24,1fr); gap:2px; direction:ltr}
+.act-heat i{height:10px; border-radius:2px; background:var(--c)}
+.act-log summary{cursor:pointer; color:var(--blue); font-weight:700; font-size:13px; padding:4px 0}
+.act-line{display:grid; grid-template-columns:1fr auto auto; gap:10px; font-size:12.5px; padding:5px 2px; border-bottom:1px solid #222A35}
 </style>

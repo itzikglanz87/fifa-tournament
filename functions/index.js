@@ -150,12 +150,16 @@ async function saveStory(s) {
 }
 
 /* --------------------------------------------------------------- 2. admin */
-exports.adminPush = onCall(async req => {
-  const d = req.data || {};
+function requireAdmin(d) {
   const key = ADMIN_KEY.value();
-  if (!key || typeof d.key !== "string" || d.key !== key) {
+  if (!key || !d || typeof d.key !== "string" || d.key !== key) {
     throw new HttpsError("permission-denied", "מפתח אדמין שגוי");
   }
+}
+
+exports.adminPush = onCall(async req => {
+  const d = req.data || {};
+  requireAdmin(d);
   if (d.check) return { ok: true };                          // "is this key right?"
   const title = String(d.title || "טורניר פיפא").slice(0, 80);
   const body = String(d.body || "").slice(0, 400);
@@ -168,4 +172,22 @@ exports.adminPush = onCall(async req => {
   const r = await sendToAll(title, body, typeof d.token === "string" ? d.token : null, url);
   console.log("admin push", JSON.stringify(r), title, body, storyId || "");
   return Object.assign({ ok: true, story: storyId }, r);
+});
+
+/* ------------------------------------------------------------ 3. activity */
+/* The activity log: each phone writes visits/{id} when the app opens (the
+   rules let it create, never read). Only the admin reads it, through here. */
+exports.adminVisits = onCall(async req => {
+  const d = req.data || {};
+  requireAdmin(d);
+  const days = Math.max(1, Math.min(400, Number(d.days) || 30));
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  const snap = await db.collection("visits").where("at", ">=", since).orderBy("at", "desc").limit(5000).get();
+  return {
+    days,
+    visits: snap.docs.map(x => {
+      const v = x.data() || {};
+      return { who: typeof v.who === "number" ? v.who : null, at: v.at, dev: v.dev || "", app: v.app || "" };
+    })
+  };
 });

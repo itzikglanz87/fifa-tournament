@@ -25,7 +25,22 @@ const fakeAdmin = {
   initializeApp() {},
   firestore: () => ({
     doc: docRef,
-    collection: name => ({ get: async () => ({ docs: Object.keys(store).filter(p => p.startsWith(name + "/")).map(snap) }) }),
+    collection: name => {
+      /* enough of a query for the activity log: where(">="), orderBy desc, limit */
+      const q = { f: null, lim: 1e9 };
+      const api = {
+        where: (field, op, val) => { q.f = [field, val]; return api; },
+        orderBy: () => api,
+        limit: n => { q.lim = n; return api; },
+        get: async () => {
+          let docs = Object.keys(store).filter(p => p.startsWith(name + "/")).map(snap);
+          if (q.f) docs = docs.filter(x => String(x.data()[q.f[0]]) >= q.f[1]);
+          docs.sort((a, b) => String(b.data().at || "").localeCompare(String(a.data().at || "")));
+          return { docs: docs.slice(0, q.lim) };
+        }
+      };
+      return api;
+    },
     runTransaction: async fn => fn({ get: r => r.get(), set: (r, d) => r.set(d) })
   }),
   messaging: () => ({
@@ -158,6 +173,18 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   let emptyRefused = false;
   try { await call({ key: "right-key", title: "x", body: "y", story: { head: " " } }); } catch (e) { emptyRefused = e.code === "invalid-argument"; }
   expect("a card without a headline is refused", emptyRefused);
+
+  /* the activity log: only the admin reads it, and only the asked period */
+  const now = Date.now();
+  store["visits/a"] = { who: 5, at: new Date(now - 3600e3).toISOString(), dev: "d1", app: "apk" };
+  store["visits/b"] = { who: 0, at: new Date(now - 2 * 864e5).toISOString(), dev: "d2", app: "web" };
+  store["visits/c"] = { who: 0, at: new Date(now - 40 * 864e5).toISOString(), dev: "d2", app: "web" };
+  let visitsRefused = false;
+  try { await F.adminVisits.run({ data: { key: "wrong" }, auth: null, rawRequest: {} }); } catch (e) { visitsRefused = e.code === "permission-denied"; }
+  expect("the activity log refuses a wrong key", visitsRefused);
+  const lv = await F.adminVisits.run({ data: { key: "right-key", days: 30 }, auth: null, rawRequest: {} });
+  expect("the activity log returns the period, newest first", lv.visits.length === 2 && lv.visits[0].who === 5,
+         JSON.stringify(lv.visits.map(v => v.who)));
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

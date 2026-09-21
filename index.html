@@ -1130,6 +1130,32 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .ltc-dual .ga i{background:#FF6B6B} .ltc-dual .gf i{background:#3DDC84}
 .ltc-dual em{font-style:normal; font-size:10.5px; font-weight:800; color:#C9D1DB; padding:0 4px}
 .ltc-dual .ga em{order:-1}
+/* ---------- who am I + activity log ---------- */
+.whocard{gap:12px}
+.whogrid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:6px 0}
+.whobtn{display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 4px; border-radius:14px;
+  background:#1B2129; border:1px solid #2A333F; color:var(--ink); font:inherit; font-weight:700; cursor:pointer}
+.whobtn:active{border-color:var(--c)}
+.whoface{width:54px; height:54px; border-radius:50%; border:2px solid var(--c); overflow:hidden; display:grid; place-items:center; background:#0E1218}
+.whoface .pface{width:100%; height:100%}
+.whoface b{font-size:22px; color:var(--c)}
+.act{display:flex; flex-direction:column; gap:10px}
+.act-sum{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+.act-sum div{background:#1B2129; border-radius:12px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:2px}
+.act-sum b{font-size:22px} .act-sum span{font-size:11.5px; color:#9AA4B2}
+.act-hours{background:#1B2129; border-radius:12px; padding:10px 10px 6px}
+.act-bars{display:grid; grid-template-columns:repeat(24,1fr); gap:2px; height:70px; align-items:end; direction:ltr}
+.act-bars span{height:100%; display:flex; align-items:flex-end}
+.act-bars i{display:block; width:100%; border-radius:3px 3px 0 0; background:linear-gradient(180deg,#7FB0FF,var(--blue))}
+.act-axis{display:flex; justify-content:space-between; direction:ltr; font-size:10px; color:#6F7A88; margin-top:4px}
+.act-row{background:#1B2129; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:5px}
+.act-top{display:flex; align-items:center; justify-content:space-between}
+.act-n{font-size:20px}
+.act-sub{font-size:12px; color:#9AA4B2}
+.act-heat{display:grid; grid-template-columns:repeat(24,1fr); gap:2px; direction:ltr}
+.act-heat i{height:10px; border-radius:2px; background:var(--c)}
+.act-log summary{cursor:pointer; color:var(--blue); font-weight:700; font-size:13px; padding:4px 0}
+.act-line{display:grid; grid-template-columns:1fr auto auto; gap:10px; font-size:12.5px; padding:5px 2px; border-bottom:1px solid #222A35}
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -2943,6 +2969,8 @@ function managePanel(open, inScope) {
   bar.appendChild(row);
   box.appendChild(bar);
   box.appendChild(pushPanel());
+  box.appendChild(mePanel());
+  if (adminKey()) box.appendChild(activityPanel());
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
@@ -6118,6 +6146,181 @@ function publishBulletin(t, pre) {
 }
 
 /* ==========================================================================
+   Who is holding this phone, and the activity log
+   --------------------------------------------------------------------------
+   The app has no logins. Each phone is asked once, after the intro, whose it
+   is (one of the six, or "just visiting"); the answer stays on the phone and
+   can be changed under ניהול. Every opening of the app — a fresh start, or a
+   return after half an hour away — adds one line to visits/: who, when, and
+   whether it was the APK, the home-screen app or a browser tab. Phones can
+   only add lines; the admin reads them through the server (adminVisits).
+   ========================================================================== */
+const ME_LS = "fifa-me", DEV_LS = "fifa-dev", LASTVISIT_LS = "fifa-lastvisit";
+const meWho = () => {                 // undefined: never asked · -1: visiting · 0..5
+  try { const v = localStorage.getItem(ME_LS); return v == null ? undefined : Number(v); } catch (e) { return -1; }
+};
+const setMe = v => { try { localStorage.setItem(ME_LS, String(v)); } catch (e) {} };
+function deviceId() {
+  try {
+    let d = localStorage.getItem(DEV_LS);
+    if (!d) { d = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem(DEV_LS, d); }
+    return d;
+  } catch (e) { return "none"; }
+}
+/* the APK opens the site from an android-app:// referrer; the browser-installed
+   app runs standalone; anything else is a tab */
+const APP_KIND = (() => {
+  try {
+    if (/^android-app:\/\//.test(document.referrer) || sessionStorage.getItem("fifa-apk")) {
+      sessionStorage.setItem("fifa-apk", "1"); return "apk";
+    }
+  } catch (e) {}
+  return matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches ? "app" : "web";
+})();
+
+async function logVisit(force) {
+  try {
+    const now = Date.now();
+    const last = Number(localStorage.getItem(LASTVISIT_LS) || 0);
+    if (!force && now - last < 5 * 60e3) return;       // a reload is not a new visit
+    const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+    if (!db) return;
+    localStorage.setItem(LASTVISIT_LS, String(now));
+    const w = meWho();
+    await db.doc("visits/" + deviceId() + "_" + now.toString(36)).set({
+      who: typeof w === "number" && w >= 0 && w <= 5 ? w : null,
+      at: new Date(now).toISOString(), dev: deviceId(), app: APP_KIND
+    });
+  } catch (e) { /* the log must never get in the way of the app */ }
+}
+
+/* back after half an hour in the background counts as opening the app again */
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt >= 30 * 60e3) logVisit();
+});
+
+function askWho() {
+  return new Promise(resolve => {
+    const back = el("div", "modalback");
+    const card = el("div", "modalcard whocard");
+    card.appendChild(el("h3", "", "מי אתה?"));
+    card.appendChild(el("p", "", "בחר פעם אחת — הטלפון יזכור. אפשר לשנות אחר כך בלשונית ניהול."));
+    const grid = el("div", "whogrid");
+    const done = v => { setMe(v); back.remove(); resolve(v); };
+    P.forEach((name, p) => {
+      const b = el("button", "whobtn");
+      b.style.setProperty("--c", PC(p));
+      b.innerHTML = '<span class="whoface">' + (photoOf(p) ? '<i class="pface pf' + p + '"></i>' : "<b>" + esc(name.slice(0, 1)) + "</b>") +
+        "</span><span>" + esc(name) + "</span>";
+      b.onclick = () => done(p);
+      grid.appendChild(b);
+    });
+    card.appendChild(grid);
+    const guest = el("button", "btn ghost sm", "אני לא אחד מהשישה");
+    guest.onclick = () => done(-1);
+    card.appendChild(guest);
+    back.appendChild(card);
+    document.body.appendChild(back);
+  });
+}
+
+/* under ניהול, for everyone: whose phone this is */
+function mePanel() {
+  const sec = el("section", "block");
+  const w = meWho();
+  sec.innerHTML = '<div class="bhead"><h2>הטלפון הזה</h2><span class="note">' +
+    "האפליקציה רושמת מתי היא נפתחת ובשם מי, כדי שהאדמין יראה מי נכנס ומתי.</span></div>";
+  const row = el("div", "chips");
+  row.appendChild(el("span", "", typeof w === "number" && w >= 0 ? "שייך ל־" + plateFace(w) : "לא נבחר שם"));
+  const ch = el("button", "btn ghost sm", "שינוי");
+  ch.onclick = async () => { await askWho(); viewLive(document.getElementById("v-live")); };
+  row.appendChild(ch);
+  sec.appendChild(row);
+  return sec;
+}
+
+/* under ניהול, for the admin: the log */
+function activityPanel() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>יומן פעילות</h2><span class="note">מי נכנס לאפליקציה, כמה פעמים ובאיזה שעות · אדמין בלבד</span></div>';
+  const bar = el("div", "chips");
+  const host = el("div", "act");
+  let days = 7;
+  const load = async () => {
+    host.innerHTML = '<div class="mut">טוען…</div>';
+    try {
+      const r = await window.APP_PUSH.admin({ key: adminKey(), days }, "adminVisits");
+      drawActivity(host, r.visits || [], days);
+    } catch (e) { host.innerHTML = ""; host.appendChild(el("div", "mut", pushErr(e))); }
+  };
+  [[1, "היום"], [7, "שבוע"], [30, "חודש"], [365, "שנה"]].forEach(([d, label]) => {
+    const b = el("button", "ltmode" + (d === days ? " on" : ""), label);
+    b.onclick = () => { days = d; bar.querySelectorAll(".ltmode").forEach(x => x.classList.toggle("on", x === b)); load(); };
+    bar.appendChild(b);
+  });
+  bar.classList.add("ltmodes");
+  sec.append(bar, host);
+  load();
+  return sec;
+}
+
+function drawActivity(host, visits, days) {
+  host.innerHTML = "";
+  const since = days === 1 ? new Date(new Date().setHours(0, 0, 0, 0)) : new Date(Date.now() - days * 864e5);
+  const vs = visits.map(v => Object.assign({}, v, { d: new Date(v.at) })).filter(v => v.d >= since);
+  if (!vs.length) { host.appendChild(el("div", "mut", "אין כניסות בתקופה הזאת.")); return; }
+  const key = v => (v.who == null ? "g" : String(v.who));
+  const people = {};
+  vs.forEach(v => {
+    const k = key(v);
+    const o = people[k] || (people[k] = { who: v.who, n: 0, last: v.d, hours: new Array(24).fill(0), devs: new Set(), apps: new Set() });
+    o.n++; if (v.d > o.last) o.last = v.d;
+    o.hours[v.d.getHours()]++; o.devs.add(v.dev); o.apps.add(v.app);
+  });
+  const hoursAll = new Array(24).fill(0);
+  vs.forEach(v => { hoursAll[v.d.getHours()]++; });
+  const whoN = Object.keys(people).filter(k => k !== "g").length;
+
+  host.appendChild(el("div", "act-sum",
+    '<div><b>' + vs.length + "</b><span>כניסות</span></div>" +
+    "<div><b>" + whoN + "</b><span>שחקנים נכנסו</span></div>" +
+    "<div><b>" + String(hoursAll.indexOf(Math.max(...hoursAll))).padStart(2, "0") + ":00</b><span>השעה העמוסה</span></div>"));
+
+  /* every hour of the day, all players together */
+  const mx = Math.max(...hoursAll);
+  host.appendChild(el("div", "act-hours",
+    '<div class="act-bars">' + hoursAll.map((c, h) => '<span title="' + h + ':00 · ' + c + '"><i style="height:' +
+      (c ? Math.max(6, Math.round(100 * c / mx)) : 0) + '%"></i></span>').join("") + "</div>" +
+    '<div class="act-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>'));
+
+  const fmt = d => {
+    const t = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.round((today - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+    return (diff === 0 ? "היום" : diff === 1 ? "אתמול" : d.getDate() + "/" + (d.getMonth() + 1)) + " " + t;
+  };
+  const appName = a => ({ apk: "APK", app: "מסך הבית", web: "דפדפן" })[a] || a;
+  Object.values(people).sort((a, b) => b.n - a.n).forEach(o => {
+    const hm = Math.max(...o.hours);
+    const name = o.who == null ? '<span class="mut">בלי שם</span>' : plateFace(o.who);
+    host.appendChild(el("div", "act-row",
+      '<div class="act-top"><span>' + name + '</span><b class="act-n">' + o.n + '</b></div>' +
+      '<div class="act-sub">אחרון: ' + fmt(o.last) + " · " + [...o.apps].map(appName).join(", ") +
+        (o.devs.size > 1 ? " · " + o.devs.size + " מכשירים" : "") + "</div>" +
+      '<div class="act-heat" style="--c:' + (o.who == null ? "#8A94A3" : PC(o.who)) + '">' +
+        o.hours.map((c, h) => '<i title="' + h + ':00 · ' + c + '" style="opacity:' + (c ? (0.25 + 0.75 * c / hm).toFixed(2) : 0.06) + '"></i>').join("") + "</div>"));
+  });
+
+  const list = el("details", "act-log");
+  list.innerHTML = "<summary>כל הכניסות (" + vs.length + ")</summary>" +
+    vs.slice(0, 200).map(v => '<div class="act-line"><span>' + (v.who == null ? "בלי שם" : esc(P[v.who])) + "</span><span class=\"mut\">" +
+      appName(v.app) + "</span><span>" + fmt(v.d) + "</span></div>").join("");
+  host.appendChild(list);
+}
+
+/* ==========================================================================
    News, 365 style — a feed of cards. The lead story is a big picture card,
    the rest are rows with a picture beside the headline. Each card opens its
    story on its own page (the match page's shell, so Android's back closes it).
@@ -6456,6 +6659,9 @@ go(start);
   const sharedStory = storyFromHash();   // read before anything rewrites the address
   await Store.initCloud();
   if (sharedStory) setTimeout(() => openSharedStory(sharedStory), 0);
+  /* whose phone is this — asked once, after the intro — then log the visit */
+  if (meWho() === undefined) setTimeout(() => askWho().then(() => logVisit(true)), document.getElementById("intro") ? 4300 : 300);
+  else logVisit();
   /* the store may know a newer season or a running tournament this phone
      had not seen yet — land there unless the reader already picked one */
   /* before the cloud answered, a season this phone had not stored yet was

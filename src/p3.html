@@ -1127,6 +1127,8 @@ function managePanel(open, inScope) {
   bar.appendChild(row);
   box.appendChild(bar);
   box.appendChild(pushPanel());
+  box.appendChild(mePanel());
+  if (adminKey()) box.appendChild(activityPanel());
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);

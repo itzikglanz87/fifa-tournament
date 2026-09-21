@@ -31,6 +31,20 @@ service cloud.firestore {
       allow read: if false;
     }
 
+    // the activity log: a phone records that the app was opened. It can add
+    // a line, never read, change or delete one — the admin reads the log
+    // through the push server with the admin key
+    match /visits/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['who', 'at', 'dev', 'app'])
+        && (request.resource.data.who == null || (request.resource.data.who is int
+            && request.resource.data.who >= 0 && request.resource.data.who <= 5))
+        && request.resource.data.at is string && request.resource.data.at.size() < 40
+        && request.resource.data.dev is string && request.resource.data.dev.size() < 40
+        && request.resource.data.app in ['apk', 'app', 'web'];
+      allow read, update, delete: if false;
+    }
+
     // newsroom cards the admin sent as a push, frozen as sent: the push
     // server writes them, the app only reads the one a tap opens
     match /stories/{id} {

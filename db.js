@@ -185,12 +185,12 @@
       return getMessagingToken().catch(function () { return null; });
     },
     /* the admin's call; the server refuses it without the right key */
-    admin: async function (data) {
+    admin: async function (data, fn) {
       var db = await window.APP_DB.open();
       var fb = window.APP_FB;
       if (!db || !fb) throw new Error("no-firebase");
       var fnMod = await import(SDK + "firebase-functions.js");
-      var call = fnMod.httpsCallable(fnMod.getFunctions(fb.app, window.FUNCTIONS_REGION || "europe-west1"), "adminPush");
+      var call = fnMod.httpsCallable(fnMod.getFunctions(fb.app, window.FUNCTIONS_REGION || "europe-west1"), fn || "adminPush");
       var r = await call(data);
       return r.data;
     }
