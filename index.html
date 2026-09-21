@@ -5956,11 +5956,16 @@ const ADMIN_KEY_LS = "fifa-admin-key";
 const adminKey = () => { try { return localStorage.getItem(ADMIN_KEY_LS) || ""; } catch (e) { return ""; } };
 const pushErr = e => {
   const m = String((e && (e.code || e.message)) || e);
-  if (/denied/.test(m)) return "ההתראות חסומות בטלפון הזה. אפשר לאשר אותן בהגדרות האתר ב־Chrome.";
+  /* the admin call's refusal first: "permission-denied" also contains "denied" */
+  if (/functions\/permission-denied|^permission-denied$/.test(m)) return "מפתח האדמין שגוי.";
+  /* the phone said no: in the APK that is Android's switch for the app, in
+     the browser-installed app it is Chrome's setting for the site */
+  if (m === "denied" || /permission-blocked|messaging\/permission-default/.test(m))
+    return "הטלפון חוסם התראות לאפליקציה. באפליקציה שהותקנה מקובץ APK: הגדרות הטלפון ← אפליקציות ← טורניר פיפא ← התראות ← להפעיל. " +
+           "באפליקציה שהותקנה מ־Chrome: Chrome ← הגדרות ← הגדרות אתר ← התראות ← itzikglanz87.github.io ← לאפשר. ואז ללחוץ שוב על הכפתור.";
   if (/dismissed/.test(m)) return "לא אושר. אפשר לנסות שוב.";
   if (/unsupported/.test(m)) return "הדפדפן הזה לא תומך בהתראות. פתח את האפליקציה ב־Chrome.";
   if (/not-configured/.test(m)) return "ההתראות עוד לא הוגדרו בשרת.";
-  if (/permission-denied/.test(m)) return "מפתח האדמין שגוי.";
   if (/not-found|internal|unavailable/.test(m)) return "שרת ההתראות לא זמין כרגע.";
   return "משהו נכשל: " + m;
 };
