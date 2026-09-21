@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Build both versions of the app from the four source parts.
+"""Build the phone app from the four source parts.
 
     python src/build.py          (run from the project root)
 
-Writes:
-    src/_artifact.html   the fragment to publish as a Claude Artifact
-    index.html           the standalone page GitHub Pages serves
+Writes index.html, the page GitHub Pages serves to the phones.
 
-There is no fork between them. p1..p4 are identical for both; the only seam
-is Store.provider(), which prefers window.APP_DB (Firestore, standalone) and
-falls back to window.claude.use("db") (inside the artifact). A fix in one is
-a fix in both.
+The Claude Artifact version is retired (2026-09-21): Firestore is the only
+database, and the artifact's own store is frozen at the migration. The seam
+in Store.provider() still falls back to window.claude.use("db"), but nothing
+builds or publishes that version any more.
 """
 import io, os
 
@@ -25,8 +23,6 @@ def assemble():
     faces = io.open(P('faces.json'), encoding='utf-8').read()
     assert '__DATA__' in s and '__FACES__' in s
     s = s.replace('__DATA__', data).replace('__FACES__', faces)
-    io.open(P('_artifact.html'), 'w', encoding='utf-8').write(s)
-    print('src/_artifact.html', len(s), 'chars')
     return s
 
 
