@@ -1016,4 +1016,62 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
   .i-roll,.i-flash,.i-beam{display:none}
   .i-title,.i-six span{animation:none !important; opacity:1; transform:none}
 }
+/* ---------- the standings, dressed up ---------- */
+.lt{display:flex; flex-direction:column; gap:6px}
+.lt-top{display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12.5px; color:#9AA4B2; padding:0 2px 4px}
+.lt-prog{flex:0 0 38%; height:5px; border-radius:99px; background:#222A35; overflow:hidden}
+.lt-prog i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--blue),#7FB0FF)}
+.lt-head,.lt-row{display:grid; grid-template-columns:34px 40px minmax(0,1fr) 28px 38px 38px; align-items:center; column-gap:8px}
+.lt-head{font-size:11px; color:#7D8795; font-weight:700; padding:0 12px 2px}
+.lt-head span:nth-child(n+4){text-align:center}
+.lt-row{position:relative; background:linear-gradient(180deg,#1E252F,#191F28); border-radius:14px; padding:10px 12px;
+  border-inline-start:4px solid transparent; box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 6px 16px rgba(0,0,0,.25);
+  animation:lt-in .38s cubic-bezier(.2,.8,.3,1) both}
+@keyframes lt-in{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
+.lt-row.z12{border-inline-start-color:var(--gold)}
+.lt-row.z34{border-inline-start-color:var(--blue)}
+.lt-row.lead{background:linear-gradient(100deg,rgba(245,197,66,.16),rgba(245,197,66,.03) 55%),linear-gradient(180deg,#222A33,#1A2029);
+  box-shadow:0 0 0 1px rgba(245,197,66,.35) inset, 0 8px 24px rgba(245,197,66,.08)}
+.lt-row.hl{box-shadow:0 0 0 2px var(--c) inset}
+.lt-pos{display:flex; flex-direction:column; align-items:center; gap:1px; line-height:1}
+.lt-pos b{font-size:17px; font-weight:800}
+.lt-row.z12 .lt-pos b{color:var(--gold)} .lt-row.z34 .lt-pos b{color:#8DB5FF}
+.mv{font-style:normal; font-size:9.5px; font-weight:800}
+.mv.up{color:var(--pos)} .mv.dn{color:var(--neg)} .mv.eq{color:#5C6673}
+.lt-face{width:40px; height:40px; border-radius:50%; border:2px solid var(--c); display:grid; place-items:center;
+  background:#0E1218; overflow:hidden; box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent)}
+.lt-face .pface{width:100%; height:100%}
+.lt-face b{font-size:17px; color:var(--c)}
+.lt-main{min-width:0; display:flex; flex-direction:column; gap:3px}
+.lt-name{font-weight:800; font-size:15.5px; display:flex; align-items:center; gap:5px}
+.lt-crown{font-size:13px}
+.lt-sub{display:flex; align-items:center; gap:8px; font-size:11.5px; color:#9AA4B2; flex-wrap:wrap}
+.lt-sub .club{font-size:11.5px}
+.lt-rec{color:#7D8795}
+.lt-form{display:flex; gap:3px}
+.lt-form i{font-style:normal; width:17px; height:17px; border-radius:50%; display:grid; place-items:center;
+  font-size:9.5px; font-weight:800; color:#0B0F14}
+.lt-form .f-w{background:#3DDC84} .lt-form .f-d{background:#8A94A3} .lt-form .f-l{background:#FF6B6B}
+.lt-n{text-align:center; font-size:13.5px; color:#C9D1DB; font-variant-numeric:tabular-nums}
+.lt-n.pos{color:var(--pos)} .lt-n.neg{color:var(--neg)}
+.lt-pts{text-align:center; font-size:20px; font-weight:900; font-variant-numeric:tabular-nums}
+.lt-row.lead .lt-pts{color:var(--gold)}
+.lt-odds{grid-column:3 / -1; display:flex; align-items:center; gap:8px; margin-top:7px}
+.lt-obar{flex:1; height:4px; border-radius:99px; background:#262E39; overflow:hidden}
+.lt-obar i{display:block; height:100%; border-radius:99px; background:var(--c)}
+.lt-oval{font-size:11px; color:#9AA4B2; white-space:nowrap}
+.lt-oval b{color:#E6EBF1}
+.lt-odds.done .lt-oval{color:var(--pos); font-weight:800}
+.lt-cut{display:flex; align-items:center; gap:10px; margin:4px 0; color:var(--gold); font-size:11px; font-weight:800; letter-spacing:.06em}
+.lt-cut::before,.lt-cut::after{content:""; flex:1; border-top:1.5px dashed rgba(245,197,66,.55)}
+.lt-legend{margin-top:4px}
+.lt-key{display:inline-block; width:10px; height:10px; border-radius:3px; margin-inline-end:5px; vertical-align:-1px}
+.lt-key.z12{background:var(--gold)} .lt-key.z34{background:var(--blue)}
+@media (max-width:400px){
+  .lt-head,.lt-row{grid-template-columns:30px 36px minmax(0,1fr) 24px 34px 34px; column-gap:6px}
+  .lt-row{padding:9px 9px}
+  .lt-face{width:36px; height:36px}
+  .lt-rec{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .lt-row{animation:none} }
 </style>

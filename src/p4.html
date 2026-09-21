@@ -1039,11 +1039,7 @@ function openMatch(tid, idx, tab) {
       });
       body.appendChild(list);
     } else {
-      const wrap = standingsTable(t);
-      const mine = new Set([h1, h2, a1, a2]);
-      const rows = wrap.querySelectorAll("tbody tr");
-      t.table.forEach((p, i) => { if (mine.has(p) && rows[i]) rows[i].classList.add("hl"); });
-      body.appendChild(wrap);
+      body.appendChild(standingsTable(t, { hl: new Set([h1, h2, a1, a2]) }));
     }
   };
   TABS.forEach(([k, label]) => {

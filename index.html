@@ -1030,6 +1030,64 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
   .i-roll,.i-flash,.i-beam{display:none}
   .i-title,.i-six span{animation:none !important; opacity:1; transform:none}
 }
+/* ---------- the standings, dressed up ---------- */
+.lt{display:flex; flex-direction:column; gap:6px}
+.lt-top{display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12.5px; color:#9AA4B2; padding:0 2px 4px}
+.lt-prog{flex:0 0 38%; height:5px; border-radius:99px; background:#222A35; overflow:hidden}
+.lt-prog i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--blue),#7FB0FF)}
+.lt-head,.lt-row{display:grid; grid-template-columns:34px 40px minmax(0,1fr) 28px 38px 38px; align-items:center; column-gap:8px}
+.lt-head{font-size:11px; color:#7D8795; font-weight:700; padding:0 12px 2px}
+.lt-head span:nth-child(n+4){text-align:center}
+.lt-row{position:relative; background:linear-gradient(180deg,#1E252F,#191F28); border-radius:14px; padding:10px 12px;
+  border-inline-start:4px solid transparent; box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 6px 16px rgba(0,0,0,.25);
+  animation:lt-in .38s cubic-bezier(.2,.8,.3,1) both}
+@keyframes lt-in{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
+.lt-row.z12{border-inline-start-color:var(--gold)}
+.lt-row.z34{border-inline-start-color:var(--blue)}
+.lt-row.lead{background:linear-gradient(100deg,rgba(245,197,66,.16),rgba(245,197,66,.03) 55%),linear-gradient(180deg,#222A33,#1A2029);
+  box-shadow:0 0 0 1px rgba(245,197,66,.35) inset, 0 8px 24px rgba(245,197,66,.08)}
+.lt-row.hl{box-shadow:0 0 0 2px var(--c) inset}
+.lt-pos{display:flex; flex-direction:column; align-items:center; gap:1px; line-height:1}
+.lt-pos b{font-size:17px; font-weight:800}
+.lt-row.z12 .lt-pos b{color:var(--gold)} .lt-row.z34 .lt-pos b{color:#8DB5FF}
+.mv{font-style:normal; font-size:9.5px; font-weight:800}
+.mv.up{color:var(--pos)} .mv.dn{color:var(--neg)} .mv.eq{color:#5C6673}
+.lt-face{width:40px; height:40px; border-radius:50%; border:2px solid var(--c); display:grid; place-items:center;
+  background:#0E1218; overflow:hidden; box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent)}
+.lt-face .pface{width:100%; height:100%}
+.lt-face b{font-size:17px; color:var(--c)}
+.lt-main{min-width:0; display:flex; flex-direction:column; gap:3px}
+.lt-name{font-weight:800; font-size:15.5px; display:flex; align-items:center; gap:5px}
+.lt-crown{font-size:13px}
+.lt-sub{display:flex; align-items:center; gap:8px; font-size:11.5px; color:#9AA4B2; flex-wrap:wrap}
+.lt-sub .club{font-size:11.5px}
+.lt-rec{color:#7D8795}
+.lt-form{display:flex; gap:3px}
+.lt-form i{font-style:normal; width:17px; height:17px; border-radius:50%; display:grid; place-items:center;
+  font-size:9.5px; font-weight:800; color:#0B0F14}
+.lt-form .f-w{background:#3DDC84} .lt-form .f-d{background:#8A94A3} .lt-form .f-l{background:#FF6B6B}
+.lt-n{text-align:center; font-size:13.5px; color:#C9D1DB; font-variant-numeric:tabular-nums}
+.lt-n.pos{color:var(--pos)} .lt-n.neg{color:var(--neg)}
+.lt-pts{text-align:center; font-size:20px; font-weight:900; font-variant-numeric:tabular-nums}
+.lt-row.lead .lt-pts{color:var(--gold)}
+.lt-odds{grid-column:3 / -1; display:flex; align-items:center; gap:8px; margin-top:7px}
+.lt-obar{flex:1; height:4px; border-radius:99px; background:#262E39; overflow:hidden}
+.lt-obar i{display:block; height:100%; border-radius:99px; background:var(--c)}
+.lt-oval{font-size:11px; color:#9AA4B2; white-space:nowrap}
+.lt-oval b{color:#E6EBF1}
+.lt-odds.done .lt-oval{color:var(--pos); font-weight:800}
+.lt-cut{display:flex; align-items:center; gap:10px; margin:4px 0; color:var(--gold); font-size:11px; font-weight:800; letter-spacing:.06em}
+.lt-cut::before,.lt-cut::after{content:""; flex:1; border-top:1.5px dashed rgba(245,197,66,.55)}
+.lt-legend{margin-top:4px}
+.lt-key{display:inline-block; width:10px; height:10px; border-radius:3px; margin-inline-end:5px; vertical-align:-1px}
+.lt-key.z12{background:var(--gold)} .lt-key.z34{background:var(--blue)}
+@media (max-width:400px){
+  .lt-head,.lt-row{grid-template-columns:30px 36px minmax(0,1fr) 24px 34px 34px; column-gap:6px}
+  .lt-row{padding:9px 9px}
+  .lt-face{width:36px; height:36px}
+  .lt-rec{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .lt-row{animation:none} }
 
 /* ---------- standalone on a phone ---------- */
 html{background:var(--pitch)}
@@ -3767,39 +3825,104 @@ function reconcileScores(t) {
   return true;
 }
 
-function standingsTable(t) {
-  const box = el("div", "tscroll fit");
-  const tbl = el("table", "sttbl");
-  tbl.innerHTML = "<thead><tr>" +
-    "<th>#</th><th>שחקן</th><th>קבוצה</th>" +
-    '<th class="c-num">מאזן</th><th class="c-num">שערים</th>' +
-    '<th class="c-num">הפרש</th><th class="c-num">נק׳</th></tr></thead>';
-  const body = el("tbody");
-  t.table.forEach((p, i) => {
-    const a = t.acc[p], gd = a.gf - a.ga, champ = t.c.includes(p), adv = i < 4;
-    const tr = el("tr", adv ? "qual" : "");
-    const club = CLUBS[t.teamOf[p]] || "—";
-    tr.innerHTML =
-      '<td class="rank">' + (i + 1) + "</td>" +
-      '<td><span class="who">' + plate(p) +
-        (champ ? '<span class="crown" title="אלוף הטורניר">★</span>' : "") + "</span></td>" +
-      '<td><span class="club" style="--c:' + clubCol(club) + '" title="' + esc(club) +
-        '"><i class="cdot"></i><span class="cn">' + esc(club) + "</span></span></td>" +
-      '<td class="c-num"><span class="ltr">' + a.w + "-" + a.dr + "-" + a.l + "</span></td>" +
-      '<td class="c-num">' + scoreTxt(a.gf, a.ga) + "</td>" +
-      '<td class="c-num ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</td>" +
-      '<td class="c-num strong">' + a.pts + "</td>";
-    body.appendChild(tr);
+/* ==========================================================================
+   The standings — a scores-app table, dressed up.
+   --------------------------------------------------------------------------
+   Every row: place (and how it moved since the last result), the player's
+   face on his colour, name and club, form over his last five games, then
+   games · goal difference · points. While the league is running, a thin bar
+   under each row is his chance of reaching the final (the same 4,000-run
+   simulation the newsroom uses, so it is usually cached). The final format
+   is 1+2 against 3+4, so the zones say exactly that: gold for the 1–2 pair,
+   blue for the 3–4 pair, and a "קו הגמר" line under the fourth place.
+   opts.hl — a Set of players to mark (the match page marks its four).
+   ========================================================================== */
+function standOrder(t, skip) {
+  const acc = {};
+  t.players.forEach(p => { acc[p] = { pts: 0, gf: 0, ga: 0 }; });
+  t.m.forEach((m, k) => {
+    if (k === skip || m[6] == null || m[7] == null) return;
+    const hp = m[6] > m[7] ? 3 : m[6] === m[7] ? 1 : 0, ap = m[7] > m[6] ? 3 : m[6] === m[7] ? 1 : 0;
+    [m[0], m[1]].forEach(p => { acc[p].pts += hp; acc[p].gf += m[6]; acc[p].ga += m[7]; });
+    [m[3], m[4]].forEach(p => { acc[p].pts += ap; acc[p].gf += m[7]; acc[p].ga += m[6]; });
   });
-  tbl.appendChild(body);
-  box.appendChild(tbl);
-  const wrap = el("div");
-  wrap.appendChild(box);
-  wrap.appendChild(el("div", "stlegend",
-    '<span><b>מאזן</b> נצחונות · תיקו · הפסדים</span>' +
-    '<span><b>שערים</b> זכות · חובה</span>' +
-    '<span><b style="color:var(--gold)">מספר מקום בזהב</b> עלה לגמר</span>' +
-    '<span><b style="color:var(--gold)">★</b> אלוף</span>'));
+  return t.players.slice().sort((a, b) => acc[b].pts - acc[a].pts ||
+    (acc[b].gf - acc[b].ga) - (acc[a].gf - acc[a].ga) || acc[b].gf - acc[a].gf);
+}
+function formOf(t, p) {
+  const out = [];
+  t.m.forEach(m => {
+    if (m[6] == null || m[7] == null) return;
+    const home = m[0] === p || m[1] === p, away = m[3] === p || m[4] === p;
+    if (!home && !away) return;
+    const gf = home ? m[6] : m[7], ga = home ? m[7] : m[6];
+    out.push({ r: gf > ga ? "w" : gf < ga ? "l" : "d", s: gf + ":" + ga });
+  });
+  return out.slice(-5);
+}
+
+function standingsTable(t, opts) {
+  opts = opts || {};
+  const played = t.m.filter(m => m[6] != null && m[7] != null).length, total = t.m.length;
+  const league = played < total;
+  const sim = league ? simulate(t, 4000) : null;
+  /* how each place moved since the last result — only where the order is
+     derived here too (archive tournaments keep their recorded tie-breaks) */
+  const lp = lastPlayed(t);
+  const prev = t.live && lp && played >= 2 ? standOrder(t, lp.i) : null;
+
+  const wrap = el("div", "lt");
+  wrap.appendChild(el("div", "lt-top",
+    '<span>' + (played ? "אחרי " + played + " מתוך " + total + " משחקים" : "לפני המשחק הראשון") +
+    (t.done ? " · הטורניר הסתיים" : !league ? " · שלב הליגה הסתיים" : "") + "</span>" +
+    '<span class="lt-prog"><i style="width:' + Math.round(100 * played / Math.max(1, total)) + '%"></i></span>'));
+  wrap.appendChild(el("div", "lt-head",
+    '<span>#</span><span></span><span>שחקן</span><span>מש׳</span><span>הפרש</span><span>נק׳</span>'));
+
+  t.table.forEach((p, i) => {
+    const a = t.acc[p], gd = a.gf - a.ga, champ = t.c.includes(p);
+    const zone = i < 2 ? "z12" : i < 4 ? "z34" : "out";
+    const row = el("div", "lt-row " + zone + (i === 0 && played ? " lead" : "") +
+      (opts.hl && opts.hl.has(p) ? " hl" : ""));
+    row.style.setProperty("--c", PC(p));
+    row.style.animationDelay = (i * 45) + "ms";
+    let mv = "";
+    if (prev) {
+      const d = prev.indexOf(p) - i;
+      mv = d > 0 ? '<i class="mv up">▲' + d + "</i>" : d < 0 ? '<i class="mv dn">▼' + (-d) + "</i>" : '<i class="mv eq">•</i>';
+    }
+    const fm = formOf(t, p);
+    const form = fm.length ? '<span class="lt-form">' + fm.map(f =>
+      '<i class="f-' + f.r + '" title="' + f.s + '">' + (f.r === "w" ? "נ" : f.r === "d" ? "ת" : "ה") + "</i>").join("") + "</span>" : "";
+    const face = photoOf(p) ? '<i class="pface pf' + p + '"></i>' : "<b>" + esc(P[p].slice(0, 1)) + "</b>";
+    let odds = "";
+    if (sim && sim[p]) {
+      const v = Math.round(sim[p].top4 * 100);
+      odds = '<div class="lt-odds"><span class="lt-obar"><i style="width:' + Math.max(2, v) + '%"></i></span>' +
+        '<span class="lt-oval">לגמר <b class="ltr">' + v + "%</b></span></div>";
+    } else if (!league && !t.done && i < 4) {
+      odds = '<div class="lt-odds done"><span class="lt-oval">בגמר ✓</span></div>';
+    }
+    row.innerHTML =
+      '<div class="lt-pos"><b>' + (i + 1) + "</b>" + mv + "</div>" +
+      '<div class="lt-face">' + face + "</div>" +
+      '<div class="lt-main"><div class="lt-name">' + esc(P[p]) +
+        (champ ? '<span class="lt-crown" title="אלוף הטורניר">👑</span>' : "") + "</div>" +
+        '<div class="lt-sub">' + clubTag(t.teamOf[p]) +
+          '<span class="lt-rec ltr">' + a.w + "-" + a.dr + "-" + a.l + " · " + a.gf + ":" + a.ga + "</span></div>" +
+        form + "</div>" +
+      '<div class="lt-n">' + a.g + "</div>" +
+      '<div class="lt-n ' + (gd > 0 ? "pos" : gd < 0 ? "neg" : "") + '">' + sgn(gd) + "</div>" +
+      '<div class="lt-pts">' + a.pts + "</div>" + odds;
+    wrap.appendChild(row);
+    if (i === 3 && t.table.length > 4) wrap.appendChild(el("div", "lt-cut", "<span>קו הגמר</span>"));
+  });
+
+  wrap.appendChild(el("div", "stlegend lt-legend",
+    '<span><i class="lt-key z12"></i>צמד 1–2 בגמר</span>' +
+    '<span><i class="lt-key z34"></i>צמד 3–4 בגמר</span>' +
+    '<span><b>נ·ת·ה</b> חמשת המשחקים האחרונים</span>' +
+    (prev ? '<span><b style="color:var(--pos)">▲</b><b style="color:var(--neg)">▼</b> שינוי מאז התוצאה האחרונה</span>' : "")));
   return wrap;
 }
 
@@ -4984,11 +5107,7 @@ function openMatch(tid, idx, tab) {
       });
       body.appendChild(list);
     } else {
-      const wrap = standingsTable(t);
-      const mine = new Set([h1, h2, a1, a2]);
-      const rows = wrap.querySelectorAll("tbody tr");
-      t.table.forEach((p, i) => { if (mine.has(p) && rows[i]) rows[i].classList.add("hl"); });
-      body.appendChild(wrap);
+      body.appendChild(standingsTable(t, { hl: new Set([h1, h2, a1, a2]) }));
     }
   };
   TABS.forEach(([k, label]) => {
