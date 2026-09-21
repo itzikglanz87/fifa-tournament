@@ -102,17 +102,49 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   await change("t1001", base, r1);
   expect("a recreated tournament with the same id is not muted", sent.length === 3);
 
+  /* a peak moment: replay archive tournament 51 through the trigger. Its
+     last league match knocked דביר out (the app's own card: 40% -> 0%). */
+  {
+    const SEED = require("../seed.json");
+    const t = SEED.T.find(x => x.i === 51);
+    const slots = t.d.map(x => x[0]), clubs = t.d.map(x => SEED.C[x[1]]);
+    const tpl = SEED.TPL[String(slots.length)];
+    const scores = tpl.map(f => { const m = t.m.find(m => m[0] === slots[f.h[0] - 1] && m[1] === slots[f.h[1] - 1] &&
+      m[3] === slots[f.a[0] - 1] && m[4] === slots[f.a[1] - 1]); return [m[6], m[7]]; });
+    let rec = { i: 1051, s: 1, n: 51, tpl: String(slots.length), slots, clubs,
+                scores: tpl.map(() => [null, null]), champs: [] };
+    await change("t1051", null, rec);
+    const mark = sent.length;
+    for (let k = 0; k < scores.length; k++) {
+      const before = JSON.parse(JSON.stringify(rec));
+      rec.scores[k] = scores[k];
+      await change("t1051", before, rec);
+    }
+    const mine = sent.slice(mark);
+    const peaks = mine.filter(m => m.title.startsWith("⚡"));
+    const last = mine.slice(-2);
+    expect("a peak moment is pushed", peaks.length >= 1, peaks.map(p => p.body).join(" | "));
+    expect("…with the app's own numbers (דביר out after match 12)",
+           peaks.some(p => /דביר נפרד מהגמר/.test(p.body)));
+    expect("…and it comes before that result's next-match push",
+           last[0] && last[0].title.startsWith("⚡") && /שלב הליגה הסתיים/.test(last[1] && last[1].body));
+    expect("ordinary results do not each become a peak", peaks.length <= 4, peaks.length + " of 12");
+    await change("t1051", rec, null);
+  }
+
   /* the admin door */
   const call = data => F.adminPush.run({ data, auth: null, rawRequest: {} });
   let refused = false;
   try { await call({ key: "wrong", body: "x" }); } catch (e) { refused = e.code === "permission-denied"; }
   expect("a wrong admin key is refused", refused);
+  const base0 = sent.length;                     // count from here, not from the start
   const ok = await call({ key: "right-key", check: true });
-  expect("the right key passes the check without sending", ok.ok === true && sent.length === 3);
+  expect("the right key passes the check without sending", ok.ok === true && sent.length === base0);
   const r = await call({ key: "right-key", title: "הודעה", body: "מחר ב־8" });
-  expect("the admin message goes to everyone", sent.length === 4 && sent[3].to === 2 && r.sent === 2, sent[3] && sent[3].body);
+  const msg = sent[base0];
+  expect("the admin message goes to everyone", sent.length === base0 + 1 && msg.to === 2 && r.sent === 2, msg && msg.body);
   await call({ key: "right-key", body: "בדיקה", token: "phoneA" });
-  expect("a test message goes to one phone only", sent[4] && sent[4].to === 1);
+  expect("a test message goes to one phone only", sent[base0 + 1] && sent[base0 + 1].to === 1);
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

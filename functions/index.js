@@ -2,9 +2,12 @@
    The push server — two jobs, nothing else.
 
    1. onResultSaved   A tournament document changed. If the number of results
-                      went UP, send everyone "the next match". Whoever entered
-                      the result, the server sends it — so any friend can fill
-                      in scores, and nobody's phone needs a key to push.
+                      went UP, send everyone "the next match" — and, first, a
+                      "⚡ peak moment" when that league result swung someone's
+                      chance of reaching the final by 30+ points or settled it
+                      (peak.js, on the app's own odds model via model.js).
+                      Whoever entered the result, the server sends it — so any
+                      friend can fill in scores, and nobody's phone needs a key.
 
    2. adminPush       A message written by the admin. Refused unless the call
                       carries ADMIN_KEY, which lives only in functions/.env
@@ -25,6 +28,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const T = require("./tournament");
+const { peakOf } = require("./peak");
 
 initializeApp();
 const db = getFirestore();
@@ -101,6 +105,21 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
     return true;
   });
   if (!go) return;
+
+  /* a peak moment first — a league result that swung someone's road to the
+     final. It runs the app's own odds model; if anything in it fails, the
+     next-match push below still goes out. */
+  try {
+    const cfg = await db.doc("meta/config").get();
+    const recs = (await db.collection("tournaments").get()).docs.map(d => T.unpack(d.data()));
+    const pk = peakOf(before, after, recs, (cfg.data() || {}).seasons);
+    if (pk) {
+      const r = await sendToAll("⚡ רגע שיא · טורניר " + (after.n || after.i), pk.text);
+      console.log("peak push", id, now, JSON.stringify(r), pk.text, "swing", pk.swing.toFixed(2));
+    }
+  } catch (e) {
+    console.error("peak moment skipped:", e && e.stack || e);
+  }
 
   const body = T.nextEventText(after);
   if (!body) return;
