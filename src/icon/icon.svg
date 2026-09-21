@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="34%" r="75%">
+      <stop offset="0" stop-color="#1F3052"/><stop offset=".5" stop-color="#0D1528"/><stop offset="1" stop-color="#04070D"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="45%" r="50%">
+      <stop offset="0" stop-color="#FFE7A0" stop-opacity=".42"/><stop offset=".55" stop-color="#F5C542" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#F5C542" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="goldH" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#7A4E0E"/><stop offset=".18" stop-color="#E4AE3C"/><stop offset=".34" stop-color="#FFF1B8"/>
+      <stop offset=".5" stop-color="#F3C24C"/><stop offset=".72" stop-color="#B07A1C"/><stop offset=".88" stop-color="#E8B84A"/>
+      <stop offset="1" stop-color="#7A4E0E"/>
+    </linearGradient>
+    <linearGradient id="goldV" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#FFF0B0"/><stop offset=".45" stop-color="#E6AF3A"/><stop offset="1" stop-color="#8C5D12"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#FFF5CC"/><stop offset=".5" stop-color="#F0BF45"/><stop offset="1" stop-color="#9A6814"/>
+    </linearGradient>
+    <linearGradient id="cupShade" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset=".75" stop-color="#000" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#3A2405" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="base" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2B3445"/><stop offset="1" stop-color="#11161F"/>
+    </linearGradient>
+    <radialGradient id="ballShade" cx="36%" cy="30%" r="78%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".65" stop-color="#E4E8EE"/><stop offset="1" stop-color="#8D97A5"/>
+    </radialGradient>
+    <radialGradient id="ballGloss" cx="34%" cy="24%" r="40%">
+      <stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gemShine" cx="35%" cy="30%" r="60%">
+      <stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".25"/>
+    </radialGradient>
+    <clipPath id="ballClip"><circle r="46"/></clipPath>
+  </defs><rect width="512" height="512" fill="url(#bg)"/>
+  <!-- stadium light behind -->
+  <circle cx="256" cy="232" r="190" fill="url(#halo)"/>
+  <!-- the ring -->
+  <circle cx="256" cy="256" r="206" fill="none" stroke="url(#rim)" stroke-width="15"/>
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#5A3F0E" stroke-width="2" opacity=".8"/>
+  <circle cx="256" cy="256" r="214" fill="none" stroke="#FFE9A8" stroke-width="1.5" opacity=".45"/>
+  <!-- trophy shadow -->
+  <ellipse cx="256" cy="404" rx="92" ry="12" fill="#000" opacity=".45"/>
+  <!-- the ball in the cup -->
+  <g transform="translate(256 138) scale(1.02)">
+    <circle r="47" fill="url(#ballShade)"/>
+    <g clip-path="url(#ballClip)" fill="#141821" stroke="#141821" stroke-width="1.6" stroke-linejoin="round"><polygon points="0.0,-15.0 14.3,-4.6 8.8,12.1 -8.8,12.1 -14.3,-4.6"/><polygon points="0.0,-26.0 -13.3,-35.7 -8.2,-51.3 8.2,-51.3 13.3,-35.7"/><polygon points="24.7,-8.0 29.8,-23.7 46.3,-23.7 51.4,-8.0 38.0,1.6"/><polygon points="15.3,21.0 31.7,21.0 36.8,36.7 23.5,46.4 10.2,36.7"/><polygon points="-15.3,21.0 -10.2,36.7 -23.5,46.4 -36.8,36.7 -31.7,21.0"/><polygon points="-24.7,-8.0 -38.0,1.6 -51.4,-8.0 -46.3,-23.7 -29.8,-23.7"/><g fill="none"><line x1="0.0" y1="-15.0" x2="0.0" y2="-26.0"/><line x1="14.3" y1="-4.6" x2="24.7" y2="-8.0"/><line x1="8.8" y1="12.1" x2="15.3" y2="21.0"/><line x1="-8.8" y1="12.1" x2="-15.3" y2="21.0"/><line x1="-14.3" y1="-4.6" x2="-24.7" y2="-8.0"/></g></g>
+    <circle r="47" fill="url(#ballGloss)"/>
+    <circle r="47" fill="none" stroke="#0C0F14" stroke-width="2" opacity=".5"/>
+  </g>
+  <!-- handles -->
+  <path d="M178 176 C120 170 118 250 196 268" fill="none" stroke="url(#goldV)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M334 176 C392 170 394 250 316 268" fill="none" stroke="url(#goldV)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M178 176 C128 172 126 244 194 262" fill="none" stroke="#FFF1BF" stroke-width="3" opacity=".55" stroke-linecap="round"/>
+  <!-- the cup -->
+  <path d="M168 160 H344 C344 240 312 290 270 304 V318 H242 V304 C200 290 168 240 168 160Z" fill="url(#goldH)"/>
+  <path d="M168 160 H344 C344 240 312 290 270 304 V318 H242 V304 C200 290 168 240 168 160Z" fill="url(#cupShade)"/>
+  <path d="M186 172 C188 232 210 272 240 290" fill="none" stroke="#FFF7D6" stroke-width="7" stroke-linecap="round" opacity=".75"/>
+  <!-- rim of the cup -->
+  <rect x="160" y="150" width="192" height="18" rx="9" fill="url(#rim)"/>
+  <rect x="166" y="153" width="180" height="4" rx="2" fill="#FFF8DC" opacity=".8"/>
+  <!-- cup front lip over the ball -->
+  <path d="M160 159 H352 V166 H160Z" fill="url(#rim)"/>
+  <!-- stem, knot and base -->
+  <rect x="232" y="316" width="48" height="14" rx="5" fill="url(#goldH)"/>
+  <path d="M238 330 H274 L282 356 H230Z" fill="url(#goldH)"/>
+  <rect x="200" y="354" width="112" height="22" rx="6" fill="url(#goldH)"/>
+  <rect x="200" y="354" width="112" height="5" rx="2.5" fill="#FFF3C8" opacity=".7"/>
+  <rect x="184" y="374" width="144" height="26" rx="7" fill="url(#base)"/>
+  <rect x="184" y="374" width="144" height="4" rx="2" fill="#6B7890" opacity=".7"/>
+  <rect x="226" y="381" width="60" height="12" rx="3" fill="url(#rim)"/>
+<g transform="translate(350.6 404.4)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#4B86FA"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(314.8 421.9)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#689E2D"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(275.9 430.9)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#169EAF"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(236.1 430.9)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#CD711D"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(197.2 421.9)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#AE61E9"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(161.4 404.4)"><circle r="11" fill="url(#rim)"/><circle r="7.6" fill="#E54C7A"/><circle r="7.6" fill="url(#gemShine)"/></g><g transform="translate(150 150) scale(1.00)" fill="#FFF6D6"><path d="M0 -14 L3 -3 L14 0 L3 3 L0 14 L-3 3 L-14 0 L-3 -3Z" opacity=".9"/></g><g transform="translate(372 128) scale(0.80)" fill="#FFF6D6"><path d="M0 -14 L3 -3 L14 0 L3 3 L0 14 L-3 3 L-14 0 L-3 -3Z" opacity=".9"/></g><g transform="translate(392 250) scale(0.60)" fill="#FFF6D6"><path d="M0 -14 L3 -3 L14 0 L3 3 L0 14 L-3 3 L-14 0 L-3 -3Z" opacity=".9"/></g><g transform="translate(128 262) scale(0.55)" fill="#FFF6D6"><path d="M0 -14 L3 -3 L14 0 L3 3 L0 14 L-3 3 L-14 0 L-3 -3Z" opacity=".9"/></g></svg>
