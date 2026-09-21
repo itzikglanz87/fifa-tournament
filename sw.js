@@ -8,7 +8,7 @@
    background. Firestore and the fonts are left alone — Firestore has its own
    offline queue, and the CSS names system fonts as a fallback.
    ========================================================================= */
-const VERSION = "fifa-98a24c4d22";
+const VERSION = "fifa-d42c8a3ff1";
 const SHELL = [
   "./",
   "./index.html",
@@ -17,7 +17,8 @@ const SHELL = [
   "./firebase-config.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./icons/icon-maskable-512.png"
+  "./icons/icon-maskable-512.png",
+  "./icons/badge-96.png"
 ];
 
 self.addEventListener("install", e => {
@@ -59,7 +60,7 @@ self.addEventListener("push", e => {
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || "",
     icon: "icons/icon-192.png",
-    badge: "icons/icon-192.png",
+    badge: "icons/badge-96.png",          // the status bar wants a white silhouette
     dir: "rtl",
     lang: "he",
     data: { url: d.url || "./" }
