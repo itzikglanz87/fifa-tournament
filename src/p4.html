@@ -1882,14 +1882,20 @@ function newsArt(it, big) {
 }
 
 function openStory(it, t, n) {
+  openStoryPage(it, { num: t.num, season: seasonById(t.season).name, played: n.played, total: n.total });
+}
+
+/* one story on its own page. meta: {num, season, played, total, shared} —
+   shared means it came from a push (a frozen copy), so no "send" button */
+function openStoryPage(it, meta) {
   const had = !!document.getElementById("matchPage");
   const old = document.getElementById("matchPage");
   if (old) old.remove();
   const pg = el("div", "mpage npage");
   pg.id = "matchPage";
   const top = el("div", "mp-top");
-  top.innerHTML = '<span></span><div class="mp-title"><div>חדשות</div><div class="mut">טורניר ' + t.num +
-    " · " + esc(seasonById(t.season).name) + "</div></div>";
+  top.innerHTML = '<span></span><div class="mp-title"><div>חדשות</div><div class="mut">' +
+    (meta.num != null ? "טורניר " + meta.num + " · " : "") + esc(meta.season || "") + "</div></div>";
   const back = el("button", "mp-back", "←");
   back.setAttribute("aria-label", "חזרה");
   back.onclick = () => closeMatch(false);
@@ -1897,18 +1903,80 @@ function openStory(it, t, n) {
   pg.appendChild(top);
   pg.appendChild(el("div", "", newsArt(it, true)));
   const body = el("article", "nstory");
-  body.innerHTML = '<div class="nmeta"><span class="ntag">' + esc(it.tag) + "</span> · " +
-    n.played + " מתוך " + n.total + " משחקים</div>" +
+  body.innerHTML = '<div class="nmeta"><span class="ntag">' + esc(it.tag) + "</span>" +
+    (meta.played != null ? " · " + meta.played + " מתוך " + meta.total + " משחקים" : "") +
+    (meta.shared ? ' · <span class="mut">כפי שנשלח בפוש</span>' : "") + "</div>" +
     '<h1 class="nhead">' + it.head + "</h1>" + '<div class="sbody">' + it.body + "</div>";
   if (it.plain) {
     const b = el("button", "btn ghost sm", "העתק לקבוצה");
     b.onclick = () => copyText(it.plain, b);
     body.appendChild(b);
   }
+  if (!meta.shared && adminKey() && window.APP_PUSH) body.appendChild(storyPushBox(it, meta));
   pg.appendChild(body);
   document.body.appendChild(pg);
   document.body.style.overflow = "hidden";
   if (!had) { history.pushState({ match: 1 }, ""); matchOpen = true; }
+}
+
+/* ---- the admin sends a card as a push: the headline is the push, the card
+   (frozen as it is now) is what a tap opens */
+function storyPushBox(it, meta) {
+  const box = el("div", "spush");
+  box.appendChild(el("div", "lbl", "אדמין · שליחה כפוש"));
+  const out = el("div", "mut");
+  const row = el("div", "chips");
+  const title = stripTags(it.head).slice(0, 80);
+  const text = snippet(it.body).slice(0, 140);
+  const send = async (onlyMe, btn) => {
+    const token = window.APP_PUSH.token();
+    if (onlyMe && !token) { flash("הפעל קודם התראות בטלפון הזה", true); return; }
+    if (!onlyMe) {
+      const ok = await askConfirm({ title: "לשלוח את הכתבה לכולם?", body: title, ok: "שלח לכולם", cancel: "ביטול" });
+      if (!ok) return;
+    }
+    btn.disabled = true; out.textContent = "שולח…";
+    try {
+      const r = await window.APP_PUSH.admin({ key: adminKey(), title, body: text, token: onlyMe ? token : undefined,
+        story: { tag: it.tag, head: it.head, body: it.body, plain: it.plain || "", icon: it.icon || "", who: it.who || [],
+                 num: meta.num, season: meta.season, played: meta.played, total: meta.total } });
+      out.textContent = "נשלח ל־" + r.sent + " מתוך " + r.phones + " טלפונים" + (r.failed ? " · " + r.failed + " נכשלו" : "") + ".";
+    } catch (e) { out.textContent = pushErr(e); }
+    btn.disabled = false;
+  };
+  const all = el("button", "btn sm", "📣 שלח כפוש לכולם");
+  all.onclick = () => send(false, all);
+  const me = el("button", "btn ghost sm", "בדיקה — רק אליי");
+  me.onclick = () => send(true, me);
+  row.append(all, me);
+  box.append(el("div", "spush-prev", "<b>" + esc(title) + "</b><span>" + esc(text) + "</span>"), row, out);
+  return box;
+}
+
+/* ---- a tap on such a push: open the frozen card, over the news screen */
+async function openSharedStory(id) {
+  try {
+    const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+    if (!db) return;
+    const s = await db.doc("stories/" + id).get();
+    if (!s.exists) { flash("הכתבה לא נמצאה", true); return; }
+    const d = s.data();
+    go("news");
+    openStoryPage({ tag: d.tag, head: d.head, body: d.body, plain: d.plain, icon: d.icon, who: d.who || [] },
+      { num: d.num, season: d.season, played: d.played, total: d.total, shared: true });
+  } catch (e) { flash("לא הצלחתי לפתוח את הכתבה", true); }
+}
+function storyFromHash() {
+  const m = /[#&]story=([\w-]+)/.exec(location.hash || "");
+  if (!m) return null;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  return m[1];
+}
+addEventListener("hashchange", () => { const id = storyFromHash(); if (id) openSharedStory(id); });
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data && typeof e.data.story === "string") openSharedStory(e.data.story);
+  });
 }
 
 function viewNews(root) {
@@ -2126,7 +2194,9 @@ try {
 go(start);
 
 (async () => {
+  const sharedStory = storyFromHash();   // read before anything rewrites the address
   await Store.initCloud();
+  if (sharedStory) setTimeout(() => openSharedStory(sharedStory), 0);
   /* the store may know a newer season or a running tournament this phone
      had not seen yet — land there unless the reader already picked one */
   if (pickedScope() == null) SCOPE = launchScope();

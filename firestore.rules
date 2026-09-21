@@ -31,6 +31,13 @@ service cloud.firestore {
       allow read: if false;
     }
 
+    // newsroom cards the admin sent as a push, frozen as sent: the push
+    // server writes them, the app only reads the one a tap opens
+    match /stories/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // pushLog is the server's own bookkeeping: no client access at all
 
     // everything else stays shut

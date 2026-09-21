@@ -13,6 +13,7 @@ const Module = require("module");
 /* ---------------------------------------------------------- fake firebase */
 const store = {};                       // path -> data
 const sent = [];                        // what "FCM" was asked to deliver
+const sentUrls = [];
 const snap = (path) => ({ exists: path in store, id: path.split("/").pop(), data: () => store[path] });
 const docRef = path => ({
   path,
@@ -30,6 +31,7 @@ const fakeAdmin = {
   messaging: () => ({
     sendEachForMulticast: async msg => {
       sent.push({ title: msg.data.title, body: msg.data.body, to: msg.tokens.length });
+      sentUrls.push(msg.data.url);
       return { successCount: msg.tokens.length, failureCount: 0, responses: msg.tokens.map(() => ({ success: true })) };
     }
   })
@@ -145,6 +147,17 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   expect("the admin message goes to everyone", sent.length === base0 + 1 && msg.to === 2 && r.sent === 2, msg && msg.body);
   await call({ key: "right-key", body: "בדיקה", token: "phoneA" });
   expect("a test message goes to one phone only", sent[base0 + 1] && sent[base0 + 1].to === 1);
+
+  /* a newsroom card as a push: saved as sent, and the push opens it */
+  const sr = await call({ key: "right-key", title: "רועי בורח בפסגה", body: "רועי מוביל עם 9 נקודות",
+    story: { tag: "הכותרת", head: "רועי בורח בפסגה", body: "<div>גוף</div>", who: [4, "x"], num: 1, season: "עונת 2027", played: 5, total: 12 } });
+  const saved = store["stories/" + sr.story];
+  expect("a card sent as a push is saved", !!saved && saved.head === "רועי בורח בפסגה" && saved.who.length === 1);
+  expect("…and the push opens that card", sentUrls[sentUrls.length - 1] === "https://itzikglanz87.github.io/fifa-tournament/#story=" + sr.story,
+         sentUrls[sentUrls.length - 1]);
+  let emptyRefused = false;
+  try { await call({ key: "right-key", title: "x", body: "y", story: { head: " " } }); } catch (e) { emptyRefused = e.code === "invalid-argument"; }
+  expect("a card without a headline is refused", emptyRefused);
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

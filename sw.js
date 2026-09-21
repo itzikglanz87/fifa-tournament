@@ -8,7 +8,7 @@
    background. Firestore and the fonts are left alone — Firestore has its own
    offline queue, and the CSS names system fonts as a fallback.
    ========================================================================= */
-const VERSION = "fifa-1142ac0b23";
+const VERSION = "fifa-6577ebb1a6";
 const SHELL = [
   "./",
   "./index.html",
@@ -66,13 +66,21 @@ self.addEventListener("push", e => {
   }));
 });
 
-/* a tap on the notification brings the app forward, or opens it */
+/* a tap on the notification brings the app forward, or opens it. A push
+   that carries a newsroom card (#story=<id>) tells an open app to show it;
+   a closed app is opened on it. */
 self.addEventListener("notificationclick", e => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || "./";
+  const m = /#story=([\w-]+)/.exec(url);
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const w of wins) { if ("focus" in w) return w.focus(); }
+    for (const w of wins) {
+      if ("focus" in w) {
+        if (m) w.postMessage({ story: m[1] });
+        return w.focus();
+      }
+    }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   })());
 });
