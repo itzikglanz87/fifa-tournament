@@ -853,11 +853,20 @@ def main():
     p.add_argument("--no-bar", action="store_true", help="לא לקרוא מהפס של השידור החוזר")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
     p.add_argument("--settle", type=float, default=4.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
+    p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
     p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
+    if args.log:
+        # running in the background with no console: keep a log to look at
+        path = os.path.join(HERE, "score_cam.log")
+        if os.path.exists(path) and os.path.getsize(path) > 2_000_000:
+            os.replace(path, path + ".old")
+        f = io.open(path, "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = f
+        print("=== " + time.strftime("%Y-%m-%d %H:%M:%S") + " started ===")
     if args.teach_clubs:
         teach_clubs(args)
     elif args.list:

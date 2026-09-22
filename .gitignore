@@ -10,3 +10,5 @@ tools/score_cam.json
 tools/digits/
 tools/score_cam_frame.png
 tools/crests/
+tools/score_cam.log
+tools/score_cam.log.old
