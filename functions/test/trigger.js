@@ -15,7 +15,8 @@ const store = {};                       // path -> data
 const sent = [];                        // what "FCM" was asked to deliver
 const sentUrls = [];
 const sentTags = [];
-const snap = (path) => ({ exists: path in store, id: path.split("/").pop(), data: () => store[path] });
+const snap = (path) => ({ exists: path in store, id: path.split("/").pop(), data: () => store[path],
+                          get ref() { return docRef(path); } });
 const docRef = path => ({
   path,
   get: async () => snap(path),
@@ -204,6 +205,34 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   expect("an admin push can carry a tag", sentTags[tagBase] === "poll", sentTags[tagBase]);
   await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll", open: "poll" });
   expect("…and open the poll page on tap", /#poll$/.test(sentUrls[sentUrls.length - 1]), sentUrls[sentUrls.length - 1]);
+
+  /* the camera: the clubs on the scoreboard decide which fixture is live */
+  {
+    const T2 = require("../tournament");
+    const rec = { i: 2001, s: 1, n: 7, tpl: "6", slots: [1, 3, 0, 5, 4, 2],
+      clubs: ["באיירן", "פסז", "ליברפול", "סיטי", "ריאל", "ברצלונה"],
+      scores: Array.from({ length: 12 }, () => [null, null]), champs: [] };
+    store["tournaments/t2001"] = pack(rec);
+    store["live/2001_0"] = { t: 2001, k: 0, h: 0, a: 0, startAt: "x" };
+    /* a fixture whose club pair appears only once, so the camera can tell */
+    const all = T2.derive(rec).m;
+    const key = m => [m.hc, m.ac].sort().join("|");
+    const fx = all.slice(1).find(m => all.filter(o => key(o) === key(m)).length === 1);
+    const call2 = data => F.liveScore.run({ data, auth: null, rawRequest: {} });
+    const r1 = await call2({ key: "right-key", h: 2, a: 1, clubs: { h: fx.ac, a: fx.hc } });
+    expect("the camera moves the live match to the fixture on screen", r1.moved === fx.i, JSON.stringify(r1) + " want " + fx.i);
+    expect("…and swaps the score when the sides are reversed",
+           store["live/2001_" + fx.i] && store["live/2001_" + fx.i].h === 1 && store["live/2001_" + fx.i].a === 2,
+           JSON.stringify(store["live/2001_" + fx.i]));
+    const r2 = await call2({ key: "right-key", h: 3, a: 2, clubs: { h: fx.hc, a: fx.ac } });
+    expect("…and keeps filling that same fixture", r2.k === fx.i && store["live/2001_" + fx.i].h === 3,
+           JSON.stringify(r2));
+    const r3 = await call2({ key: "right-key", h: 1, a: 2, clubs: { h: fx.hc, a: fx.ac } });
+    expect("a lower reading never takes goals away", r3.ignored === "lower" && store["live/2001_" + fx.i].h === 3,
+           JSON.stringify(r3));
+    delete store["live/2001_" + fx.i];
+    delete store["tournaments/t2001"];
+  }
 
   console.log("\n" + (fails ? fails + " FAILED" : "all passed"));
   process.exit(fails ? 1 : 0);

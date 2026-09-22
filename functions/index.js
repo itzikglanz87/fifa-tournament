@@ -252,18 +252,47 @@ exports.liveScore = onCall(async req => {
     const one = open.length ? open[0].data() : null;
     return { on, live: !!one, h: one ? one.h : null, a: one ? one.a : null };
   }
-  const h = Math.max(0, Math.min(30, Math.round(Number(d.h))));
-  const a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
+  let h = Math.max(0, Math.min(30, Math.round(Number(d.h))));
+  let a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
   if (!isFinite(h) || !isFinite(a)) throw new HttpsError("invalid-argument", "תוצאה לא תקינה");
   const docs = (await db.collection("live").get()).docs;
   if (!docs.length) return { live: false };
-  const ref = docs[0].ref, cur = docs[0].data() || {};
+  let ref = docs[0].ref, cur = docs[0].data() || {};
   if (d.check) return { live: true, h: cur.h, a: cur.a, t: cur.t, k: cur.k };
+
+  /* the scoreboard also says which clubs are playing. If that is a different
+     fixture than the one the app opened — they decided to play match 4 before
+     match 3 — move the live match there, and swap the score when the sides
+     are the other way round. */
+  let swap = false, moved = null;
+  if (d.clubs && d.clubs.h && d.clubs.a) {
+    const snap = await db.doc("tournaments/t" + cur.t).get();
+    if (snap.exists) {
+      const rec = T.unpack(snap.data());
+      const der = T.derive(rec);
+      const same = (x, y) => String(x || "").trim() === String(y || "").trim();
+      /* the same two clubs can meet twice in one tournament, so the clubs
+         alone are not always enough: stay on the fixture the app opened when
+         it fits, otherwise take the earliest unplayed one that does */
+      const fits = der.m.filter(m => !(m.s && m.s[0] != null && m.s[1] != null) &&
+        ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))));
+      const hit = fits.find(m => m.i === cur.k) || fits[0];
+      if (hit && hit.i !== cur.k) {
+        moved = hit.i;
+        const fresh = { t: cur.t, k: hit.i, h: 0, a: 0, startAt: cur.startAt || new Date().toISOString() };
+        if (!cur.h && !cur.a) await ref.delete().catch(() => {});   // nothing was scored yet
+        ref = db.doc("live/" + cur.t + "_" + hit.i);
+        cur = Object.assign(fresh, (await ref.get()).data() || {});
+      }
+      if (hit && same(hit.hc, d.clubs.a)) swap = true;
+    }
+  }
+  if (swap) { const t2 = h; h = a; a = t2; }
   if (h < (cur.h || 0) || a < (cur.a || 0)) return { live: true, h: cur.h, a: cur.a, ignored: "lower" };
   if (h === cur.h && a === cur.a) return { live: true, h: cur.h, a: cur.a, same: true };
   await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
-  console.log("cam score", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "->", h + "-" + a);
-  return { live: true, h, a, updated: true };
+  console.log("cam score", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "->", h + "-" + a, moved != null ? "(moved to match " + (moved + 1) + ")" : "");
+  return { live: true, h, a, updated: true, k: cur.k, moved };
 });
 
 /* ------------------------------------------------------------ 4. activity */

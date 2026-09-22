@@ -111,16 +111,23 @@ def calibrate(args):
         raise SystemExit("לא התקבלה תמונה מהמצלמה")
     cv2.imwrite(os.path.join(HERE, "score_cam_frame.png"), frame)
     boxes = {}
-    for side, label in (("home", "השערים של הקבוצה הימנית בלוח (הבית)"), ("away", "השערים של הקבוצה השמאלית (החוץ)")):
+    for side, label in (("home", "השערים של הקבוצה העליונה בלוח (הבית)"),
+                        ("away", "השערים של הקבוצה התחתונה (החוץ)"),
+                        ("home_code", "קיצור השם של הקבוצה העליונה (למשל BAR) — Esc לדילוג"),
+                        ("away_code", "קיצור השם של הקבוצה התחתונה (למשל RMA) — Esc לדילוג")):
         print("סמן:", label)
         r = cv2.selectROI("סמן את " + side + " ולחץ Enter", frame, showCrosshair=True)
         cv2.destroyAllWindows()
         if r[2] < 4 or r[3] < 4:
+            if side.endswith("_code"):
+                print("   דולג — בלי קיצורי קבוצות המערכת תמלא את המחזור הפתוח")
+                continue
             raise SystemExit("לא סומן ריבוע")
         boxes[side] = [int(r[0]), int(r[1]), int(r[2]), int(r[3])]
     cap.release()
     cfg = load_cfg()
-    cfg.update({"source": args.source, "home": boxes["home"], "away": boxes["away"]})
+    cfg.update(boxes)
+    cfg["source"] = args.source
     save_cfg(cfg)
     print("אפשר להריץ עכשיו:  python tools/score_cam.py")
 
@@ -132,7 +139,9 @@ def calibrate(args):
 # needs nothing installed, and runs in milliseconds.
 DW, DH = 24, 32
 TPL_FONTS = ["arialbd.ttf", "segoeuib.ttf", "tahomabd.ttf", "verdanab.ttf", "calibrib.ttf"]
+LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _TPL = None
+_TPL_L = None
 
 
 def templates():
@@ -202,6 +211,62 @@ def digit_boxes(img):
         if h > H * 0.45 and w > 3 and w < W * 0.9 and h < H * 0.99:
             out.append((th[y:y + h, x:x + w], x))
     return sorted(out, key=lambda b: b[1])
+
+
+def letter_templates():
+    """the same idea as the digits, for the three-letter club codes"""
+    global _TPL_L
+    if _TPL_L is not None:
+        return _TPL_L
+    import cv2, numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = [os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", f) for f in TPL_FONTS]
+    fonts = [f for f in fonts if os.path.exists(f)]
+    def render(ch, path, size=120):
+        f = ImageFont.truetype(path, size)
+        im = Image.new("L", (size * 2, int(size * 1.6)), 0)
+        ImageDraw.Draw(im).text((size, int(size * 0.8)), ch, font=f, fill=255, anchor="mm")
+        a = np.array(im)
+        ys, xs = np.where(a > 40)
+        a = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        a = cv2.resize(a, (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
+        a -= a.mean()
+        n = np.linalg.norm(a)
+        return a / n if n else a
+    _TPL_L = {ch: [render(ch, f) for f in fonts] for ch in LETTERS}
+    return _TPL_L
+
+
+def read_code(img, known, min_score=0.45):
+    """the club's short code, snapped to one of the codes we know"""
+    import cv2, numpy as np
+    boxes = digit_boxes(img)
+    if not (2 <= len(boxes) <= 4):
+        return None
+    TPL = letter_templates()
+    got = ""
+    for img_b, _x in boxes:
+        b = cv2.resize(img_b, (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
+        b -= b.mean()
+        n = np.linalg.norm(b)
+        if not n:
+            return None
+        b /= n
+        best, bs = "?", -2.0
+        for ch, tl in TPL.items():
+            sc = max(float((b * t).sum()) for t in tl)
+            if sc > bs:
+                best, bs = ch, sc
+        got += best if bs >= min_score else "?"
+    if not known:
+        return got
+    # the codes are few and fixed, so the closest one wins as long as it is close
+    def dist(a, b):
+        if len(a) != len(b):
+            return 9
+        return sum(1 for x, y in zip(a, b) if x != y and x != "?")
+    scored = sorted(((dist(got, k), k) for k in known), key=lambda x: x[0])
+    return scored[0][1] if scored and scored[0][0] <= 1 else None
 
 
 def read_number(img, min_score=0.62, debug=None):
@@ -300,11 +365,60 @@ def teach(args):
     print("התבניות נשמרו ב־" + LEARNED)
 
 
-def send(key, h, a, dry):
+def teach_clubs(args):
+    """say which club each code on the scoreboard is"""
+    cfg = load_cfg()
+    if "home_code" not in cfg:
+        raise SystemExit("אין ריבועים לקיצורי הקבוצות — הרץ כיול מחדש:  python tools/score_cam.py --calibrate")
+    data = json.load(io.open(os.path.join(HERE, "..", "functions", "data.json"), encoding="utf-8"))
+    clubs = data.get("C", [])
+    cap = open_camera(args.source if args.source is not None else cfg.get("source", 0))
+    known = cfg.get("clubs", {})
+    print("שים על המסך משחק עם הקבוצות שאתה רוצה ללמד. לסיום: Enter ריק.")
+    try:
+        while True:
+            frame = None
+            for _ in range(8):
+                f = grab(cap)
+                if f is not None:
+                    frame = f
+            if frame is None:
+                print("אין תמונה"); break
+            cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
+            for side in ("home_code", "away_code"):
+                code = read_code(cut(cfg[side]), None)
+                if not code:
+                    print(side, "— לא נקרא קיצור"); continue
+                if code in known:
+                    print(code, "כבר מוכר:", known[code]); continue
+                print("")
+                for i, c in enumerate(clubs):
+                    print("  %d) %s" % (i + 1, c))
+                ans = input("הקיצור " + code + " הוא איזו קבוצה? (מספר, או Enter לדילוג) ").strip()
+                if not ans:
+                    continue
+                if ans.isdigit() and 1 <= int(ans) <= len(clubs):
+                    known[code] = clubs[int(ans) - 1]
+                    print("   נשמר:", code, "=", known[code])
+            cfg["clubs"] = known
+            save_cfg(cfg)
+            if not input("להמשיך עם משחק אחר? (Enter לסיום, כל מקש להמשך) ").strip():
+                break
+    except (EOFError, KeyboardInterrupt):
+        pass
+    finally:
+        cap.release()
+    print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
+
+
+def send(key, h, a, dry, clubs=None):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
-    body = json.dumps({"data": {"key": key, "h": h, "a": a}}).encode()
+    payload = {"key": key, "h": h, "a": a}
+    if clubs:
+        payload["clubs"] = clubs
+    body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode()).get("result", {})
@@ -365,6 +479,13 @@ def run(args):
                 continue
             cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
             crop_h, crop_a = cut(cfg["home"]), cut(cfg["away"])
+            codes = None
+            if cfg.get("home_code") and cfg.get("away_code") and cfg.get("clubs"):
+                known = cfg["clubs"]
+                ch = read_code(cut(cfg["home_code"]), known)
+                ca = read_code(cut(cfg["away_code"]), known)
+                if ch and ca and ch != ca:
+                    codes = {"h": known[ch], "a": known[ca]}
             dh, da = {}, {}
             h = read_number(crop_h, debug=dh)
             a = read_number(crop_a, debug=da)
@@ -380,7 +501,8 @@ def run(args):
             else:
                 stable, stable_n = (h, a), 1
             if args.test:
-                print(now, "נקרא", h, "-", a, "· יציב", stable_n, "פעמים")
+                print(now, "נקרא", h, "-", a, "· יציב", stable_n, "פעמים" +
+                      (" · " + codes["h"] + " נגד " + codes["a"] if codes else ""))
             elif stable_n == args.stable and (h, a) != last_sent:
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
                 if jump and stable_n < args.stable * 2:
@@ -390,7 +512,7 @@ def run(args):
                         learn_from(crop_h, h, "home")
                         learn_from(crop_a, a, "away")
                     try:
-                        r = send(key, h, a, args.dry_run)
+                        r = send(key, h, a, args.dry_run, codes)
                         if r.get("live") is False:
                             if time.time() - idle_note > 60:
                                 print(now, "אין משחק חי פתוח באפליקציה")
@@ -414,6 +536,7 @@ def main():
     p.add_argument("--calibrate", action="store_true", help="לסמן איפה התוצאה על המסך")
     p.add_argument("--test", action="store_true", help="להדפיס מה נקרא בלי לשלוח")
     p.add_argument("--teach", action="store_true", help="ללמד את הספרות של הטלוויזיה שלך")
+    p.add_argument("--teach-clubs", action="store_true", help="ללמד איזה קיצור שייך לאיזו קבוצה")
     p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
     p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
@@ -421,7 +544,9 @@ def main():
     p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
-    if args.list:
+    if args.teach_clubs:
+        teach_clubs(args)
+    elif args.list:
         list_cameras(args)
     elif args.teach:
         teach(args)
