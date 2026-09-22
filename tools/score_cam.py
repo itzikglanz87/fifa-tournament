@@ -352,22 +352,36 @@ def find_board(frame, search, last=None):
     g = cv2.cvtColor(reg, cv2.COLOR_BGR2GRAY)
     _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    best = None
+    boxes = []
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
-        if w < 40 or h < 80:
+        if w < 35 or h < 35:
             continue
-        ratio = w / float(h)
-        if not (0.30 < ratio < 0.95):            # two square plates stacked
-            continue
-        score = w * h
-        if last is not None:                      # prefer the one where it was
-            score -= 4 * (abs(x + x0 - last[0]) + abs(y + y0 - last[1]))
-        if best is None or score > best[0]:
-            best = (score, (x + x0, y + y0, w, h))
-    if best is None:
+        boxes.append((x, y, w, h))
+    pairs = []
+    for x, y, w, h in boxes:
+        if 0.30 < w / float(h) < 0.72:            # already the two plates together
+            pairs.append((x, y, w, h))
+    if not pairs:
+        # the two plates came out as separate blobs: put a stacked pair back together
+        for i, (x1, y1, w1, h1) in enumerate(boxes):
+            for x2, y2, w2, h2 in boxes[i + 1:]:
+                if abs(x1 - x2) > 0.35 * max(w1, w2) or abs(w1 - w2) > 0.45 * max(w1, w2):
+                    continue
+                top, bot = ((x1, y1, w1, h1), (x2, y2, w2, h2)) if y1 < y2 else ((x2, y2, w2, h2), (x1, y1, w1, h1))
+                gap = bot[1] - (top[1] + top[3])
+                if -8 <= gap <= 0.6 * top[3]:
+                    X = min(top[0], bot[0]); W = max(top[0] + top[2], bot[0] + bot[2]) - X
+                    pairs.append((X, top[1], W, bot[1] + bot[3] - top[1]))
+    if not pairs:
         return None
-    x, y, w, h = best[1]
+    def rank(b):
+        score = b[2] * b[3]
+        if last is not None:
+            score -= 4 * (abs(b[0] + x0 - last[0]) + abs(b[1] + y0 - last[1]))
+        return score
+    x, y, w, h = max(pairs, key=rank)
+    x, y = x + x0, y + y0
     half = h // 2
     pad = max(4, int(w * 0.08))
     home = [x - pad, y - pad, w + 2 * pad, half + pad]
@@ -377,6 +391,97 @@ def find_board(frame, search, last=None):
     away_crest = [x - cw - pad, y + half, cw, half]
     return {"home": home, "away": away, "home_crest": home_crest,
             "away_crest": away_crest, "block": [x, y, w, h]}
+
+
+def classify_shape(mask, min_score=0.60):
+    """one cut-out digit (white ink on black) against every template we have"""
+    import cv2, numpy as np
+    TPL = dict(templates())
+    for d, v in learned_templates().items():
+        TPL[d] = v + TPL.get(d, [])
+    b = cv2.resize(mask, (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
+    b -= b.mean()
+    n = np.linalg.norm(b)
+    if not n:
+        return None, 0.0
+    b /= n
+    best, bs = None, -2.0
+    for d, tl in TPL.items():
+        sc = max(float((b * t).sum()) for t in tl)
+        if sc > bs:
+            best, bs = d, sc
+    return (best, bs) if bs >= min_score else (None, bs)
+
+
+def read_replay_bar(frame):
+    """The wide white bar of a replay: full club names, and the exact score
+       either side of the red league block. It is big and high-contrast, so
+       when the small corner board is hidden this still says the score.
+       Returns (home, away, home_shape, away_shape) or None."""
+    import cv2, numpy as np
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    white = ((hsv[:, :, 1] < 70) & (hsv[:, :, 2] > 140)).astype(np.uint8) * 255
+    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, np.ones((9, 81), np.uint8))
+    cnts, _h = cv2.findContours(white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    bar = None
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if w > frame.shape[1] * 0.25 and 40 < h < 400 and w / float(h) > 4:
+            if bar is None or w > bar[2]:
+                bar = (x, y, w, h)
+    if bar is None:
+        return None
+    x, y, w, h = bar
+    inner = frame[y:y + h, x:x + w]
+    ihsv = cv2.cvtColor(inner, cv2.COLOR_BGR2HSV)
+    red = ((((ihsv[:, :, 0] < 12) | (ihsv[:, :, 0] > 168)) & (ihsv[:, :, 1] > 110) & (ihsv[:, :, 2] > 90))
+           .astype(np.uint8) * 255)
+    red = cv2.morphologyEx(red, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    rc, _h2 = cv2.findContours(red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    blocks = sorted((cv2.boundingRect(c) for c in rc), key=lambda b: -b[2] * b[3])
+    if not blocks or blocks[0][2] < 0.06 * w:
+        return None
+    rx, _ry, rw, _rh = blocks[0]
+    g = cv2.cvtColor(inner, cv2.COLOR_BGR2GRAY)
+    onwhite = (ihsv[:, :, 1] < 70) & (ihsv[:, :, 2] > 140)
+    dark = cv2.morphologyEx((((g < 120) & ~onwhite) * 255).astype(np.uint8),
+                            cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    dc, _h3 = cv2.findContours(dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    left, right = [], []
+    for c in dc:
+        bx, by, bw, bh = cv2.boundingRect(c)
+        if not (0.30 * h < bh < 0.80 * h and 0.02 * h < bw < 0.55 * h):
+            continue
+        sub_img = g[by:by + bh, bx:bx + bw]
+        _t, th = cv2.threshold(sub_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        val, score = classify_shape(th)
+        if val is None:
+            continue
+        (left if bx + bw < rx else right if bx > rx + rw else []).append((bx, int(val), th, score))
+    if not left or not right:
+        return None
+    left.sort(); right.sort()
+    return int(left[-1][1]), int(right[0][1]), left[-1][2], right[0][2]
+
+
+def plate_signature(img):
+    """A plate boiled down to a small picture, for asking one question only:
+       is this still the same number as a moment ago? Reading *which* digit it
+       is needs detail the camera does not have at this distance; noticing
+       that it changed does not."""
+    import cv2, numpy as np
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    g = cv2.resize(g, (28, 36), interpolation=cv2.INTER_AREA).astype(np.float32)
+    g = cv2.GaussianBlur(g, (3, 3), 0)
+    g -= g.mean()
+    n = np.linalg.norm(g)
+    return g / n if n else g
+
+
+def sig_same(a, b, thresh=0.93):
+    if a is None or b is None:
+        return False
+    return float((a * b).sum()) >= thresh
 
 
 def plate_crop(img):
@@ -591,6 +696,8 @@ def run(args):
     working = args.test         # in --test mode always read; otherwise ask the app
     checked = 0
     last_block = None           # where the board was a moment ago
+    change_ref, change_pending = {}, {}      # what each plate looked like
+    goals = {"h": 0, "a": 0}
     try:
         while True:
             # the app decides when there is something to read; while there is
@@ -645,6 +752,53 @@ def run(args):
             dh, da = {}, {}
             h = read_number(crop_h, debug=dh)
             a = read_number(crop_a, debug=da)
+            from_bar = False
+            if (h is None or a is None) and not args.no_bar:
+                bar = read_replay_bar(frame)
+                if bar:
+                    h, a, sh, sa = bar
+                    from_bar = True
+                    dh["score"], da["score"] = 0.9, 0.9
+
+            # --- goals by change ---------------------------------------
+            # When the digits cannot be read, the plate itself still says a
+            # goal went in: its picture changes and then stays changed. Each
+            # side is watched on its own, and a change only counts after it
+            # has held for a few seconds, so a replay or a flash cannot score.
+            if found and not args.no_change:
+                for side, crop in (("h", crop_h), ("a", crop_a)):
+                    sig = plate_signature(plate_crop(crop))
+                    ref = change_ref.get(side)
+                    if ref is None:
+                        change_ref[side] = sig
+                        continue
+                    if sig_same(sig, ref):
+                        change_pending.pop(side, None)
+                        continue
+                    pend = change_pending.get(side)
+                    if pend is None or not sig_same(sig, pend[0]):
+                        change_pending[side] = (sig, time.time())      # new look, start the clock
+                        continue
+                    if time.time() - pend[1] >= args.settle:
+                        change_ref[side] = sig
+                        change_pending.pop(side, None)
+                        goals[side] += 1
+                        print(now, "שינוי במשבצת של", "הבית" if side == "h" else "החוץ",
+                              "— גול. ספירה:", goals["h"], "-", goals["a"])
+                        if not args.test:
+                            base = last_sent or (0, 0)
+                            nh = base[0] + (1 if side == "h" else 0)
+                            na = base[1] + (1 if side == "a" else 0)
+                            try:
+                                r = send(key, nh, na, args.dry_run, codes)
+                                if r.get("live") is False:
+                                    print(now, "אין משחק חי פתוח באפליקציה")
+                                else:
+                                    last_sent = (r.get("h", nh), r.get("a", na))
+                                    print(now, "נשלח", last_sent[0], "-", last_sent[1], "(ספירת גולים)")
+                            except Exception as e:
+                                print(now, "שליחה נכשלה:", e)
+
             now = time.strftime("%H:%M:%S")
             if h is None or a is None:
                 stable, stable_n = None, 0
@@ -658,6 +812,7 @@ def run(args):
                 stable, stable_n = (h, a), 1
             if args.test:
                 print(now, "נקרא", h, "-", a, "· יציב", stable_n, "פעמים" +
+                      (" · מהפס התחתון" if from_bar else "") +
                       (" · " + codes["h"] + " נגד " + codes["a"] if codes else ""))
             elif stable_n == args.stable and (h, a) != last_sent:
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
@@ -695,6 +850,9 @@ def main():
     p.add_argument("--teach-clubs", action="store_true", help="ללמד איזה קיצור שייך לאיזו קבוצה")
     p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
     p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
+    p.add_argument("--no-bar", action="store_true", help="לא לקרוא מהפס של השידור החוזר")
+    p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
+    p.add_argument("--settle", type=float, default=4.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
     p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
