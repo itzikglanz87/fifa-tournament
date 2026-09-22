@@ -2160,6 +2160,7 @@ function openWrapped(p) {
    into the tournament the usual way and clears the live document.
    ========================================================================== */
 let TEST_MODE = false;          // pushes held while a trial tournament runs
+let TOURNAMENT_LIVE = null;     // the camera may open matches in this tournament
 const Live = {
   map: {}, stop: null, started: false,
   key: (t, k) => t.i + "_" + k,
@@ -2220,6 +2221,16 @@ function fillLive(n) {
     const next = t.m.findIndex(x => x[6] == null || x[7] == null);
     if (next !== k || Object.keys(Live.map).length) { n.hidden = true; return; }
     n.hidden = false;
+    if (TOURNAMENT_LIVE === t.i) {
+      n.appendChild(el("div", "live-auto", "🎥 טורניר חי — המצלמה תפתח את המחזור לפי הקבוצות שעל המסך"));
+      const man = el("button", "live-start", "פתח מחזור זה ידנית");
+      man.onclick = async () => {
+        man.disabled = true;
+        try { await Live.set(t, k, 0, 0); } catch (e) { flash("אין חיבור", true); man.disabled = false; }
+      };
+      n.appendChild(man);
+      return;
+    }
     const b = el("button", "live-start", "▶ התחל משחק חי");
     b.onclick = async () => {
       b.disabled = true;
@@ -2287,9 +2298,12 @@ const Social = {
       const db = await this.db();
       if (!db) return;
       try {
-        const [p, r, v, pl, pw] = await Promise.all([
+        const [p, r, v, pl, pw, lv] = await Promise.all([
           db.collection("predictions").get(), db.collection("reactions").get(),
-          db.collection("pollVotes").get(), db.doc("meta/poll").get(), db.collection("predWindows").get()]);
+          db.collection("pollVotes").get(), db.doc("meta/poll").get(), db.collection("predWindows").get(),
+          db.doc("meta/live").get()]);
+        const lvd = lv.exists ? lv.data() : null;
+        TOURNAMENT_LIVE = !!(lvd && lvd.on === true) ? lvd.t : null;
         const pred = {}, react = {}, votes = {}, win = {};
         pw.docs.forEach(d => { const x = d.data(); win[x.t + "_" + x.k] = { sit: x.sit || [], closeMs: Number(x.closeMs) || 0 }; });
         p.docs.forEach(d => { const x = d.data(); (pred[x.t + "_" + x.k] = pred[x.t + "_" + x.k] || {})[x.who] = { h: x.h, a: x.a }; });

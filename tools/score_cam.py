@@ -806,6 +806,7 @@ def run(args):
 
             if time.time() - beat > 20:
                 beat = time.time()
+                now = time.strftime("%H:%M:%S")
                 sims = []
                 for side, crop in (("h", crop_h), ("a", crop_a)):
                     ref = change_ref.get(side)
@@ -813,6 +814,7 @@ def run(args):
                     sims.append("%s=%s" % (side, "-" if (ref is None or sig is None) else "%.2f" % float((sig * ref).sum())))
                 print(now, "מצב · לוח:", "נמצא" if found else "לא", "· ספרות:", h, "-", a,
                       "· פס:", "כן" if bar_shapes else "לא", "· דמיון:", " ".join(sims))
+            now = time.strftime("%H:%M:%S")
             # --- goals by change ---------------------------------------
             # When the digits cannot be read, the plate itself still says a
             # goal went in: its picture changes and then stays changed. Each
