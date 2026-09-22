@@ -234,7 +234,28 @@ exports.adminPush = onCall(async req => {
   return Object.assign({ ok: true, story: storyId }, r);
 });
 
-/* ------------------------------------------------------------ 3. activity */
+/* --------------------------------------------------------- 3. the camera */
+/* The scoreboard reader on the computer sends what it read off the screen.
+   It never picks a match: it updates whichever match the app has open as
+   live, and only upwards (a replay or a misread cannot take goals away). */
+exports.liveScore = onCall(async req => {
+  const d = req.data || {};
+  requireAdmin(d);
+  const h = Math.max(0, Math.min(30, Math.round(Number(d.h))));
+  const a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
+  if (!isFinite(h) || !isFinite(a)) throw new HttpsError("invalid-argument", "תוצאה לא תקינה");
+  const docs = (await db.collection("live").get()).docs;
+  if (!docs.length) return { live: false };
+  const ref = docs[0].ref, cur = docs[0].data() || {};
+  if (d.check) return { live: true, h: cur.h, a: cur.a, t: cur.t, k: cur.k };
+  if (h < (cur.h || 0) || a < (cur.a || 0)) return { live: true, h: cur.h, a: cur.a, ignored: "lower" };
+  if (h === cur.h && a === cur.a) return { live: true, h: cur.h, a: cur.a, same: true };
+  await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
+  console.log("cam score", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "->", h + "-" + a);
+  return { live: true, h, a, updated: true };
+});
+
+/* ------------------------------------------------------------ 4. activity */
 /* The activity log: each phone writes visits/{id} when the app opens (the
    rules let it create, never read). Only the admin reads it, through here. */
 exports.adminVisits = onCall(async req => {

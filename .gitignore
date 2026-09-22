@@ -3,3 +3,9 @@ Thumbs.db
 *.log
 __pycache__/
 *.pyc
+
+# the camera reader: local settings (may hold a camera address and password),
+# the digits it learned off the television, and debug frames
+tools/score_cam.json
+tools/digits/
+tools/score_cam_frame.png
