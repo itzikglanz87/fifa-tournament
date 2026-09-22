@@ -264,13 +264,41 @@ exports.liveScore = onCall(async req => {
     await ref.set(Object.assign({}, cur, { on, seen: new Date().toISOString() }));
     const open = (await db.collection("live").get()).docs;
     const one = open.length ? open[0].data() : null;
-    return { on, live: !!one, h: one ? one.h : null, a: one ? one.a : null };
+    const tour = (await db.doc("meta/live").get()).data() || {};
+    const out = { on, live: !!one, h: one ? one.h : null, a: one ? one.a : null,
+                  tournament: tour.on === true ? tour.t : null };
+    if (one) {                                  // which clubs are on the pitch now
+      const snap = await db.doc("tournaments/t" + one.t).get();
+      if (snap.exists) {
+        const m = T.derive(T.unpack(snap.data())).m[one.k];
+        if (m) { out.hc = m.hc; out.ac = m.ac; }
+      }
+    }
+    return out;
   }
   let h = Math.max(0, Math.min(30, Math.round(Number(d.h))));
   let a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
   if (!isFinite(h) || !isFinite(a)) throw new HttpsError("invalid-argument", "תוצאה לא תקינה");
   const docs = (await db.collection("live").get()).docs;
-  if (!docs.length) return { live: false };
+  if (!docs.length) {
+    /* No match is open, but the tournament is marked live: the clubs on the
+       television say which fixture is being played, so open that one. */
+    const tour = (await db.doc("meta/live").get()).data() || {};
+    if (!(tour.on === true && tour.t && d.clubs && d.clubs.h && d.clubs.a)) return { live: false };
+    const snap = await db.doc("tournaments/t" + tour.t).get();
+    if (!snap.exists) return { live: false };
+    const der = T.derive(T.unpack(snap.data()));
+    const same = (x, y) => String(x || "").trim() === String(y || "").trim();
+    const hit = der.m.find(m => !(m.s && m.s[0] != null && m.s[1] != null) &&
+      ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))));
+    if (!hit) return { live: false, noFixture: true };
+    const flip = same(hit.hc, d.clubs.a);
+    const doc = { t: tour.t, k: hit.i, h: flip ? a : h, a: flip ? h : a,
+                  startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
+    await db.doc("live/" + tour.t + "_" + hit.i).set(doc);
+    console.log("cam opened live match", tour.t + "_" + hit.i, doc.h + "-" + doc.a);
+    return { live: true, h: doc.h, a: doc.a, k: hit.i, opened: true };
+  }
   let ref = docs[0].ref, cur = docs[0].data() || {};
   if (d.check) return { live: true, h: cur.h, a: cur.a, t: cur.t, k: cur.k };
 

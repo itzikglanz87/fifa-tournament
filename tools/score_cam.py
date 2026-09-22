@@ -413,7 +413,7 @@ def classify_shape(mask, min_score=0.60):
     return (best, bs) if bs >= min_score else (None, bs)
 
 
-def read_replay_bar(frame):
+def read_replay_bar(frame, want_shapes=False):
     """The wide white bar of a replay: full club names, and the exact score
        either side of the red league block. It is big and high-contrast, so
        when the small corner board is hidden this still says the score.
@@ -455,13 +455,23 @@ def read_replay_bar(frame):
         sub_img = g[by:by + bh, bx:bx + bw]
         _t, th = cv2.threshold(sub_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         val, score = classify_shape(th)
-        if val is None:
+        if val is None and not want_shapes:
             continue
-        (left if bx + bw < rx else right if bx > rx + rw else []).append((bx, int(val), th, score))
+        (left if bx + bw < rx else right if bx > rx + rw else []).append(
+            (bx, None if val is None else int(val), th, score))
     if not left or not right:
         return None
-    left.sort(); right.sort()
-    return int(left[-1][1]), int(right[0][1]), left[-1][2], right[0][2]
+    left.sort(key=lambda z: z[0]); right.sort(key=lambda z: z[0])
+    if want_shapes:
+        return left[-1][2], right[0][2]
+    return left[-1][1], right[0][1], left[-1][2], right[0][2]
+
+
+def read_replay_bar_shapes(frame):
+    """the two digit shapes on the replay bar, even when we cannot name them"""
+    import cv2
+    out = read_replay_bar(frame, want_shapes=True)
+    return out if out else None
 
 
 def plate_signature(img):
@@ -698,6 +708,9 @@ def run(args):
     last_block = None           # where the board was a moment ago
     change_ref, change_pending = {}, {}      # what each plate looked like
     goals = {"h": 0, "a": 0}
+    last_good_block = None
+    beat = 0                                 # last heartbeat line
+    warm_until = 0                           # no goals counted right after waking
     try:
         while True:
             # the app decides when there is something to read; while there is
@@ -706,7 +719,8 @@ def run(args):
                 checked = time.time()
                 try:
                     st = ping(key)
-                    want = st.get("on", True) and st.get("live", False)
+                    # a live tournament is enough: the camera opens the match
+                    want = st.get("on", True) and bool(st.get("live", False) or st.get("tournament"))
                 except Exception as e:
                     want = False
                     if time.time() - idle_note > 120:
@@ -715,6 +729,16 @@ def run(args):
                 if want != working:
                     working = want
                     print(time.strftime("%H:%M:%S"), "קורא מהמצלמה" if want else "ממתין — אין משחק חי או שהקריאה כבויה")
+                    if want:
+                        change_ref, change_pending = {}, {}
+                        warm_until = time.time() + args.warmup
+                        try:
+                            st2 = ping(key)
+                            last_sent = (st2.get("h") or 0, st2.get("a") or 0) if st2.get("live") else None
+                            goals["h"], goals["a"] = last_sent
+                            print(time.strftime("%H:%M:%S"), "מתחיל מ־", last_sent[0], "-", last_sent[1])
+                        except Exception:
+                            pass
                     if not want and cap is not None:
                         cap.release()
                         cap = None
@@ -753,19 +777,55 @@ def run(args):
             h = read_number(crop_h, debug=dh)
             a = read_number(crop_a, debug=da)
             from_bar = False
-            if (h is None or a is None) and not args.no_bar:
+            bar_shapes = None
+            if not args.no_bar:
                 bar = read_replay_bar(frame)
                 if bar:
-                    h, a, sh, sa = bar
-                    from_bar = True
-                    dh["score"], da["score"] = 0.9, 0.9
+                    bh, ba, sh, sa = bar
+                    bar_shapes = (sh, sa)
+                    if bh is not None and ba is not None:
+                        h, a = bh, ba          # the replay bar is the clearest source
+                        from_bar = True
+                        dh["score"], da["score"] = 0.9, 0.9
+                elif not args.no_bar:
+                    shapes = read_replay_bar_shapes(frame)
+                    if shapes:
+                        bar_shapes = shapes
+            # the bar shows the score in big digits; when we know what the score
+            # is, those digits are the best teacher for the ones we cannot read
+            if (bar_shapes and last_sent and not args.no_learn
+                    and h is not None and a is not None and (h, a) == tuple(last_sent)):
+                for shape, val in zip(bar_shapes, last_sent):
+                    if shape is None or not (0 <= val <= 9):
+                        continue
+                    folder = os.path.join(LEARNED, str(val))
+                    os.makedirs(folder, exist_ok=True)
+                    if len(os.listdir(folder)) < 12:
+                        imwrite_any(os.path.join(folder, "bar_%d.png" % int(time.time() * 1000)), shape)
+                        print(now, "למד את הספרה", val, "מהפס")
 
+            if time.time() - beat > 20:
+                beat = time.time()
+                sims = []
+                for side, crop in (("h", crop_h), ("a", crop_a)):
+                    ref = change_ref.get(side)
+                    sig = plate_signature(plate_crop(crop)) if found else None
+                    sims.append("%s=%s" % (side, "-" if (ref is None or sig is None) else "%.2f" % float((sig * ref).sum())))
+                print(now, "מצב · לוח:", "נמצא" if found else "לא", "· ספרות:", h, "-", a,
+                      "· פס:", "כן" if bar_shapes else "לא", "· דמיון:", " ".join(sims))
             # --- goals by change ---------------------------------------
             # When the digits cannot be read, the plate itself still says a
             # goal went in: its picture changes and then stays changed. Each
             # side is watched on its own, and a change only counts after it
             # has held for a few seconds, so a replay or a flash cannot score.
             if found and not args.no_change:
+                # a board that jumped across the picture is a new detection, not
+                # a goal: start over rather than count it
+                if last_good_block and (abs(found["block"][0] - last_good_block[0]) > 25 or
+                                        abs(found["block"][1] - last_good_block[1]) > 25):
+                    change_ref, change_pending = {}, {}
+                    warm_until = time.time() + args.warmup
+                last_good_block = found["block"]
                 for side, crop in (("h", crop_h), ("a", crop_a)):
                     sig = plate_signature(plate_crop(crop))
                     ref = change_ref.get(side)
@@ -775,6 +835,11 @@ def run(args):
                     if sig_same(sig, ref):
                         change_pending.pop(side, None)
                         continue
+                    if time.time() < warm_until:          # still settling after waking
+                        change_ref[side] = sig
+                        continue
+                    if sig_same(sig, ref, 0.80):          # a wobble, not a different number
+                        continue
                     pend = change_pending.get(side)
                     if pend is None or not sig_same(sig, pend[0]):
                         change_pending[side] = (sig, time.time())      # new look, start the clock
@@ -782,11 +847,12 @@ def run(args):
                     if time.time() - pend[1] >= args.settle:
                         change_ref[side] = sig
                         change_pending.pop(side, None)
+                        change_ref.pop("h" if side == "a" else "a", None)   # re-read the other plate too
                         goals[side] += 1
                         print(now, "שינוי במשבצת של", "הבית" if side == "h" else "החוץ",
                               "— גול. ספירה:", goals["h"], "-", goals["a"])
                         if not args.test:
-                            base = last_sent or (0, 0)
+                            base = last_sent or (0, 0)   # nothing open yet: start from nothing
                             nh = base[0] + (1 if side == "h" else 0)
                             na = base[1] + (1 if side == "a" else 0)
                             try:
@@ -852,7 +918,8 @@ def main():
     p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
     p.add_argument("--no-bar", action="store_true", help="לא לקרוא מהפס של השידור החוזר")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
-    p.add_argument("--settle", type=float, default=4.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
+    p.add_argument("--settle", type=float, default=5.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
+    p.add_argument("--warmup", type=float, default=12.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
     p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")

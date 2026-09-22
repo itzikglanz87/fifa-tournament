@@ -3194,7 +3194,7 @@ function managePanel(open, inScope) {
   box.appendChild(bar);
   box.appendChild(pushPanel());
   box.appendChild(mePanel());
-  if (adminKey()) { box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
+  if (adminKey()) { box.appendChild(liveTournamentPanel(open)); box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
@@ -7404,6 +7404,40 @@ function mePanel() {
     if (soundOn()) resultSound(2, 1);
   };
   sec.appendChild(snd);
+  return sec;
+}
+
+/* under ניהול, admin only: mark the whole tournament live, so the camera may
+   open and switch matches by itself — no button per match */
+function liveTournamentPanel(open) {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>🎥 טורניר חי</h2><span class="note">' +
+    "כשזה דולק, המצלמה פותחת בעצמה את המשחק לפי הקבוצות שעל המסך — בלי ללחוץ 'התחל משחק חי' בכל מחזור.</span></div>";
+  const state = el("div", "notice");
+  const toggle = el("button", "btn sm", "…");
+  const paint = cur => {
+    const on = !!(cur && cur.on && (!open || cur.t === open.i));
+    state.className = "notice" + (on ? "" : " warn");
+    state.innerHTML = on ? "<b>הטורניר חי</b> — המצלמה תעדכן את המחזור שמשוחק"
+                         : "<b>כבוי</b> — צריך ללחוץ 'התחל משחק חי' לכל מחזור";
+    toggle.textContent = on ? "⏹ כבה טורניר חי" : "🎥 הדלק טורניר חי";
+    toggle.onclick = async () => {
+      if (!open) { flash("אין טורניר פתוח", true); return; }
+      toggle.disabled = true;
+      const next = { on: !on, t: open.i, at: new Date().toISOString() };
+      try { await Social.set("meta", "live", next); paint(next); }
+      catch (e) { flash("לא נשמר — אין חיבור", true); }
+      toggle.disabled = false;
+    };
+  };
+  (async () => {
+    try {
+      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+      const doc = db ? await db.doc("meta/live").get() : null;
+      paint(doc && doc.exists ? doc.data() : null);
+    } catch (e) { paint(null); }
+  })();
+  sec.append(state, toggle);
   return sec;
 }
 

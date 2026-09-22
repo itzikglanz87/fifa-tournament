@@ -223,6 +223,25 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     await change("t3001", q1, null);
   }
 
+  /* a live tournament: the camera opens the right match by itself */
+  {
+    const T3 = require("../tournament");
+    const rec = { i: 4001, s: 1, n: 5, tpl: "6", slots: [1, 3, 0, 5, 4, 2],
+      clubs: ["באיירן", "פסז", "ליברפול", "סיטי", "ריאל", "ברצלונה"],
+      scores: Array.from({ length: 12 }, () => [null, null]), champs: [] };
+    store["tournaments/t4001"] = pack(rec);
+    store["meta/live"] = { on: true, t: 4001 };
+    const fx = T3.derive(rec).m[5];
+    const call3 = data => F.liveScore.run({ data, auth: null, rawRequest: {} });
+    const none = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: "לא קיימת", a: "גם לא" } });
+    expect("clubs that are not in the tournament open nothing", none.live === false);
+    const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
+    expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));
+    expect("…with the sides the right way round", store["live/4001_" + fx.i].h === 0 && store["live/4001_" + fx.i].a === 1,
+           JSON.stringify(store["live/4001_" + fx.i]));
+    delete store["live/4001_" + fx.i]; delete store["meta/live"]; delete store["tournaments/t4001"];
+  }
+
   /* the camera: the clubs on the scoreboard decide which fixture is live */
   {
     const T2 = require("../tournament");

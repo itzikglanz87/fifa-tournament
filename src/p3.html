@@ -1157,7 +1157,7 @@ function managePanel(open, inScope) {
   box.appendChild(bar);
   box.appendChild(pushPanel());
   box.appendChild(mePanel());
-  if (adminKey()) { box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
+  if (adminKey()) { box.appendChild(liveTournamentPanel(open)); box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
