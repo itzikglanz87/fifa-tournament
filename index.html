@@ -6764,7 +6764,9 @@ function fillLive(n) {
     '<span class="lv-dot"></span><b>חי</b><span class="mut">· ' + mins + " דק׳ · " +
     (cur.src === "cam" ? "מהמצלמה" : cur.by >= 0 ? esc(P[cur.by]) : "מהאפליקציה") + "</span>");
   const score = el("div", "lv-score",
-    '<span>' + esc(P[m[0]]) + " ו" + esc(P[m[1]]) + '</span><b class="ltr">' + cur.h + " - " + cur.a + "</b><span>" +
+    /* home is on the right in the app, so inside a left-to-right score the
+       home goals must come last — the same order the rest of the app uses */
+    '<span>' + esc(P[m[0]]) + " ו" + esc(P[m[1]]) + '</span><b class="ltr">' + cur.a + " - " + cur.h + "</b><span>" +
     esc(P[m[3]]) + " ו" + esc(P[m[4]]) + "</span>");
   const row = el("div", "lv-btns");
   const bump = (dh, da) => async () => {
@@ -6785,7 +6787,9 @@ function fillLive(n) {
   const end = el("button", "btn sm live-end", "🏁 סיום המשחק");
   end.onclick = async () => {
     const c = Live.get(t, k) || { h: 0, a: 0 };
-    const ok = await askConfirm({ title: "לסיים את המשחק?", body: "התוצאה " + c.h + " - " + c.a + " תיכנס לטבלה.", ok: "סיים ושמור", cancel: "עוד לא" });
+    const ok = await askConfirm({ title: "לסיים את המשחק?",
+      body: "התוצאה: " + P[m[0]] + " ו" + P[m[1]] + " " + c.h + ", " + P[m[3]] + " ו" + P[m[4]] + " " + c.a + ". תיכנס לטבלה.",
+      ok: "סיים ושמור", cancel: "עוד לא" });
     if (!ok) return;
     await Live.clear(t, k);
     setScore(t, k, c.h, c.a);

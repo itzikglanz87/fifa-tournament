@@ -474,6 +474,63 @@ def read_replay_bar_shapes(frame):
     return out if out else None
 
 
+def score_in_region(img, debug=None):
+    """Read the score out of the whole scoreboard area, whatever it looks like.
+
+    FC dresses the board differently in every competition: white digits on a
+    dark panel, dark digits on white plates, with or without crests. What does
+    not change is the shape of the thing: the two scores sit one above the
+    other, at the right end of the board. So instead of a box per digit, take
+    the board as a whole, find the digit-shaped marks (in either polarity),
+    split them into an upper and a lower row, and read the rightmost group in
+    each. Returns (home, away, home_shapes, away_shapes)."""
+    import cv2, numpy as np
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    g = cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    g = cv2.GaussianBlur(g, (3, 3), 0)
+    H, W = g.shape
+    marks = []
+    for invert in (False, True):
+        work = 255 - g if invert else g
+        _t, th = cv2.threshold(work, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts:
+            x, y, w, h = cv2.boundingRect(c)
+            if not (0.10 * H < h < 0.55 * H):        # a digit is a fair slice of the board
+                continue
+            if not (0.01 * W < w < 0.22 * W) or w > 1.4 * h:
+                continue
+            marks.append({"x": x, "y": y, "w": w, "h": h, "img": th[y:y + h, x:x + w]})
+    if len(marks) < 2:
+        return None
+    tall = sorted(marks, key=lambda m: -m["h"])[:14]
+    mid = sorted(m["y"] + m["h"] / 2 for m in tall)
+    split = (mid[0] + mid[-1]) / 2
+    rows = ([m for m in tall if m["y"] + m["h"] / 2 <= split],
+            [m for m in tall if m["y"] + m["h"] / 2 > split])
+    if not rows[0] or not rows[1]:
+        return None
+    out, shapes = [], []
+    for row in rows:
+        right = max(m["x"] + m["w"] for m in row)
+        group = sorted([m for m in row if m["x"] + m["w"] > right - 0.16 * W], key=lambda m: m["x"])
+        group = group[-2:]                            # at most two digits (up to 99)
+        digits, ok = "", True
+        for m in group:
+            val, score = classify_shape(m["img"])
+            if val is None:
+                ok = False
+                break
+            digits += str(val)
+        if not ok or not digits:
+            return None
+        out.append(int(digits))
+        shapes.append([m["img"] for m in group])
+    if debug is not None:
+        debug["marks"] = len(marks)
+    return out[0], out[1], shapes[0], shapes[1]
+
+
 def plate_signature(img):
     """A plate boiled down to a small picture, for asking one question only:
        is this still the same number as a moment ago? Reading *which* digit it
@@ -753,7 +810,10 @@ def run(args):
                 time.sleep(0.5)
                 continue
             cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
-            found = find_board(frame, cfg.get("search", [0, 0, frame.shape[1], frame.shape[0]]), last_block)
+            # "fixed": the camera is zoomed on the scoreboard and never moves,
+            # so the marked boxes are better than hunting for the board
+            found = None if cfg.get("fixed") else find_board(
+                frame, cfg.get("search", [0, 0, frame.shape[1], frame.shape[0]]), last_block)
             if found:
                 last_block = found["block"]
                 cfg_boxes = found
@@ -761,6 +821,9 @@ def run(args):
                 cfg_boxes = cfg                    # fall back to the marked boxes
             cut = lambda b: frame[max(0, b[1]):b[1] + b[3], max(0, b[0]):b[0] + b[2]]
             crop_h, crop_a = cut(cfg_boxes["home"]), cut(cfg_boxes["away"])
+            region = cfg.get("region")
+            if region:
+                crop_h = crop_a = cut(region)          # one area, read as a whole
             codes = None
             if cfg_boxes.get("home_crest") and cfg_boxes.get("away_crest"):
                 tpl = crest_templates()
@@ -774,8 +837,13 @@ def run(args):
                 if ch and ca and ch != ca:
                     codes = {"h": ch, "a": ca}
             dh, da = {}, {}
-            h = read_number(crop_h, debug=dh)
-            a = read_number(crop_a, debug=da)
+            if region:
+                got = score_in_region(cut(region))
+                h, a = (got[0], got[1]) if got else (None, None)
+                dh["score"] = da["score"] = 0.9 if got else 0
+            else:
+                h = read_number(crop_h, debug=dh)
+                a = read_number(crop_a, debug=da)
             from_bar = False
             bar_shapes = None
             if not args.no_bar:
@@ -810,9 +878,9 @@ def run(args):
                 sims = []
                 for side, crop in (("h", crop_h), ("a", crop_a)):
                     ref = change_ref.get(side)
-                    sig = plate_signature(plate_crop(crop)) if found else None
+                    sig = plate_signature(plate_crop(crop)) if (found or cfg.get("fixed")) else None
                     sims.append("%s=%s" % (side, "-" if (ref is None or sig is None) else "%.2f" % float((sig * ref).sum())))
-                print(now, "מצב · לוח:", "נמצא" if found else "לא", "· ספרות:", h, "-", a,
+                print(now, "מצב · לוח:", "קבוע" if cfg.get("fixed") else ("נמצא" if found else "לא"), "· ספרות:", h, "-", a,
                       "· פס:", "כן" if bar_shapes else "לא", "· דמיון:", " ".join(sims))
             now = time.strftime("%H:%M:%S")
             # --- goals by change ---------------------------------------
@@ -820,14 +888,18 @@ def run(args):
             # goal went in: its picture changes and then stays changed. Each
             # side is watched on its own, and a change only counts after it
             # has held for a few seconds, so a replay or a flash cannot score.
-            if found and not args.no_change:
+            # when the score is read from the whole board area, the clock inside
+            # it changes every second — counting "the picture changed" as a goal
+            # would be nonsense. The digits themselves are the source there.
+            if (found or cfg.get("fixed")) and not args.no_change and not region:
                 # a board that jumped across the picture is a new detection, not
                 # a goal: start over rather than count it
-                if last_good_block and (abs(found["block"][0] - last_good_block[0]) > 25 or
-                                        abs(found["block"][1] - last_good_block[1]) > 25):
-                    change_ref, change_pending = {}, {}
-                    warm_until = time.time() + args.warmup
-                last_good_block = found["block"]
+                if found:
+                    if last_good_block and (abs(found["block"][0] - last_good_block[0]) > 25 or
+                                            abs(found["block"][1] - last_good_block[1]) > 25):
+                        change_ref, change_pending = {}, {}
+                        warm_until = time.time() + args.warmup
+                    last_good_block = found["block"]
                 for side, crop in (("h", crop_h), ("a", crop_a)):
                     sig = plate_signature(plate_crop(crop))
                     ref = change_ref.get(side)
@@ -869,7 +941,9 @@ def run(args):
 
             now = time.strftime("%H:%M:%S")
             if h is None or a is None:
-                stable, stable_n = None, 0
+                # a frame we could not read means nothing changed, only that we
+                # did not see it: keep whatever run of identical readings we had
+                pass
                 if args.test:
                     print(now, "לא נקרא (בית:", h, "חוץ:", a, ")")
                 time.sleep(args.interval)

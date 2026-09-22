@@ -280,19 +280,28 @@ exports.liveScore = onCall(async req => {
   let a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
   if (!isFinite(h) || !isFinite(a)) throw new HttpsError("invalid-argument", "תוצאה לא תקינה");
   const docs = (await db.collection("live").get()).docs;
+  if (d.reset) {                                  // clear a live match that went to the wrong fixture
+    await Promise.all(docs.map(x => x.ref.delete().catch(() => {})));
+    return { live: false, cleared: docs.length };
+  }
   if (!docs.length) {
     /* No match is open, but the tournament is marked live: the clubs on the
        television say which fixture is being played, so open that one. */
     const tour = (await db.doc("meta/live").get()).data() || {};
-    if (!(tour.on === true && tour.t && d.clubs && d.clubs.h && d.clubs.a)) return { live: false };
+    if (!(tour.on === true && tour.t)) return { live: false };
     const snap = await db.doc("tournaments/t" + tour.t).get();
     if (!snap.exists) return { live: false };
     const der = T.derive(T.unpack(snap.data()));
+    const unplayed = m => !(m.s && m.s[0] != null && m.s[1] != null);
     const same = (x, y) => String(x || "").trim() === String(y || "").trim();
-    const hit = der.m.find(m => !(m.s && m.s[0] != null && m.s[1] != null) &&
-      ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))));
+    /* the clubs on screen say which fixture it is; when the camera cannot make
+       them out, the next fixture in order is the sensible guess */
+    const hit = (d.clubs && d.clubs.h && d.clubs.a)
+      ? der.m.find(m => unplayed(m) &&
+          ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))))
+      : der.m.find(unplayed);
     if (!hit) return { live: false, noFixture: true };
-    const flip = same(hit.hc, d.clubs.a);
+    const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));
     const doc = { t: tour.t, k: hit.i, h: flip ? a : h, a: flip ? h : a,
                   startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
     await db.doc("live/" + tour.t + "_" + hit.i).set(doc);
