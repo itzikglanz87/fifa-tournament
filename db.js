@@ -108,6 +108,17 @@
       collection: function (path) {
         var ref = fsMod.collection.apply(null, [fs].concat(parts(path)));
         return {
+          /* live: the callback runs on every change, for every phone at once.
+             Returns the function that stops listening. */
+          watch: function (cb) {
+            try {
+              return fsMod.onSnapshot(ref, function (snap) {
+                var docs = [];
+                snap.forEach(function (d) { docs.push({ id: d.id, data: function () { return unpack(d.data()); } }); });
+                cb({ docs: docs });
+              }, function () {});
+            } catch (e) { return function () {}; }
+          },
           get: async function () {
             var snap = await fsMod.getDocs(ref);
             var docs = [];

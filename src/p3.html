@@ -912,6 +912,24 @@ function nextFixture(t) {
   for (let i = 0; i < t.m.length; i++) if (t.m[i][6] == null || t.m[i][7] == null) return { m: t.m[i], i };
   return null;
 }
+/* write a score into a tournament from anywhere (the live match, the score
+   boxes, the scoreboard reader) — one path, so saving and the newsroom
+   always happen the same way */
+function setScore(t, idx, h, a) {
+  writable(t);
+  t.rec.scores[idx] = [h, a];
+  t.rec.gg = false;
+  const fresh = decorate(hydrate(t.rec));
+  LIVE[t.i] = fresh;
+  Store.dirty[t.i] = true;
+  Store.localFlush();
+  rebuild(); refreshChrome();
+  Store.saveT(fresh);
+  publishBulletin(fresh);
+  refreshLive();
+  return fresh;
+}
+
 function lastPlayed(t) {
   for (let i = t.m.length - 1; i >= 0; i--) if (t.m[i][6] != null && t.m[i][7] != null) return { m: t.m[i], i };
   return null;
@@ -1550,8 +1568,9 @@ function livePanel(t, pane) {
       iA.classList.toggle("filled", filled);
       iH.classList.toggle("filled", filled);
       fx.classList.toggle("played", filled);
-      fx.querySelectorAll(".social").forEach(n => n.remove());
+      fx.querySelectorAll(".social, .livebar").forEach(n => n.remove());
       if (!filled) {
+        fx.appendChild(liveLine(LIVE[t.i] || t, idx));
         const o = oddsRow((LIVE[t.i] || t).m[idx]);
         if (o) fx.appendChild(o);
         fx.appendChild(socialLine(LIVE[t.i] || t, idx));

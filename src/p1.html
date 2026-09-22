@@ -1247,4 +1247,17 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
 .pp-days{display:flex; flex-wrap:wrap; gap:5px}
 .pp-chip{font-style:normal; font-size:12px; background:rgba(37,211,102,.18); color:#9FE3BD; padding:3px 8px; border-radius:999px}
 #pollPageBody .pday{background:#1B2129}
+/* ---------- a match happening right now ---------- */
+.livebar{margin-top:8px}
+.livebar.on{background:linear-gradient(180deg,#2A1418,#1C1013); border:1px solid #5A2530; border-radius:14px; padding:10px 12px; display:flex; flex-direction:column; gap:8px}
+.live-start{width:100%; border:1px dashed #3A4656; background:#161C24; color:#C9D1DB; font:inherit; font-size:13px; padding:9px; border-radius:12px; cursor:pointer}
+.lv-head{display:flex; align-items:center; gap:6px; font-size:12px}
+.lv-head b{color:#FF5A6A}
+.lv-dot{width:8px; height:8px; border-radius:50%; background:#FF3B4E; animation:lv-pulse 1.4s infinite}
+@keyframes lv-pulse{0%,100%{opacity:1} 50%{opacity:.25}}
+.lv-score{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; text-align:center; font-size:13px; font-weight:700}
+.lv-score b{font-size:30px; font-weight:900}
+.lv-btns{display:flex; flex-wrap:wrap; gap:6px}
+.lv-btns .btn{flex:1 1 auto; font-size:12.5px}
+.live-end{background:#2FB86F}
 </style>

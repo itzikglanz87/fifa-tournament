@@ -2151,6 +2151,124 @@ function openWrapped(p) {
 }
 
 /* ==========================================================================
+   A match happening right now
+   --------------------------------------------------------------------------
+   One document per live match (live/{t}_{k}) holding the score as it stands.
+   Every phone listens, so a goal shows up on all of them within a second —
+   and the same document is what the scoreboard reader on the computer writes
+   when it reads the score off the television. Finishing writes the result
+   into the tournament the usual way and clears the live document.
+   ========================================================================== */
+const Live = {
+  map: {}, stop: null, started: false,
+  key: (t, k) => t.i + "_" + k,
+  get(t, k) { return this.map[this.key(t, k)] || null; },
+  async start() {
+    if (this.started) return;
+    const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+    if (!db || !db.collection("live").watch) return;
+    this.started = true;
+    this.stop = db.collection("live").watch(snap => {
+      const m = {};
+      snap.docs.forEach(d => { const x = d.data(); if (x && x.t != null) m[x.t + "_" + x.k] = x; });
+      this.map = m;
+      this.paint();
+    });
+  },
+  paint() {
+    document.querySelectorAll(".livebar[data-t]").forEach(n => fillLive(n));
+    const host = document.getElementById("v-live");
+    /* a match that went live while this screen was open needs its strip */
+    if (host && !host.hidden && LIVE_PANE === "games" && Object.keys(this.map).length && !document.querySelector(".livebar")) refreshLive();
+  },
+  async set(t, k, h, a, extra) {
+    const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+    if (!db) throw new Error("offline");
+    const cur = this.get(t, k) || {};
+    const doc = Object.assign({ t: t.i, k, h, a, startAt: cur.startAt || new Date().toISOString(),
+                                at: new Date().toISOString(), by: typeof meWho() === "number" ? meWho() : -1, src: "app" }, extra || {});
+    this.map[this.key(t, k)] = doc;          // on screen at once, cloud right after
+    this.paint();
+    await db.doc("live/" + this.key(t, k)).set(doc);
+  },
+  async clear(t, k) {
+    delete this.map[this.key(t, k)];
+    this.paint();
+    const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+    if (db) await db.doc("live/" + this.key(t, k)).delete().catch(() => {});
+  }
+};
+setTimeout(() => Live.start(), 1200);
+
+/* the strip under an unplayed match: start it, tap goals, finish */
+function liveLine(t, k) {
+  const n = el("div", "livebar");
+  n.setAttribute("data-t", String(t.i));
+  n.setAttribute("data-k", String(k));
+  fillLive(n);
+  return n;
+}
+function fillLive(n) {
+  const t = LIVE[n.getAttribute("data-t")], k = Number(n.getAttribute("data-k"));
+  if (!t || !t.m[k]) return;
+  const m = t.m[k], cur = Live.get(t, k);
+  n.innerHTML = "";
+  n.classList.toggle("on", !!cur);
+  if (!cur) {
+    /* only the next match to be played offers to go live */
+    const next = t.m.findIndex(x => x[6] == null || x[7] == null);
+    if (next !== k || Object.keys(Live.map).length) { n.hidden = true; return; }
+    n.hidden = false;
+    const b = el("button", "live-start", "▶ התחל משחק חי");
+    b.onclick = async () => {
+      b.disabled = true;
+      try { await Live.set(t, k, 0, 0); } catch (e) { flash("אין חיבור — המשחק החי לא נפתח", true); b.disabled = false; }
+    };
+    n.appendChild(b);
+    return;
+  }
+  n.hidden = false;
+  const mins = cur.startAt ? Math.max(0, Math.floor((Date.now() - Date.parse(cur.startAt)) / 60000)) : 0;
+  const side = (names, goals, which) => '<div class="lv-side"><div class="lv-names">' + names + "</div>" +
+    '<div class="lv-goals">' + goals + "</div></div>";
+  const head = el("div", "lv-head",
+    '<span class="lv-dot"></span><b>חי</b><span class="mut">· ' + mins + " דק׳ · " +
+    (cur.src === "cam" ? "מהמצלמה" : cur.by >= 0 ? esc(P[cur.by]) : "מהאפליקציה") + "</span>");
+  const score = el("div", "lv-score",
+    '<span>' + esc(P[m[0]]) + " ו" + esc(P[m[1]]) + '</span><b class="ltr">' + cur.h + " - " + cur.a + "</b><span>" +
+    esc(P[m[3]]) + " ו" + esc(P[m[4]]) + "</span>");
+  const row = el("div", "lv-btns");
+  const bump = (dh, da) => async () => {
+    const c = Live.get(t, k) || { h: 0, a: 0 };
+    const h = Math.max(0, Math.min(30, c.h + dh)), a = Math.max(0, Math.min(30, c.a + da));
+    try { await Live.set(t, k, h, a); } catch (e) { flash("אין חיבור", true); }
+  };
+  const gH = el("button", "btn sm", "⚽ " + esc(P[m[0]]) + " ו" + esc(P[m[1]]));
+  gH.onclick = bump(1, 0);
+  const gA = el("button", "btn sm", "⚽ " + esc(P[m[3]]) + " ו" + esc(P[m[4]]));
+  gA.onclick = bump(0, 1);
+  const undo = el("button", "btn ghost sm", "↩ בטל גול");
+  undo.onclick = async () => {
+    const c = Live.get(t, k) || { h: 0, a: 0 };
+    const ok = await askConfirm({ title: "לבטל גול?", body: "התוצאה תרד בגול אחד לצד שתבחר.", ok: "בית", cancel: "חוץ" });
+    await Live.set(t, k, Math.max(0, c.h - (ok ? 1 : 0)), Math.max(0, c.a - (ok ? 0 : 1)));
+  };
+  const end = el("button", "btn sm live-end", "🏁 סיום המשחק");
+  end.onclick = async () => {
+    const c = Live.get(t, k) || { h: 0, a: 0 };
+    const ok = await askConfirm({ title: "לסיים את המשחק?", body: "התוצאה " + c.h + " - " + c.a + " תיכנס לטבלה.", ok: "סיים ושמור", cancel: "עוד לא" });
+    if (!ok) return;
+    await Live.clear(t, k);
+    setScore(t, k, c.h, c.a);
+    flash("התוצאה נשמרה");
+  };
+  row.append(gH, gA, undo, end);
+  n.append(head, score, row);
+}
+/* the minutes tick while a match is live */
+setInterval(() => { if (Object.keys(Live.map).length) document.querySelectorAll(".livebar.on").forEach(n => fillLive(n)); }, 30000);
+
+/* ==========================================================================
    The social layer: predictions, reactions, the "who's in" poll
    --------------------------------------------------------------------------
    Everything is one small document per player per match (or per poll), so
