@@ -63,6 +63,39 @@ def grab(cap):
     return frame
 
 
+def list_cameras(args):
+    """grab one picture from each camera on the computer and save it, so the
+       right one can be recognised by looking"""
+    import cv2
+    found = []
+    for i in range(6):
+        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY)
+        if not cap.isOpened():
+            cap.release()
+            continue
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+        frame = None
+        for _ in range(10):
+            f = grab(cap)
+            if f is not None:
+                frame = f
+            time.sleep(0.05)
+        cap.release()
+        if frame is None:
+            continue
+        path = os.path.join(HERE, "camera_%d.png" % i)
+        cv2.imwrite(path, frame)
+        found.append((i, frame.shape[1], frame.shape[0], path))
+        print("מצלמה %d — %dx%d — %s" % (i, frame.shape[1], frame.shape[0], path))
+    if not found:
+        print("לא נמצאה אף מצלמה")
+        return
+    print("")
+    print("פתח את התמונות, ראה איזו מצלמה מכוונת לטלוויזיה, והרץ עם המספר שלה:")
+    print("   python tools/score_cam.py --calibrate --source <מספר>")
+
+
 def calibrate(args):
     """show the picture, let the user draw a box around each number"""
     import cv2
@@ -322,12 +355,15 @@ def main():
     p.add_argument("--calibrate", action="store_true", help="לסמן איפה התוצאה על המסך")
     p.add_argument("--test", action="store_true", help="להדפיס מה נקרא בלי לשלוח")
     p.add_argument("--teach", action="store_true", help="ללמד את הספרות של הטלוויזיה שלך")
+    p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
     p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
-    if args.teach:
+    if args.list:
+        list_cameras(args)
+    elif args.teach:
         teach(args)
     elif args.calibrate:
         args.source = args.source or load_cfg().get("source", 0)
