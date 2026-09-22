@@ -838,7 +838,15 @@ def run(args):
                     codes = {"h": ch, "a": ca}
             dh, da = {}, {}
             if region:
-                got = score_in_region(cut(region))
+                # the board drifts a little between styles and camera nudges, so
+                # try the marked area and a few shifts around it
+                got = None
+                for dx, dy, ds in ((0, 0, 0), (0, 0, -40), (-40, 0, 0), (40, 0, 0),
+                                   (0, -30, 0), (0, 30, 0), (60, 0, -60), (-60, 0, -60), (0, 0, 60)):
+                    rx = [region[0] + dx, region[1] + dy, max(120, region[2] + ds), max(120, region[3] + ds // 2)]
+                    got = score_in_region(cut(rx))
+                    if got:
+                        break
                 h, a = (got[0], got[1]) if got else (None, None)
                 dh["score"] = da["score"] = 0.9 if got else 0
             else:
@@ -998,8 +1006,8 @@ def main():
     p.add_argument("--warmup", type=float, default=12.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
-    p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")
-    p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
+    p.add_argument("--interval", type=float, default=0.6, help="כל כמה שניות לקרוא")
+    p.add_argument("--stable", type=int, default=2, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
     if args.log:
