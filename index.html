@@ -3134,6 +3134,11 @@ function viewLive(root) {
   const open = liveId != null ? LIVE[liveId] : null;
 
   if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
+  if (pane === "games" && TEST_MODE) {
+    const n = el("div", "notice warn");
+    n.innerHTML = "<b>🔇 מצב בדיקה</b> פושים אוטומטיים מושבתים. לכיבוי: לשונית ניהול.";
+    root.appendChild(n);
+  }
   if (pane === "games") root.appendChild(pollCard());
   if (pane === "pred" && !draft) {
     const cur = liveId != null ? LIVE[liveId] : null;
@@ -3189,7 +3194,7 @@ function managePanel(open, inScope) {
   box.appendChild(bar);
   box.appendChild(pushPanel());
   box.appendChild(mePanel());
-  if (adminKey()) { box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
+  if (adminKey()) { box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
@@ -6670,6 +6675,7 @@ function openWrapped(p) {
    when it reads the score off the television. Finishing writes the result
    into the tournament the usual way and clears the live document.
    ========================================================================== */
+let TEST_MODE = false;          // pushes held while a trial tournament runs
 const Live = {
   map: {}, stop: null, started: false,
   key: (t, k) => t.i + "_" + k,
@@ -7398,6 +7404,38 @@ function mePanel() {
     if (soundOn()) resultSound(2, 1);
   };
   sec.appendChild(snd);
+  return sec;
+}
+
+/* under ניהול, admin only: silence the automatic pushes for a trial run */
+function testModePanel() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>🔇 מצב בדיקה</h2><span class="note">' +
+    "כשהוא דולק, שום פוש אוטומטי לא נשלח — לא על פתיחת טורניר, לא על המשחק הבא, לא רגעי שיא ולא הישגים. " +
+    "טוב לטורניר ניסיון. פוש שאתה שולח בעצמך כן יוצא.</span></div>";
+  const state = el("div", "notice");
+  state.textContent = "בודק…";
+  const toggle = el("button", "btn sm", "…");
+  const paint = on => {
+    state.className = "notice" + (on ? " warn" : "");
+    state.innerHTML = on ? "<b>מצב בדיקה דולק</b> — החברים לא מקבלים פושים" : "<b>רגיל</b> — הפושים נשלחים כרגיל";
+    toggle.textContent = on ? "🔔 חזרה למצב רגיל" : "🔇 הדלק מצב בדיקה";
+    toggle.onclick = async () => {
+      toggle.disabled = true;
+      try { await Social.set("meta", "test", { on: !on, at: new Date().toISOString() }); TEST_MODE = !on; paint(!on); refreshChrome(); }
+      catch (e) { flash("לא נשמר — אין חיבור", true); }
+      toggle.disabled = false;
+    };
+  };
+  (async () => {
+    try {
+      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+      const doc = db ? await db.doc("meta/test").get() : null;
+      TEST_MODE = !!(doc && doc.exists && doc.data().on === true);
+      paint(TEST_MODE);
+    } catch (e) { state.textContent = "לא הצלחתי לקרוא את המצב"; }
+  })();
+  sec.append(state, toggle);
   return sec;
 }
 

@@ -206,6 +206,23 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll", open: "poll" });
   expect("…and open the poll page on tap", /#poll$/.test(sentUrls[sentUrls.length - 1]), sentUrls[sentUrls.length - 1]);
 
+  /* test mode: a trial tournament makes no noise */
+  {
+    store["meta/test"] = { on: true };
+    const q0 = sent.length;
+    const qBase = { i: 3001, s: 1, n: 3, tpl: "6", slots: [1, 3, 0, 5, 4, 2],
+      clubs: ["באיירן", "פסז", "ליברפול", "סיטי", "ריאל", "ברצלונה"],
+      scores: Array.from({ length: 12 }, () => [null, null]), champs: [] };
+    await change("t3001", null, qBase);
+    const q1 = JSON.parse(JSON.stringify(qBase));
+    q1.scores[0] = [1, 0];
+    await change("t3001", qBase, q1);
+    expect("test mode holds every automatic push", sent.length === q0, (sent.length - q0) + " pushes escaped");
+    expect("…while the prediction window still opens", !!store["predWindows/1003_1"]);
+    delete store["meta/test"];
+    await change("t3001", q1, null);
+  }
+
   /* the camera: the clubs on the scoreboard decide which fixture is live */
   {
     const T2 = require("../tournament");

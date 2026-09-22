@@ -54,6 +54,16 @@ async function seasonName(season) {
   } catch (e) { return ""; }
 }
 
+/* Test mode: a switch in the admin panel that silences every automatic
+   push, so a trial tournament does not buzz five phones. The admin's own
+   manual pushes still go out — those are deliberate. */
+async function quiet() {
+  try {
+    const d = await db.doc("meta/test").get();
+    return d.exists && d.data().on === true;
+  } catch (e) { return false; }
+}
+
 /* Send to every registered phone (or one token), prune the dead ones. */
 /* tag: a later push with the same tag replaces the earlier one on the phone
    (the poll and its reminders), instead of piling up */
@@ -108,6 +118,7 @@ async function openPredWindow(docId, rec, nx) {
 /* ---------------------------------------------------------------- 1. auto */
 exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   const id = event.params.id;
+  const silent = await quiet();               // a trial tournament stays quiet
   const logRef = db.doc("pushLog/" + id);
   const before = event.data.before.exists ? T.unpack(event.data.before.data()) : null;
   const after = event.data.after.exists ? T.unpack(event.data.after.data()) : null;
@@ -122,9 +133,11 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
     const first = T.nextLeagueMatch(after);
     if (first && first.k === 0) {
       await openPredWindow(id, after, first);
-      const title = "🏆 טורניר " + (after.n || after.i) + " נפתח · " + (await seasonName(after.s));
-      const r = await sendToAll(title, T.nextEventText(after) + T.predLine(first.sit));
-      console.log("opening push", id, JSON.stringify(r));
+      if (!silent) {
+        const title = "🏆 טורניר " + (after.n || after.i) + " נפתח · " + (await seasonName(after.s));
+        const r = await sendToAll(title, T.nextEventText(after) + T.predLine(first.sit));
+        console.log("opening push", id, JSON.stringify(r));
+      }
     }
     return;
   }
@@ -149,7 +162,7 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   try {
     const cfg = await db.doc("meta/config").get();
     const recs = (await db.collection("tournaments").get()).docs.map(d => T.unpack(d.data()));
-    const pk = peakOf(before, after, recs, (cfg.data() || {}).seasons);
+    const pk = silent ? null : peakOf(before, after, recs, (cfg.data() || {}).seasons);
     if (pk) {
       const r = await sendToAll("⚡ רגע שיא · טורניר " + (after.n || after.i), pk.text);
       console.log("peak push", id, now, JSON.stringify(r), pk.text, "swing", pk.swing.toFixed(2));
@@ -171,7 +184,7 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
     Object.keys(na).forEach(p => Object.keys(na[p]).forEach(aid => {
       if (!nb[p][aid]) { const a = K.ACH.find(x => x.id === aid); if (a) lines.push(T.P[p] + " — " + a.icon + " " + a.name); }
     }));
-    if (lines.length && lines.length <= 6) {
+    if (lines.length && lines.length <= 6 && !silent) {
       const r = await sendToAll("🏅 הישג חדש · טורניר " + (after.n || after.i), lines.join("\n"));
       console.log("achievement push", id, JSON.stringify(r), lines.join(" | "));
     }
@@ -184,6 +197,7 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   /* the next league match opens its prediction window with this push */
   const nx = T.nextLeagueMatch(after);
   if (nx && await openPredWindow(id, after, nx)) body += T.predLine(nx.sit);
+  if (silent) { console.log("test mode: push held", id, now, body); return; }
   const title = "טורניר " + (after.n || after.i) + " · " + (await seasonName(after.s));
   const r = await sendToAll(title, body);
   console.log("auto push", id, now, JSON.stringify(r), body);

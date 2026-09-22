@@ -1097,6 +1097,11 @@ function viewLive(root) {
   const open = liveId != null ? LIVE[liveId] : null;
 
   if (pane === "manage") { root.appendChild(managePanel(open, inScope)); return; }
+  if (pane === "games" && TEST_MODE) {
+    const n = el("div", "notice warn");
+    n.innerHTML = "<b>🔇 מצב בדיקה</b> פושים אוטומטיים מושבתים. לכיבוי: לשונית ניהול.";
+    root.appendChild(n);
+  }
   if (pane === "games") root.appendChild(pollCard());
   if (pane === "pred" && !draft) {
     const cur = liveId != null ? LIVE[liveId] : null;
@@ -1152,7 +1157,7 @@ function managePanel(open, inScope) {
   box.appendChild(bar);
   box.appendChild(pushPanel());
   box.appendChild(mePanel());
-  if (adminKey()) { box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
+  if (adminKey()) { box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
   if (open) box.appendChild(livePanel(open, "manage"));
   box.appendChild(idlePanel(!!open));
   setTimeout(() => Store.paint(), 0);
