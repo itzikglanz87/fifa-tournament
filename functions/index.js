@@ -241,6 +241,17 @@ exports.adminPush = onCall(async req => {
 exports.liveScore = onCall(async req => {
   const d = req.data || {};
   requireAdmin(d);
+  /* the reader checks in: is it wanted right now, and is a match open?
+     Its visit is remembered so the app can say whether the computer is up. */
+  if (d.ping) {
+    const ref = db.doc("meta/camera");
+    const cur = (await ref.get()).data() || {};
+    const on = cur.on !== false;
+    await ref.set(Object.assign({}, cur, { on, seen: new Date().toISOString() }));
+    const open = (await db.collection("live").get()).docs;
+    const one = open.length ? open[0].data() : null;
+    return { on, live: !!one, h: one ? one.h : null, a: one ? one.a : null };
+  }
   const h = Math.max(0, Math.min(30, Math.round(Number(d.h))));
   const a = Math.max(0, Math.min(30, Math.round(Number(d.a))));
   if (!isFinite(h) || !isFinite(a)) throw new HttpsError("invalid-argument", "תוצאה לא תקינה");

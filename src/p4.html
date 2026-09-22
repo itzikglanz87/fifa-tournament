@@ -2890,6 +2890,47 @@ function mePanel() {
   return sec;
 }
 
+/* under ניהול, admin only: the computer that reads the television */
+function cameraPanel() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>📷 קריאה מהמצלמה</h2><span class="note">' +
+    "המחשב קורא את לוח התוצאות מהטלוויזיה וממלא את המשחק החי. כאן מדליקים ומכבים אותו, וגם רואים אם הוא מחובר.</span></div>";
+  const state = el("div", "notice");
+  state.textContent = "בודק…";
+  const row = el("div", "chips");
+  const toggle = el("button", "btn sm", "…");
+  row.appendChild(toggle);
+  sec.append(state, row);
+
+  const paint = cam => {
+    const on = !cam || cam.on !== false;
+    const seen = cam && cam.seen ? Date.now() - Date.parse(cam.seen) : null;
+    const alive = seen != null && seen < 90e3;
+    state.className = "notice" + (alive ? "" : " warn");
+    state.innerHTML = "<b>" + (on ? "הקריאה מופעלת" : "הקריאה כבויה") + "</b> · " +
+      (seen == null ? "המחשב עוד לא דיווח" :
+       alive ? "המחשב מחובר · נראה לפני " + Math.round(seen / 1000) + " שניות" :
+       "המחשב לא מגיב · נראה לאחרונה לפני " + Math.round(seen / 60000) + " דקות");
+    toggle.textContent = on ? "🔴 כבה את הקריאה" : "🟢 הפעל את הקריאה";
+    toggle.onclick = async () => {
+      toggle.disabled = true;
+      try {
+        await Social.set("meta", "camera", Object.assign({}, cam || {}, { on: !on }));
+        paint(Object.assign({}, cam || {}, { on: !on }));
+      } catch (e) { flash("לא נשמר — אין חיבור", true); }
+      toggle.disabled = false;
+    };
+  };
+  (async () => {
+    try {
+      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+      const doc = db ? await db.doc("meta/camera").get() : null;
+      paint(doc && doc.exists ? doc.data() : null);
+    } catch (e) { state.textContent = "לא הצלחתי לקרוא את המצב"; }
+  })();
+  return sec;
+}
+
 /* under ניהול, for the admin: the log */
 function activityPanel() {
   const sec = el("section", "block");

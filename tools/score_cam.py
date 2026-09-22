@@ -310,6 +310,14 @@ def send(key, h, a, dry):
         return json.loads(r.read().decode()).get("result", {})
 
 
+def ping(key):
+    """tell the app the computer is here, and ask whether to read right now"""
+    body = json.dumps({"data": {"key": key, "ping": True, "h": 0, "a": 0}}).encode()
+    req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode()).get("result", {})
+
+
 def run(args):
     import cv2
     cfg = load_cfg()
@@ -317,14 +325,40 @@ def run(args):
         raise SystemExit("קודם כיול:  python tools/score_cam.py --calibrate")
     source = args.source if args.source is not None else cfg.get("source", 0)
     key = None if args.test else admin_key(args.key_file)
-    cap = open_camera(source)
+    cap = None
     print("קורא את לוח התוצאות. באפליקציה לחצו 'התחל משחק חי'. לעצירה: Ctrl+C")
 
     last_sent = None            # what the app already shows
     stable, stable_n = None, 0
     idle_note = 0
+    working = args.test         # in --test mode always read; otherwise ask the app
+    checked = 0
     try:
         while True:
+            # the app decides when there is something to read; while there is
+            # nothing, the camera is left alone and we only check now and then
+            if not args.test and time.time() - checked > (3 if working else 15):
+                checked = time.time()
+                try:
+                    st = ping(key)
+                    want = st.get("on", True) and st.get("live", False)
+                except Exception as e:
+                    want = False
+                    if time.time() - idle_note > 120:
+                        print(time.strftime("%H:%M:%S"), "אין קשר לשרת:", e)
+                        idle_note = time.time()
+                if want != working:
+                    working = want
+                    print(time.strftime("%H:%M:%S"), "קורא מהמצלמה" if want else "ממתין — אין משחק חי או שהקריאה כבויה")
+                    if not want and cap is not None:
+                        cap.release()
+                        cap = None
+                        last_sent, stable, stable_n = None, None, 0
+            if not working:
+                time.sleep(1.0)
+                continue
+            if cap is None:
+                cap = open_camera(source)
             frame = grab(cap)
             if frame is None:
                 time.sleep(0.5)
@@ -370,7 +404,8 @@ def run(args):
     except KeyboardInterrupt:
         print("\nנעצר")
     finally:
-        cap.release()
+        if cap is not None:
+            cap.release()
 
 
 def main():
