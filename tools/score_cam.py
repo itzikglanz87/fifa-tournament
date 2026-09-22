@@ -113,13 +113,13 @@ def calibrate(args):
     boxes = {}
     for side, label in (("home", "השערים של הקבוצה העליונה בלוח (הבית)"),
                         ("away", "השערים של הקבוצה התחתונה (החוץ)"),
-                        ("home_code", "קיצור השם של הקבוצה העליונה (למשל BAR) — Esc לדילוג"),
-                        ("away_code", "קיצור השם של הקבוצה התחתונה (למשל RMA) — Esc לדילוג")):
+                        ("home_crest", "הסמל (או קיצור השם) של הקבוצה העליונה — Esc לדילוג"),
+                        ("away_crest", "הסמל (או קיצור השם) של הקבוצה התחתונה — Esc לדילוג")):
         print("סמן:", label)
         r = cv2.selectROI("סמן את " + side + " ולחץ Enter", frame, showCrosshair=True)
         cv2.destroyAllWindows()
         if r[2] < 4 or r[3] < 4:
-            if side.endswith("_code"):
+            if side.endswith("_crest") or side.endswith("_code"):
                 print("   דולג — בלי קיצורי קבוצות המערכת תמלא את המחזור הפתוח")
                 continue
             raise SystemExit("לא סומן ריבוע")
@@ -208,7 +208,9 @@ def digit_boxes(img):
     out = []
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
-        if h > H * 0.45 and w > 3 and w < W * 0.9 and h < H * 0.99:
+        # a digit is tall; "1" can fill the whole height and be very narrow,
+        # so only the width tells a digit from the plate around it
+        if h > H * 0.40 and w >= 2 and w < W * 0.92:
             out.append((th[y:y + h, x:x + w], x))
     return sorted(out, key=lambda b: b[1])
 
@@ -269,10 +271,143 @@ def read_code(img, known, min_score=0.45):
     return scored[0][1] if scored and scored[0][0] <= 1 else None
 
 
+CRESTS = os.path.join(HERE, "crests")
+CW = 56
+
+
+def crest_key(img):
+    """one crest, shrunk and levelled so two pictures of it can be compared"""
+    import cv2, numpy as np
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    g = cv2.resize(g, (CW, CW), interpolation=cv2.INTER_AREA).astype(np.float32)
+    g -= g.mean()
+    n = np.linalg.norm(g)
+    return g / n if n else g
+
+
+def imread_any(path):
+    """OpenCV cannot open a path with Hebrew in it, so read the bytes ourselves"""
+    import cv2, numpy as np
+    try:
+        return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
+def imwrite_any(path, img):
+    import cv2
+    ok, buf = cv2.imencode(".png", img)
+    if ok:
+        buf.tofile(path)
+    return ok
+
+
+def crest_templates():
+    """the badges taught so far: club name -> pictures of its crest"""
+    out = {}
+    if not os.path.isdir(CRESTS):
+        return out
+    for club in os.listdir(CRESTS):
+        folder = os.path.join(CRESTS, club)
+        if not os.path.isdir(folder):
+            continue
+        for name in os.listdir(folder):
+            img = imread_any(os.path.join(folder, name))
+            if img is not None:
+                out.setdefault(club, []).append(crest_key(img))
+    return out
+
+
+def read_crest(img, tpl, min_score=0.55, margin=0.06):
+    """which club's badge this is — only when one is clearly ahead"""
+    if not tpl:
+        return None
+    k = crest_key(img)
+    scored = sorted(((max(float((k * t).sum()) for t in v), club) for club, v in tpl.items()), reverse=True)
+    if not scored or scored[0][0] < min_score:
+        return None
+    if len(scored) > 1 and scored[0][0] - scored[1][0] < margin:
+        return None
+    return scored[0][1]
+
+
+def save_crest(img, club):
+    folder = os.path.join(CRESTS, club)
+    os.makedirs(folder, exist_ok=True)
+    imwrite_any(os.path.join(folder, "%d.png" % int(time.time() * 1000)), img)
+
+
+def find_board(frame, search, last=None):
+    """Find the score plates in the picture instead of trusting fixed boxes:
+       the two plates sit one on top of the other and are the brightest solid
+       block inside the search area. A camera that drifts (or a picture that
+       shifts) then costs nothing. Returns the home box, the away box, the
+       two crest boxes, and the block itself for next time."""
+    import cv2
+    x0, y0, w0, h0 = search
+    x0 = max(0, x0); y0 = max(0, y0)
+    reg = frame[y0:y0 + h0, x0:x0 + w0]
+    if reg.size == 0:
+        return None
+    g = cv2.cvtColor(reg, cv2.COLOR_BGR2GRAY)
+    _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best = None
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if w < 40 or h < 80:
+            continue
+        ratio = w / float(h)
+        if not (0.30 < ratio < 0.95):            # two square plates stacked
+            continue
+        score = w * h
+        if last is not None:                      # prefer the one where it was
+            score -= 4 * (abs(x + x0 - last[0]) + abs(y + y0 - last[1]))
+        if best is None or score > best[0]:
+            best = (score, (x + x0, y + y0, w, h))
+    if best is None:
+        return None
+    x, y, w, h = best[1]
+    half = h // 2
+    pad = max(4, int(w * 0.08))
+    home = [x - pad, y - pad, w + 2 * pad, half + pad]
+    away = [x - pad, y + half - pad // 2, w + 2 * pad, half + pad]
+    cw = int(w * 0.78)
+    home_crest = [x - cw - pad, y, cw, half]
+    away_crest = [x - cw - pad, y + half, cw, half]
+    return {"home": home, "away": away, "home_crest": home_crest,
+            "away_crest": away_crest, "block": [x, y, w, h]}
+
+
+def plate_crop(img):
+    """The score sits on a bright plate. Find that plate inside the marked
+       window and read only what is on it, so a small drift of the camera or
+       of the picture does not cut the digit in half."""
+    import cv2
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    H, W = g.shape
+    best = None
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if w * h < 0.12 * W * H or w < 0.25 * W or h < 0.25 * H:
+            continue
+        if not (0.35 < (w / float(h)) < 2.2):
+            continue
+        if best is None or w * h > best[2] * best[3]:
+            best = (x, y, w, h)
+    if best is None:
+        return img
+    x, y, w, h = best
+    ix, iy = int(w * 0.14), int(h * 0.10)          # step inside the plate's edge
+    return img[y + iy:y + h - iy, x + ix:x + w - ix]
+
+
 def read_number(img, min_score=0.62, debug=None):
     """the number inside one box, or None when nothing digit-like is there"""
     import cv2, numpy as np
-    boxes = digit_boxes(img)
+    boxes = digit_boxes(plate_crop(img))
     if not boxes or len(boxes) > 2:
         return None
     TPL = dict(templates())
@@ -366,9 +501,9 @@ def teach(args):
 
 
 def teach_clubs(args):
-    """say which club each code on the scoreboard is"""
+    """say which club the badge (or the code) on the scoreboard belongs to"""
     cfg = load_cfg()
-    if "home_code" not in cfg:
+    if "home_crest" not in cfg and "home_code" not in cfg:
         raise SystemExit("אין ריבועים לקיצורי הקבוצות — הרץ כיול מחדש:  python tools/score_cam.py --calibrate")
     data = json.load(io.open(os.path.join(HERE, "..", "functions", "data.json"), encoding="utf-8"))
     clubs = data.get("C", [])
@@ -385,23 +520,31 @@ def teach_clubs(args):
             if frame is None:
                 print("אין תמונה"); break
             cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
-            for side in ("home_code", "away_code"):
-                code = read_code(cut(cfg[side]), None)
-                if not code:
-                    print(side, "— לא נקרא קיצור"); continue
-                if code in known:
-                    print(code, "כבר מוכר:", known[code]); continue
+            tpl = crest_templates()
+            for side, where in (("home_crest", "העליונה"), ("away_crest", "התחתונה")):
+                if side not in cfg:
+                    continue
+                img = cut(cfg[side])
+                seen = read_crest(img, tpl)
+                if seen:
+                    print("הקבוצה", where, "מזוהה כבר:", seen)
+                    save_crest(img, seen)            # another picture of the same badge
+                    continue
                 print("")
                 for i, c in enumerate(clubs):
                     print("  %d) %s" % (i + 1, c))
-                ans = input("הקיצור " + code + " הוא איזו קבוצה? (מספר, או Enter לדילוג) ").strip()
-                if not ans:
+                ans = input("מי הקבוצה " + where + " במסך? (מספר, או Enter לדילוג) ").strip()
+                if not ans or not ans.isdigit() or not (1 <= int(ans) <= len(clubs)):
                     continue
-                if ans.isdigit() and 1 <= int(ans) <= len(clubs):
-                    known[code] = clubs[int(ans) - 1]
-                    print("   נשמר:", code, "=", known[code])
+                club = clubs[int(ans) - 1]
+                save_crest(img, club)
+                code = read_code(img, None)          # if it is letters, remember them too
+                if code and "?" not in code:
+                    known[code] = club
+                print("   נשמר:", club)
             cfg["clubs"] = known
             save_cfg(cfg)
+            tpl = crest_templates()
             if not input("להמשיך עם משחק אחר? (Enter לסיום, כל מקש להמשך) ").strip():
                 break
     except (EOFError, KeyboardInterrupt):
@@ -447,6 +590,7 @@ def run(args):
     idle_note = 0
     working = args.test         # in --test mode always read; otherwise ask the app
     checked = 0
+    last_block = None           # where the board was a moment ago
     try:
         while True:
             # the app decides when there is something to read; while there is
@@ -478,14 +622,26 @@ def run(args):
                 time.sleep(0.5)
                 continue
             cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
-            crop_h, crop_a = cut(cfg["home"]), cut(cfg["away"])
+            found = find_board(frame, cfg.get("search", [0, 0, frame.shape[1], frame.shape[0]]), last_block)
+            if found:
+                last_block = found["block"]
+                cfg_boxes = found
+            else:
+                cfg_boxes = cfg                    # fall back to the marked boxes
+            cut = lambda b: frame[max(0, b[1]):b[1] + b[3], max(0, b[0]):b[0] + b[2]]
+            crop_h, crop_a = cut(cfg_boxes["home"]), cut(cfg_boxes["away"])
             codes = None
-            if cfg.get("home_code") and cfg.get("away_code") and cfg.get("clubs"):
-                known = cfg["clubs"]
-                ch = read_code(cut(cfg["home_code"]), known)
-                ca = read_code(cut(cfg["away_code"]), known)
+            if cfg_boxes.get("home_crest") and cfg_boxes.get("away_crest"):
+                tpl = crest_templates()
+                ch = read_crest(cut(cfg_boxes["home_crest"]), tpl)
+                ca = read_crest(cut(cfg_boxes["away_crest"]), tpl)
+                if not (ch and ca) and cfg.get("clubs"):      # the other board style: letters
+                    known = cfg["clubs"]
+                    kh = read_code(cut(cfg_boxes["home_crest"]), known)
+                    ka = read_code(cut(cfg_boxes["away_crest"]), known)
+                    ch, ca = ch or (known.get(kh) if kh else None), ca or (known.get(ka) if ka else None)
                 if ch and ca and ch != ca:
-                    codes = {"h": known[ch], "a": known[ca]}
+                    codes = {"h": ch, "a": ca}
             dh, da = {}, {}
             h = read_number(crop_h, debug=dh)
             a = read_number(crop_a, debug=da)

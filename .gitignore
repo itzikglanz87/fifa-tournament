@@ -9,3 +9,4 @@ __pycache__/
 tools/score_cam.json
 tools/digits/
 tools/score_cam_frame.png
+tools/crests/
