@@ -236,6 +236,25 @@ def read_number(img, min_score=0.62, debug=None):
     return v if v <= 30 else None
 
 
+def learn_from(crop, value, side, cap_per_digit=12):
+    """keep the digits of a score we are sure about, so the next reading of
+       that digit is a match against this very television"""
+    import cv2
+    txt = str(value)
+    boxes = digit_boxes(crop)
+    if len(boxes) != len(txt):
+        return 0
+    saved = 0
+    for (img_b, _x), ch in zip(boxes, txt):
+        folder = os.path.join(LEARNED, ch)
+        os.makedirs(folder, exist_ok=True)
+        if len(os.listdir(folder)) >= cap_per_digit:
+            continue
+        cv2.imwrite(os.path.join(folder, "%s_%d.png" % (side, int(time.time() * 1000))), img_b)
+        saved += 1
+    return saved
+
+
 def teach(args):
     """save what is on the television right now as the shapes of those digits"""
     import cv2
@@ -311,8 +330,10 @@ def run(args):
                 time.sleep(0.5)
                 continue
             cut = lambda b: frame[b[1]:b[1] + b[3], b[0]:b[0] + b[2]]
-            h = read_number(cut(cfg["home"]))
-            a = read_number(cut(cfg["away"]))
+            crop_h, crop_a = cut(cfg["home"]), cut(cfg["away"])
+            dh, da = {}, {}
+            h = read_number(crop_h, debug=dh)
+            a = read_number(crop_a, debug=da)
             now = time.strftime("%H:%M:%S")
             if h is None or a is None:
                 stable, stable_n = None, 0
@@ -331,6 +352,9 @@ def run(args):
                 if jump and stable_n < args.stable * 2:
                     print(now, "קפיצה חשודה", last_sent, "->", (h, a), "· מחכה לאישור נוסף")
                 else:
+                    if not args.no_learn and min(dh.get("score", 0), da.get("score", 0)) >= 0.8:
+                        learn_from(crop_h, h, "home")
+                        learn_from(crop_a, a, "away")
                     try:
                         r = send(key, h, a, args.dry_run)
                         if r.get("live") is False:
@@ -356,6 +380,7 @@ def main():
     p.add_argument("--test", action="store_true", help="להדפיס מה נקרא בלי לשלוח")
     p.add_argument("--teach", action="store_true", help="ללמד את הספרות של הטלוויזיה שלך")
     p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
+    p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
     p.add_argument("--interval", type=float, default=1.0, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=3, help="כמה קריאות זהות ברצף לפני שליחה")
