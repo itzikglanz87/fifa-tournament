@@ -484,6 +484,8 @@ def score_in_region(img, debug=None):
     the board as a whole, find the digit-shaped marks (in either polarity),
     split them into an upper and a lower row, and read the rightmost group in
     each. Returns (home, away, home_shapes, away_shapes)."""
+    if img is None or getattr(img, "size", 0) == 0 or min(img.shape[:2]) < 20:
+        return None                              # a crop that fell outside the picture
     import cv2, numpy as np
     g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
     g = cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
@@ -841,9 +843,15 @@ def run(args):
                 # the board drifts a little between styles and camera nudges, so
                 # try the marked area and a few shifts around it
                 got = None
+                H, W = frame.shape[:2]
                 for dx, dy, ds in ((0, 0, 0), (0, 0, -40), (-40, 0, 0), (40, 0, 0),
                                    (0, -30, 0), (0, 30, 0), (60, 0, -60), (-60, 0, -60), (0, 0, 60)):
-                    rx = [region[0] + dx, region[1] + dy, max(120, region[2] + ds), max(120, region[3] + ds // 2)]
+                    rx = [max(0, region[0] + dx), max(0, region[1] + dy),
+                          max(120, region[2] + ds), max(120, region[3] + ds // 2)]
+                    rx[2] = min(rx[2], W - rx[0])          # stay inside the picture
+                    rx[3] = min(rx[3], H - rx[1])
+                    if rx[2] < 60 or rx[3] < 60:
+                        continue
                     got = score_in_region(cut(rx))
                     if got:
                         break
@@ -991,6 +999,28 @@ def run(args):
             cap.release()
 
 
+def collect(args, seconds):
+    """Grab the television a few times a second for a while and keep the
+       pictures. Tuning the reader on a folder of real frames beats tuning it
+       against a live match: the same frame can be tried a hundred ways."""
+    import cv2, time
+    cfg = load_cfg()
+    out = os.path.join(HERE, "frames")
+    os.makedirs(out, exist_ok=True)
+    cap = open_camera(args.source if args.source is not None else cfg.get("source", 0))
+    print("אוסף פריימים ל־", out, "למשך", seconds, "שניות…")
+    t0, n = time.time(), 0
+    while time.time() - t0 < seconds:
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            continue
+        n += 1
+        imwrite_any(os.path.join(out, "f%03d_%d.png" % (n, int((time.time() - t0) * 10))), frame)
+        time.sleep(0.4)
+    cap.release()
+    print("נשמרו", n, "פריימים")
+
+
 def main():
     p = argparse.ArgumentParser(description="קורא תוצאה מהמצלמה לאפליקציית טורניר פיפא")
     p.add_argument("--source", default=None, help="מספר מצלמת USB (0) או כתובת RTSP")
@@ -1001,6 +1031,8 @@ def main():
     p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
     p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
     p.add_argument("--no-bar", action="store_true", help="לא לקרוא מהפס של השידור החוזר")
+    p.add_argument("--collect", type=int, metavar="שניות",
+                   help="לאסוף פריימים בזמן משחק לתיקיית frames, כדי לכייל אחר כך")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
     p.add_argument("--settle", type=float, default=5.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
     p.add_argument("--warmup", type=float, default=12.0, help="כמה שניות להתייצב לפני שסופרים גולים")
@@ -1027,6 +1059,8 @@ def main():
     elif args.calibrate:
         args.source = args.source or load_cfg().get("source", 0)
         calibrate(args)
+    elif args.collect:
+        collect(args, args.collect)
     else:
         run(args)
 
