@@ -256,7 +256,7 @@ exports.adminPush = onCall(async req => {
    Everything downstream — the next-match push, the prediction window, the
    table — already happens when a tournament document changes, so this needs
    to do nothing more than put the score where the app would have put it. */
-async function finishMatch(ref, cur) {
+async function finishMatch(ref, cur, exact) {
   const tref = db.doc("tournaments/t" + cur.t);
   const snap = await tref.get();
   if (!snap.exists) return { saved: false, why: "no tournament" };
@@ -267,11 +267,20 @@ async function finishMatch(ref, cur) {
     await ref.delete().catch(() => {});
     return { saved: false, why: "already entered" };
   }
-  scores[cur.k] = [cur.h || 0, cur.a || 0];
+  /* The MATCH RESULTS screen states the score with Home on the left, which is
+     the television's home, not necessarily the fixture's. Whichever way round
+     the live match was opened is remembered on it, so the same turn is made
+     here. */
+  let fh = cur.h || 0, fa = cur.a || 0;
+  if (exact && exact.h != null && exact.a != null) {
+    fh = cur.flip ? exact.a : exact.h;
+    fa = cur.flip ? exact.h : exact.a;
+  }
+  scores[cur.k] = [fh, fa];
   await tref.update({ scores: scores.map(x => ({ __a: x })) });
   await ref.delete().catch(() => {});
-  console.log("cam finished match", cur.t + "_" + cur.k, cur.h + "-" + cur.a);
-  return { saved: true, t: cur.t, k: cur.k, h: cur.h || 0, a: cur.a || 0 };
+  console.log("cam finished match", cur.t + "_" + cur.k, fh + "-" + fa, exact ? "(from the result screen)" : "");
+  return { saved: true, t: cur.t, k: cur.k, h: fh, a: fa };
 }
 
 exports.liveScore = onCall(async req => {
@@ -316,7 +325,7 @@ exports.liveScore = onCall(async req => {
   }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };
-    return await finishMatch(docs[0].ref, docs[0].data() || {});
+    return await finishMatch(docs[0].ref, docs[0].data() || {}, d.exact ? { h, a } : null);
   }
   if (!docs.length) {
     /* No match is open, but the tournament is marked live: the clubs on the
@@ -346,7 +355,7 @@ exports.liveScore = onCall(async req => {
     if (!hit) return { live: false, noFixture: true, t: latest.id };
     const pick = { t: latest.id };
     const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));
-    const doc = { t: pick.t, k: hit.i, h: flip ? a : h, a: flip ? h : a,
+    const doc = { t: pick.t, k: hit.i, h: flip ? a : h, a: flip ? h : a, flip: flip,
                   startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
     await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
     console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
@@ -396,6 +405,7 @@ exports.liveScore = onCall(async req => {
         cur = Object.assign(fresh, (await ref.get()).data() || {});
       }
       if (hit && same(hit.hc, d.clubs.a)) swap = true;
+      cur.flip = swap;
     }
   }
   if (swap) { const t2 = h; h = a; a = t2; }

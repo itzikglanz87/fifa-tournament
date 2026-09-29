@@ -281,6 +281,12 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
 
     /* the match is over: the score goes into the tournament and the live one
        is closed, exactly as if the admin had pressed the button */
+    store["live/2001_" + fx.i].flip = true;          // the board had the sides reversed
+    const scr = await call2({ key: "right-key", h: 7, a: 0, finish: true, exact: true });
+    expect("the result screen decides the final score, the right way round",
+           scr.saved === true && scr.h === 0 && scr.a === 7, JSON.stringify(scr));
+    store["tournaments/t2001"].scores[fx.i] = { __a: [null, null] };
+    store["live/2001_" + fx.i] = { t: 2001, k: fx.i, h: 3, a: 2 };
     const fin = await call2({ key: "right-key", h: 0, a: 0, finish: true });
     const packed = store["tournaments/t2001"].scores[fx.i];
     expect("finishing writes the result into the tournament",

@@ -652,6 +652,46 @@ def read_code_plate(cell, known, min_score=0.40):
     return fit[0][1]
 
 
+def read_final_screen(frame):
+    """The MATCH RESULTS screen, which says the thing nothing else does.
+
+    At the final whistle FC puts the score up in the middle of the screen in
+    figures three times the size of anything on the scoreboard, with Home on
+    the left and Away on the right. It is the one place the final score is
+    stated plainly, it cannot be confused with the pause menu, and it settles
+    the goal scored on ninety minutes that the board never had time to show.
+    Returns (home, away) or None."""
+    H, W = frame.shape[:2]
+    band = frame[int(H * 0.60):int(H * 0.92), int(W * 0.28):int(W * 0.72)]
+    if min(band.shape[:2]) < 60:
+        return None
+    marks = ink_marks(band, hmin=0.20, hmax=0.90, wmax=0.30)
+    if len(marks) < 2:
+        return None
+    tallest = max(m["h"] for m in marks)
+    big = [m for m in marks if m["h"] >= 0.70 * tallest]      # the huge figures only
+    if not (2 <= len(big) <= 4):
+        return None
+    mid = (min(m["x"] for m in big) + max(m["x"] + m["w"] for m in big)) / 2.0
+    sides = ([m for m in big if m["x"] + m["w"] / 2 < mid],
+             [m for m in big if m["x"] + m["w"] / 2 >= mid])
+    if not sides[0] or not sides[1]:
+        return None
+    out = []
+    for side in sides:
+        digits = ""
+        for m in sorted(side, key=lambda m: m["x"])[:2]:
+            val, sc = classify_shape(m["img"], min_score=0.70)
+            if val is None:
+                return None
+            digits += str(val)
+        n = int(digits)
+        if n > 30:
+            return None
+        out.append(n)
+    return out[0], out[1]
+
+
 def read_clock(frame, plate):
     """The match minute, from the strip just under the scoreboard.
 
@@ -973,7 +1013,7 @@ def teach_clubs(args):
     print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
 
 
-def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False):
+def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False, exact=False):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
@@ -986,6 +1026,8 @@ def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False)
         payload["finish"] = True
     if correct:
         payload["correct"] = True
+    if exact:
+        payload["exact"] = True
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -1062,6 +1104,7 @@ def run(args):
     open_try = 0
     code_run = None                          # the same club pair, seen how often
     full_time, clock_seen = None, None        # when the clock first showed ninety
+    final_seen, final_try = None, 0           # the MATCH RESULTS screen, read twice
     goals = {"h": 0, "a": 0}
     last_good_block = None
     beat = 0                                 # last heartbeat line
@@ -1299,6 +1342,33 @@ def run(args):
                         full_time = None          # a new match has started counting
             # full time on the clock, and then the board goes: that is the
             # whistle, and there is no need to wait four minutes to be sure
+            # --- the final whistle, stated in figures --------------------
+            if not plate and not args.test and time.time() - final_try > 3:
+                final_try = time.time()
+                fin = read_final_screen(frame)
+                if fin and final_seen and final_seen[0] == fin:
+                    final_seen = (fin, final_seen[1] + 1)
+                elif fin:
+                    final_seen = (fin, 1)
+                else:
+                    final_seen = None
+                if final_seen and final_seen[1] >= 2:
+                    print(now, "מסך התוצאה הסופית:", fin[0], "-", fin[1], "— מסיים ושומר")
+                    try:
+                        r = send(key, fin[0], fin[1], args.dry_run, None, finish=True, exact=True)
+                        if r.get("saved"):
+                            print(now, "התוצאה נשמרה בטורניר:", r.get("h"), "-", r.get("a"))
+                        elif r.get("why"):
+                            print(now, "לא נשמר:", r.get("why"))
+                    except Exception as e:
+                        print(now, "סיום נכשל:", e)
+                    goals["h"], goals["a"] = 0, 0
+                    cell_ref, cell_pending, last_plate = {}, {}, None
+                    last_sent, last_seen_plate, code_run = None, None, None
+                    full_time, final_seen = None, None
+                    time.sleep(args.interval)
+                    continue
+
             # How long to wait for a board before deciding the match is over
             # depends on how far the match had got. At ninety it is the final
             # whistle and twenty seconds is plenty; late in the second half,
