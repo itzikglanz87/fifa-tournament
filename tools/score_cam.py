@@ -662,34 +662,41 @@ def read_final_screen(frame):
     the goal scored on ninety minutes that the board never had time to show.
     Returns (home, away) or None."""
     H, W = frame.shape[:2]
-    band = frame[int(H * 0.60):int(H * 0.92), int(W * 0.28):int(W * 0.72)]
+    # a generous band, so that re-aiming the camera does not lose the figures:
+    # they are found by being far taller than anything else in it
+    band = frame[int(H * 0.40):int(H * 0.98), int(W * 0.10):int(W * 0.97)]
     if min(band.shape[:2]) < 60:
         return None
     marks = ink_marks(band, hmin=0.20, hmax=0.90, wmax=0.30)
     if len(marks) < 2:
         return None
     tallest = max(m["h"] for m in marks)
-    big = [m for m in marks if m["h"] >= 0.70 * tallest]      # the huge figures only
-    if not (2 <= len(big) <= 4):
+    big = [m for m in marks if m["h"] >= 0.70 * tallest]
+    # The club crests are exactly as large as the figures, so size alone will
+    # not separate them. A crest simply does not look like a digit: ask for a
+    # confident reading and the crests fall away on their own.
+    hits = []
+    for m in big:
+        val, sc = classify_shape(m["img"], min_score=0.85)
+        if val is not None:
+            hits.append((m, str(val)))
+    if not (2 <= len(hits) <= 4):
         return None
-    mid = (min(m["x"] for m in big) + max(m["x"] + m["w"] for m in big)) / 2.0
-    sides = ([m for m in big if m["x"] + m["w"] / 2 < mid],
-             [m for m in big if m["x"] + m["w"] / 2 >= mid])
-    if not sides[0] or not sides[1]:
+    ys = [m["y"] + m["h"] / 2.0 for m, _v in hits]
+    hs = [m["h"] for m, _v in hits]
+    if max(ys) - min(ys) > 0.3 * min(hs):        # the score sits on one line
         return None
-    out = []
-    for side in sides:
-        digits = ""
-        for m in sorted(side, key=lambda m: m["x"])[:2]:
-            val, sc = classify_shape(m["img"], min_score=0.70)
-            if val is None:
-                return None
-            digits += str(val)
-        n = int(digits)
-        if n > 30:
-            return None
-        out.append(n)
-    return out[0], out[1]
+    hits.sort(key=lambda t: t[0]["x"])
+    gaps = [(hits[i + 1][0]["x"] - (hits[i][0]["x"] + hits[i][0]["w"]), i) for i in range(len(hits) - 1)]
+    split = max(gaps)[1] + 1                      # the widest gap is the dash
+    left, right = hits[:split], hits[split:]
+    if not left or not right or len(left) > 2 or len(right) > 2:
+        return None
+    n1 = int("".join(v for _m, v in left))
+    n2 = int("".join(v for _m, v in right))
+    if n1 > 30 or n2 > 30:
+        return None
+    return n1, n2
 
 
 def read_clock(frame, plate):
