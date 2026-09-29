@@ -1435,9 +1435,13 @@ def run(args):
                                 print(now, "אין משחק חי פתוח באפליקציה")
                                 idle_note = time.time()
                         else:
-                            last_sent = (h, a)
-                            goals["h"], goals["a"] = h, a
-                            print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "")
+                            # believe the server, not the camera: when it
+                            # refuses a reading the score is still the old one,
+                            # and recording ours would hide that a restart has
+                            # taken the board back to nil-nil
+                            last_sent = (r.get("h", h), r.get("a", a))
+                            goals["h"], goals["a"] = last_sent
+                            print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "- נדחה")
                     except Exception as e:
                         print(now, "שליחה נכשלה:", e)
             time.sleep(args.interval)
