@@ -535,6 +535,14 @@ def score_in_region(img, debug=None):
             [m for m in tall if m["y"] + m["h"] / 2 > split])
     if not rows[0] or not rows[1]:
         return None
+    # A scoreboard has one score above the other, with real space between them.
+    # A single line of writing — the word "Classic" on the pause menu — also
+    # splits into two "rows", a handful of letters either side of an imaginary
+    # line, and its letters read as digits. Insist on the gap.
+    top = sum(m["y"] + m["h"] / 2 for m in rows[0]) / len(rows[0])
+    bot = sum(m["y"] + m["h"] / 2 for m in rows[1]) / len(rows[1])
+    if bot - top < 0.22 * H:
+        return None
     out, shapes = [], []
     for row in rows:
         right = max(m["x"] + m["w"] for m in row)
@@ -1009,6 +1017,7 @@ def run(args):
     t_find = t_score = t_code = 0.0
     held_plate, held_at, held_ok = None, 0, False
     stuck, dumped = 0, 0                     # for keeping a picture of a failure
+    refused, refused_at = None, 0            # a value the server has turned down
     warm_until = 0                           # no goals counted right after waking
     warm_note = None
     watcher = None if args.test else Watcher(key)
@@ -1214,11 +1223,15 @@ def run(args):
             # The clubs are unchanged, so it is the same fixture, not the next
             # one: only the score goes back. Ten seconds of a steady nil-nil
             # before believing it, so one bad frame cannot wipe a real score.
+            plausible = not (last_sent and h is not None and a is not None and
+                             (h - last_sent[0] > 3 or a - last_sent[1] > 3))
             if h == 0 and a == 0 and plate:
                 if zero_since is None:
                     zero_since = time.time()
-            elif h is not None and a is not None:
+            elif h is not None and a is not None and plausible:
                 zero_since = None        # a score was read, and it is not nil-nil
+            # a reading already known to be impossible must not cancel the wait
+            # either: it is a misread, and a misread is not evidence of a score
             # a frame nothing could be read from says nothing either way, and
             # must not keep restarting the count
             if (zero_since and time.time() - zero_since > 10 and last_sent
@@ -1413,12 +1426,22 @@ def run(args):
                 if warm_note != int(warm_until):
                     print(now, "המצלמה מתייצבת — לא שולח עדיין")
                     warm_note = int(warm_until)
-            elif stable_n >= args.stable and (h, a) != last_sent:
+            elif (stable_n >= args.stable and (h, a) != last_sent
+                  and not ((h, a) == refused and time.time() - refused_at < 10)):
                 # Nobody scores four while the reader blinks. A leap that big
                 # is the clock being read as a score, not a goal rush.
                 if last_sent and (h - last_sent[0] > 3 or a - last_sent[1] > 3):
                     if stable_n == args.stable:
                         print(now, "קריאה לא הגיונית", last_sent, "->", (h, a), "· מתעלם")
+                        if time.time() - dumped > 60:      # keep one, to see what it read
+                            dumped = time.time()
+                            folder = os.path.join(HERE, "debug")
+                            os.makedirs(folder, exist_ok=True)
+                            tag = time.strftime("%H%M%S") + "_wild"
+                            imwrite_any(os.path.join(folder, tag + "_frame.png"), frame)
+                            if plate:
+                                imwrite_any(os.path.join(folder, tag + "_plate.png"), cut(plate))
+                            print(now, "שמרתי תמונה ב־debug/" + tag)
                     time.sleep(args.interval)
                     continue
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
@@ -1449,6 +1472,8 @@ def run(args):
                             # refuses a reading the score is still the old one,
                             # and recording ours would hide that a restart has
                             # taken the board back to nil-nil
+                            if r.get("ignored") == "lower":
+                                refused, refused_at = (h, a), time.time()
                             last_sent = (r.get("h", h), r.get("a", a))
                             goals["h"], goals["a"] = last_sent
                             print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "- נדחה")
