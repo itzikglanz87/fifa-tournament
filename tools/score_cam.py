@@ -642,6 +642,38 @@ def read_code_plate(cell, known, min_score=0.40):
     return fit[0][1]
 
 
+def read_clock(frame, plate):
+    """The match minute, from the strip just under the scoreboard.
+
+    FC counts to ninety however long the halves really are, so a clock reading
+    ninety is full time and nothing else is. That matters because the screen
+    you get at the final whistle is the same screen you get when somebody
+    pauses to argue, and only the clock tells the two apart. Returns the
+    minutes, or None."""
+    x, y, w, h = plate
+    H, W = frame.shape[:2]
+    cy = y + h                                  # the clock sits directly below
+    ch = int(h * 0.55)
+    cx, cw = x, int(w * 0.55)
+    if cy + ch > H or cx + cw > W or ch < 20:
+        return None
+    marks = ink_marks(frame[cy:cy + ch, cx:cx + cw], hmin=0.25, hmax=0.95, wmax=0.30)
+    if not (2 <= len(marks) <= 6):
+        return None
+    marks = sorted(marks, key=lambda m: m["x"])
+    digits = ""
+    for m in marks[:2]:                         # the minutes, left of the colon
+        val, score = classify_shape(m["img"], min_score=0.55)
+        if val is None:
+            return None
+        digits += str(val)
+    try:
+        n = int(digits)
+    except ValueError:
+        return None
+    return n if 0 <= n <= 90 else None
+
+
 def plate_parts(crop):
     """The scoreboard plate split into the four things it carries: a club code
        on the left of each row, and that row's score at the right end."""
@@ -1014,6 +1046,7 @@ def run(args):
     last_read = 0                            # when the digits were last legible
     open_try = 0
     code_run = None                          # the same club pair, seen how often
+    full_time, clock_seen = None, None        # when the clock first showed ninety
     goals = {"h": 0, "a": 0}
     last_good_block = None
     beat = 0                                 # last heartbeat line
@@ -1044,6 +1077,7 @@ def run(args):
                     print(time.strftime("%H:%M:%S"), "קורא מהמצלמה" if want else "ממתין — אין משחק חי או שהקריאה כבויה")
                     if want:
                         change_ref, change_pending = {}, {}
+                        last_seen_plate = time.time()   # so a match left open still closes
                         warm_until = time.time() + args.warmup
                         try:
                             st2 = st
@@ -1220,7 +1254,40 @@ def run(args):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
                     except Exception as e:
                         print(now, "פתיחה נכשלה:", e)
-            elif last_seen_plate and time.time() - last_seen_plate > 240:
+            if plate and not args.no_clock:
+                mins = read_clock(frame, plate)
+                if mins is not None:
+                    clock_seen = mins
+                    if mins >= 89:
+                        if full_time is None:
+                            full_time = time.time()
+                            print(now, "השעון הגיע ל־" + str(mins) + " — סוף המשחק קרוב")
+                    elif mins < 80:
+                        full_time = None          # a new match has started counting
+            # full time on the clock, and then the board goes: that is the
+            # whistle, and there is no need to wait four minutes to be sure
+            # How long to wait for a board before deciding the match is over
+            # depends on how far the match had got. At ninety it is the final
+            # whistle and twenty seconds is plenty; late in the second half,
+            # half a minute; otherwise this could be a pause to argue, and four
+            # minutes is the careful answer.
+            gone = (time.time() - last_seen_plate) if last_seen_plate else 0
+            patience = 20 if full_time else (30 if (clock_seen or 0) >= 80 else 240)
+            if (not plate and last_seen_plate and gone > patience and not args.test
+                    and (full_time or (clock_seen or 0) >= 80)):
+                print(now, "המשחק נגמר (דקה " + str(clock_seen) + ", הלוח נעלם) — מסיים ושומר")
+                try:
+                    r = send(key, 0, 0, args.dry_run, None, finish=True)
+                    if r.get("saved"):
+                        print(now, "התוצאה נשמרה בטורניר:", r.get("h"), "-", r.get("a"))
+                    elif r.get("why"):
+                        print(now, "לא נשמר:", r.get("why"))
+                except Exception as e:
+                    print(now, "סיום נכשל:", e)
+                goals["h"], goals["a"] = 0, 0
+                cell_ref, cell_pending, last_plate = {}, {}, None
+                last_sent, last_seen_plate, code_run, full_time = None, None, None, None
+            elif last_seen_plate and gone > 240:
                 # Four minutes with no board. A pause to argue about a penalty
                 # does not last that long, so the match is over: write the score
                 # into the tournament and be ready for the next one. Four
@@ -1380,6 +1447,7 @@ def run(args):
                     sims.append("%s=%s" % (side, "-" if (ref is None or sig is None) else "%.2f" % float((sig * ref).sum())))
                 took = time.time() - beat if beat else 0
                 print(now, "מצב · לוח:", ("נמצא" if plate else "לא"), "· ספרות:", h, "-", a,
+                      "· דקה:", clock_seen if clock_seen is not None else "-",
                       "· קצב: %.1f פריימים לשנייה · קריאות מוצלחות: %d/%d" %
                       ((cycles / took) if took else 0, reads_ok, cycles),
                       "· זמן: איתור %.0f מ״ש, ספרות %.0f מ״ש, קודים %.0f מ״ש" %
@@ -1560,6 +1628,7 @@ def main():
     p.add_argument("--list", action="store_true", help="לצלם תמונה מכל מצלמה כדי לבחור את הנכונה")
     p.add_argument("--no-learn", action="store_true", help="לא ללמוד ספרות תוך כדי")
     p.add_argument("--no-bar", action="store_true", help="לא לקרוא מהפס של השידור החוזר")
+    p.add_argument("--no-clock", action="store_true", help="לא לקרוא את דקת המשחק")
     p.add_argument("--collect", type=int, metavar="שניות",
                    help="לאסוף פריימים בזמן משחק לתיקיית frames, כדי לכייל אחר כך")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
