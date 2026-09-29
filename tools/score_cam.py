@@ -898,13 +898,15 @@ def teach_clubs(args):
     print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
 
 
-def send(key, h, a, dry, clubs=None):
+def send(key, h, a, dry, clubs=None, restart=False):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
     payload = {"key": key, "h": h, "a": a}
     if clubs:
         payload["clubs"] = clubs
+    if restart:
+        payload["restart"] = True
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -940,6 +942,7 @@ def run(args):
     last_plate = None
     last_seen_plate = None                   # when the board was last on screen
     plate_reset = 0
+    zero_since = None                        # since when the board has read nil-nil
     open_try = 0
     goals = {"h": 0, "a": 0}
     last_good_block = None
@@ -1103,6 +1106,31 @@ def run(args):
                 goals["h"], goals["a"] = 0, 0
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate = None, None
+
+            # --- a match restarted --------------------------------------
+            # Players do start a match over. The board goes back to nil-nil
+            # while the app is holding the old score, and since a lower reading
+            # is normally noise the app would sit on a game nobody is playing.
+            # The clubs are unchanged, so it is the same fixture, not the next
+            # one: only the score goes back. Ten seconds of a steady nil-nil
+            # before believing it, so one bad frame cannot wipe a real score.
+            if h == 0 and a == 0 and plate:
+                if zero_since is None:
+                    zero_since = time.time()
+            else:
+                zero_since = None
+            if (zero_since and time.time() - zero_since > 10 and last_sent
+                    and (last_sent[0] or last_sent[1]) and not args.test):
+                try:
+                    r = send(key, 0, 0, args.dry_run, codes, restart=True)
+                    if r.get("restart"):
+                        print(now, "המשחק התחיל מחדש — התוצאה חזרה ל־0 - 0")
+                        goals["h"], goals["a"] = 0, 0
+                        last_sent = (0, 0)
+                        cell_ref, cell_pending = {}, {}
+                except Exception as e:
+                    print(now, "איפוס נכשל:", e)
+                zero_since = None
 
             # --- goals by the squares changing --------------------------
             # The digits cannot be read in every frame, but a goal always shows

@@ -235,8 +235,12 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const call3 = data => F.liveScore.run({ data, auth: null, rawRequest: {} });
     const none = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: "לא קיימת", a: "גם לא" } });
     expect("clubs that are not in the tournament open nothing", none.live === false);
+    const kickBefore = sent.length;
     const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
     expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));
+    expect("…and tells everyone the match has kicked off",
+           sent.length > kickBefore && /מתחיל עכשיו/.test(sent[sent.length - 1].title || ""),
+           JSON.stringify(sent[sent.length - 1] || null));
     expect("…with the sides the right way round", store["live/4001_" + fx.i].h === 0 && store["live/4001_" + fx.i].a === 1,
            JSON.stringify(store["live/4001_" + fx.i]));
     delete store["live/4001_" + fx.i]; delete store["meta/live"]; delete store["tournaments/t4001"];
@@ -266,6 +270,12 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const r3 = await call2({ key: "right-key", h: 1, a: 2, clubs: { h: fx.hc, a: fx.ac } });
     expect("a lower reading never takes goals away", r3.ignored === "lower" && store["live/2001_" + fx.i].h === 3,
            JSON.stringify(r3));
+    const before = sent.length;
+    const r4 = await call2({ key: "right-key", h: 0, a: 0, restart: true, clubs: { h: fx.hc, a: fx.ac } });
+    expect("a restarted match goes back to nil-nil on the same fixture",
+           r4.restart === true && r4.k === fx.i && store["live/2001_" + fx.i].h === 0,
+           JSON.stringify(r4));
+    expect("…and a restart sends nobody a push", sent.length === before);
     delete store["live/2001_" + fx.i];
     delete store["tournaments/t2001"];
   }

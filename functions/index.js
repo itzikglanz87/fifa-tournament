@@ -315,6 +315,16 @@ exports.liveScore = onCall(async req => {
                   startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
     await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
     console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
+    /* The whistle has gone. Everyone gets told which match is being played —
+       the two at the sticks know already, the other four do not, and a live
+       score nobody was told about is a score nobody watches. */
+    if (!(await quiet())) {
+      const pr = (x, y) => T.P[x] + " ו" + T.P[y];
+      const body = "מחזור " + (hit.i + 1) + ", " + pr(hit.h[0], hit.h[1]) + " בבית עם " + hit.hc +
+                   " נגד " + pr(hit.a[0], hit.a[1]) + " בחוץ עם " + hit.ac;
+      const r = await sendToAll("🔴 מתחיל עכשיו · 0 - 0", body);
+      console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r));
+    }
     return { live: true, h: doc.h, a: doc.a, k: hit.i, t: pick.t, opened: true };
   }
   let ref = docs[0].ref, cur = docs[0].data() || {};
@@ -348,6 +358,17 @@ exports.liveScore = onCall(async req => {
     }
   }
   if (swap) { const t2 = h; h = a; a = t2; }
+  /* Players restart a match. The board goes back to nil-nil while the app is
+     holding three-one, and since a lower reading is normally noise, the app
+     would stay stuck on a score that is no longer being played. The camera
+     says so explicitly — it only asks for this after the board has read
+     nil-nil steadily for a while — and it is still the same fixture, because
+     the clubs are the same. */
+  if (d.restart && h === 0 && a === 0 && (cur.h || cur.a)) {
+    await ref.set(Object.assign({}, cur, { h: 0, a: 0, at: new Date().toISOString(), src: "cam", by: -1 }));
+    console.log("cam restart", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "-> 0-0");
+    return { live: true, h: 0, a: 0, updated: true, k: cur.k, restart: true };
+  }
   if (h < (cur.h || 0) || a < (cur.a || 0)) return { live: true, h: cur.h, a: cur.a, ignored: "lower" };
   if (h === cur.h && a === cur.a) return { live: true, h: cur.h, a: cur.a, same: true };
   await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
