@@ -252,6 +252,28 @@ exports.adminPush = onCall(async req => {
 /* The scoreboard reader on the computer sends what it read off the screen.
    It never picks a match: it updates whichever match the app has open as
    live, and only upwards (a replay or a misread cannot take goals away). */
+/* Write a finished match into the tournament and close the live one.
+   Everything downstream — the next-match push, the prediction window, the
+   table — already happens when a tournament document changes, so this needs
+   to do nothing more than put the score where the app would have put it. */
+async function finishMatch(ref, cur) {
+  const tref = db.doc("tournaments/t" + cur.t);
+  const snap = await tref.get();
+  if (!snap.exists) return { saved: false, why: "no tournament" };
+  const rec = T.unpack(snap.data());
+  const scores = (rec.scores || []).map(x => (Array.isArray(x) ? x.slice() : [null, null]));
+  if (!scores[cur.k]) return { saved: false, why: "no such fixture" };
+  if (scores[cur.k][0] != null && scores[cur.k][1] != null) {
+    await ref.delete().catch(() => {});
+    return { saved: false, why: "already entered" };
+  }
+  scores[cur.k] = [cur.h || 0, cur.a || 0];
+  await tref.update({ scores: scores.map(x => ({ __a: x })) });
+  await ref.delete().catch(() => {});
+  console.log("cam finished match", cur.t + "_" + cur.k, cur.h + "-" + cur.a);
+  return { saved: true, t: cur.t, k: cur.k, h: cur.h || 0, a: cur.a || 0 };
+}
+
 exports.liveScore = onCall(async req => {
   const d = req.data || {};
   requireAdmin(d);
@@ -283,6 +305,10 @@ exports.liveScore = onCall(async req => {
   if (d.reset) {                                  // clear a live match that went to the wrong fixture
     await Promise.all(docs.map(x => x.ref.delete().catch(() => {})));
     return { live: false, cleared: docs.length };
+  }
+  if (d.finish) {                                 // the match is over: write it down
+    if (!docs.length) return { live: false };
+    return await finishMatch(docs[0].ref, docs[0].data() || {});
   }
   if (!docs.length) {
     /* No match is open, but the tournament is marked live: the clubs on the
@@ -350,7 +376,13 @@ exports.liveScore = onCall(async req => {
       if (hit && hit.i !== cur.k) {
         moved = hit.i;
         const fresh = { t: cur.t, k: hit.i, h: 0, a: 0, startAt: cur.startAt || new Date().toISOString() };
-        if (!cur.h && !cur.a) await ref.delete().catch(() => {});   // nothing was scored yet
+        /* Different clubs on the board mean the next match has started. If the
+           one we were following had goals in it, it was a real match and it
+           gets written into the tournament rather than thrown away; a live
+           match still at nil-nil was only ever a guess at which fixture this
+           was, so it is simply moved. */
+        if (cur.h || cur.a) await finishMatch(ref, cur).catch(() => {});
+        else await ref.delete().catch(() => {});
         ref = db.doc("live/" + cur.t + "_" + hit.i);
         cur = Object.assign(fresh, (await ref.get()).data() || {});
       }

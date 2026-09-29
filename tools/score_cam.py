@@ -928,7 +928,7 @@ def teach_clubs(args):
     print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
 
 
-def send(key, h, a, dry, clubs=None, restart=False):
+def send(key, h, a, dry, clubs=None, restart=False, finish=False):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
@@ -937,6 +937,8 @@ def send(key, h, a, dry, clubs=None, restart=False):
         payload["clubs"] = clubs
     if restart:
         payload["restart"] = True
+    if finish:
+        payload["finish"] = True
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -1011,6 +1013,7 @@ def run(args):
     zero_n, zero_codes = 0, False            # how many, and were the clubs made out
     last_read = 0                            # when the digits were last legible
     open_try = 0
+    code_run = None                          # the same club pair, seen how often
     goals = {"h": 0, "a": 0}
     last_good_block = None
     beat = 0                                 # last heartbeat line
@@ -1112,7 +1115,16 @@ def run(args):
                     ka = read_code_plate(parts["code_a"], cfg["clubs"])
                     t_code += time.time() - _t0
                     if kh and ka and kh != ka:
-                        codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
+                        # Naming the clubs can end a match — the server takes a
+                        # different pair to mean the next fixture has started —
+                        # so one frame is not enough. The same pair three times
+                        # running is.
+                        if code_run and code_run[0] == (kh, ka):
+                            code_run = (code_run[0], code_run[1] + 1)
+                        else:
+                            code_run = ((kh, ka), 1)
+                        if code_run[1] >= 3:
+                            codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
             dh, da = {}, {}
             if region or plate:
                 # the board drifts a little between styles and camera nudges, so
@@ -1208,14 +1220,25 @@ def run(args):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
                     except Exception as e:
                         print(now, "פתיחה נכשלה:", e)
-            elif last_seen_plate and time.time() - last_seen_plate > 90:
-                # The board has been off the screen for a minute and a half:
-                # the match is over. Forget it and be ready for the next one,
-                # which the server will pick from the clubs that come up.
-                print(now, "הלוח נעלם — סוגר את המשחק ומחכה לבא")
+            elif last_seen_plate and time.time() - last_seen_plate > 240:
+                # Four minutes with no board. A pause to argue about a penalty
+                # does not last that long, so the match is over: write the score
+                # into the tournament and be ready for the next one. Four
+                # minutes rather than one, because writing a result down is not
+                # something to be hasty about.
+                print(now, "הלוח נעלם ארבע דקות — מסיים את המשחק ושומר")
+                if not args.test:
+                    try:
+                        r = send(key, 0, 0, args.dry_run, None, finish=True)
+                        if r.get("saved"):
+                            print(now, "התוצאה נשמרה בטורניר:", r.get("h"), "-", r.get("a"))
+                        elif r.get("why"):
+                            print(now, "לא נשמר:", r.get("why"))
+                    except Exception as e:
+                        print(now, "סיום נכשל:", e)
                 goals["h"], goals["a"] = 0, 0
                 cell_ref, cell_pending, last_plate = {}, {}, None
-                last_sent, last_seen_plate = None, None
+                last_sent, last_seen_plate, code_run = None, None, None
 
             # --- a match restarted --------------------------------------
             # Players do start a match over. The board goes back to nil-nil

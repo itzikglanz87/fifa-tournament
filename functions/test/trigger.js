@@ -21,6 +21,7 @@ const docRef = path => ({
   path,
   get: async () => snap(path),
   set: async d => { store[path] = JSON.parse(JSON.stringify(d)); },
+  update: async d => { store[path] = Object.assign({}, store[path], JSON.parse(JSON.stringify(d))); },
   delete: async () => { delete store[path]; }
 });
 const fakeAdmin = {
@@ -270,6 +271,17 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const r3 = await call2({ key: "right-key", h: 1, a: 2, clubs: { h: fx.hc, a: fx.ac } });
     expect("a lower reading never takes goals away", r3.ignored === "lower" && store["live/2001_" + fx.i].h === 3,
            JSON.stringify(r3));
+    /* the match is over: the score goes into the tournament and the live one
+       is closed, exactly as if the admin had pressed the button */
+    const fin = await call2({ key: "right-key", h: 0, a: 0, finish: true });
+    const packed = store["tournaments/t2001"].scores[fx.i];
+    expect("finishing writes the result into the tournament",
+           fin.saved === true && packed && packed.__a && packed.__a[0] === 3 && packed.__a[1] === 2,
+           JSON.stringify(fin) + " " + JSON.stringify(packed));
+    expect("…and closes the live match", !store["live/2001_" + fx.i]);
+    delete store["tournaments/t2001"].scores[fx.i];
+    store["tournaments/t2001"].scores[fx.i] = { __a: [null, null] };
+    store["live/2001_" + fx.i] = { t: 2001, k: fx.i, h: 3, a: 2 };
     const before = sent.length;
     const r4 = await call2({ key: "right-key", h: 0, a: 0, restart: true, clubs: { h: fx.hc, a: fx.ac } });
     expect("a restarted match goes back to nil-nil on the same fixture",
