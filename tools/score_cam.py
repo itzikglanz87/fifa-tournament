@@ -540,11 +540,84 @@ def score_in_region(img, debug=None):
     return out[0], out[1], shapes[0], shapes[1]
 
 
+def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
+    """Every mark on a cut-out of the board, with the ink white.
+
+    Whichever way round the board is drawn, one of the two polarities leaves
+    the writing as separate shapes once whatever touches the edge is flooded
+    away. Used for both the digits and the club codes, so the two read the
+    same way."""
+    import cv2
+    if img is None or getattr(img, "size", 0) == 0 or min(img.shape[:2]) < 16:
+        return []
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    g = cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    g = cv2.GaussianBlur(g, (3, 3), 0)
+    H, W = g.shape
+    marks = []
+    for invert in (False, True):
+        work = 255 - g if invert else g
+        _t, th = cv2.threshold(work, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        th = clear_border(th)
+        cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in cnts:
+            x, y, w, h = cv2.boundingRect(c)
+            if not (hmin * H < h < hmax * H):
+                continue
+            if not (0.01 * W < w < wmax * W) or w > 1.4 * h:
+                continue
+            marks.append({"x": x, "y": y, "w": w, "h": h, "img": th[y:y + h, x:x + w]})
+    inside = lambda m, o: (m["x"] >= o["x"] and m["y"] >= o["y"] and
+                           m["x"] + m["w"] <= o["x"] + o["w"] and
+                           m["y"] + m["h"] <= o["y"] + o["h"] and m is not o)
+    return [m for m in marks if not any(inside(m, o) for o in marks)]
+
+
+def read_code_plate(cell, known, min_score=0.40):
+    """The three letters at the left of a scoreboard row — BAY, BAR, LIV.
+
+    Same extraction as the digits, then each letter against the alphabet and
+    the whole thing snapped to one of the codes we know, so a single misread
+    letter still lands on the right club."""
+    import cv2, numpy as np
+    marks = ink_marks(cell, hmin=0.25, hmax=0.95, wmax=0.40)
+    if not (2 <= len(marks) <= 5):
+        return None
+    marks = sorted(marks, key=lambda m: m["x"])[:4]
+    TPL = letter_templates()
+    got = ""
+    for m in marks:
+        b = cv2.resize(m["img"], (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
+        b -= b.mean()
+        n = np.linalg.norm(b)
+        if not n:
+            return None
+        b /= n
+        best, bs = "?", -2.0
+        for ch, tl in TPL.items():
+            sc = max(float((b * t).sum()) for t in tl)
+            if sc > bs:
+                best, bs = ch, sc
+        got += best if bs >= min_score else "?"
+    if not known:
+        return got
+    def dist(a, b):
+        if len(a) != len(b):
+            return 9
+        return sum(1 for x, y in zip(a, b) if x != y and x != "?")
+    scored = sorted(((dist(got, k), k) for k in known), key=lambda x: x[0])
+    if not scored or scored[0][0] > 1:
+        return None
+    if len(scored) > 1 and scored[1][0] == scored[0][0]:
+        return None          # BAR and BAY differ by one letter: a tie is a guess
+    return scored[0][1]
+
+
 def plate_parts(crop):
     """The scoreboard plate split into the four things it carries: a club code
        on the left of each row, and that row's score at the right end."""
     h, w = crop.shape[:2]
-    mid, code_x, score_x = h // 2, int(w * 0.42), int(w * 0.68)
+    mid, code_x, score_x = h // 2, int(w * 0.50), int(w * 0.68)
     return {"code_h": crop[0:mid, 0:code_x], "code_a": crop[mid:h, 0:code_x],
             "cell_h": crop[0:mid, score_x:w], "cell_a": crop[mid:h, score_x:w]}
 
@@ -944,8 +1017,8 @@ def run(args):
                 pc = cut(plate)
                 parts = plate_parts(pc)
                 if cfg.get("clubs") and not codes:
-                    kh = read_code(parts["code_h"], cfg["clubs"])
-                    ka = read_code(parts["code_a"], cfg["clubs"])
+                    kh = read_code_plate(parts["code_h"], cfg["clubs"])
+                    ka = read_code_plate(parts["code_a"], cfg["clubs"])
                     if kh and ka and kh != ka:
                         codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
             dh, da = {}, {}
