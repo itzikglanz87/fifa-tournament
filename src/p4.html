@@ -2282,7 +2282,11 @@ function fillLive(n) {
     setScore(t, k, c.h, c.a);
     flash("התוצאה נשמרה");
   };
-  row.append(gH, gA, undo, end);
+  /* the table belongs next to the match being played, not at the top of the
+     page beside the first fixture, which is where a goal is not happening */
+  const toTable = el("button", "btn ghost sm", "📊 לטבלה");
+  toTable.onclick = () => go("live:table");
+  row.append(gH, gA, undo, end, toTable);
   n.append(head, score, row);
 }
 /* the minutes tick while a match is live */

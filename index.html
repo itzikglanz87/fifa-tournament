@@ -3586,11 +3586,14 @@ function livePanel(t, pane) {
   adm.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
     '</h2><span class="note">שמירה, גיבוי ומחיקה של הטורניר.</span></div>';
   adm.appendChild(actions);
-  const toTable = el("div", "chips");
-  const bTable = el("button", "btn sm", "📊 לטבלה");
-  bTable.onclick = () => go("live:table");
-  toTable.appendChild(bTable);
-  head.appendChild(toTable);
+  /* only when no match is live: while one is, the button lives on its strip */
+  if (!(typeof Live === "object" && Live && Live.map && Object.keys(Live.map).length)) {
+    const toTable = el("div", "chips");
+    const bTable = el("button", "btn sm", "📊 לטבלה");
+    bTable.onclick = () => go("live:table");
+    toTable.appendChild(bTable);
+    head.appendChild(toTable);
+  }
   add(head, "games");
   add(adm, "manage");
 
@@ -6912,7 +6915,11 @@ function fillLive(n) {
     setScore(t, k, c.h, c.a);
     flash("התוצאה נשמרה");
   };
-  row.append(gH, gA, undo, end);
+  /* the table belongs next to the match being played, not at the top of the
+     page beside the first fixture, which is where a goal is not happening */
+  const toTable = el("button", "btn ghost sm", "📊 לטבלה");
+  toTable.onclick = () => go("live:table");
+  row.append(gH, gA, undo, end, toTable);
   n.append(head, score, row);
 }
 /* the minutes tick while a match is live */
