@@ -649,7 +649,7 @@ def clear_border(th):
     return out
 
 
-def find_plate(frame, search=None):
+def find_plate(frame, search=None, near=None):
     """Locate the white scoreboard plate, wherever FC has put it this minute.
 
     A fixed rectangle does not survive a match: the board is large at kick-off
@@ -675,7 +675,7 @@ def find_plate(frame, search=None):
     for lvl in levels:
         _t, th = cv2.threshold(g, lvl, 255, cv2.THRESH_BINARY)
         th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((9, 25), np.uint8))
-        got = _plate_from(th, sx, sy, sw, sh)
+        got = _plate_from(th, sx, sy, sw, sh, near)
         if got and (best_overall is None or got[0] > best_overall[0]):
             best_overall = got
     if not best_overall:
@@ -686,7 +686,7 @@ def find_plate(frame, search=None):
     return [x, y, min(w + 2 * pad, W - x), min(h + 2 * pad, H - y)]
 
 
-def _plate_from(th, sx, sy, sw, sh):
+def _plate_from(th, sx, sy, sw, sh, near=None):
     import cv2
     cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     best = None
@@ -698,8 +698,16 @@ def _plate_from(th, sx, sy, sw, sh):
             continue
         if cv2.countNonZero(th[y:y + h, x:x + w]) / float(w * h) < 0.55:
             continue                            # a real plate is solidly bright
-        if best is None or w * h > best[0]:
-            best = (w * h, [sx + x, sy + y, w, h])
+        # Once the board has been found, staying on it beats jumping to
+        # whatever is brightest: a caption or a white shirt can be larger for a
+        # frame, and following that loses the comparison the goals rely on.
+        score = w * h
+        if near:
+            cx, cy = sx + x + w / 2.0, sy + y + h / 2.0
+            nx, ny = near[0] + near[2] / 2.0, near[1] + near[3] / 2.0
+            score = score * (4.0 if abs(cx - nx) < near[2] and abs(cy - ny) < near[3] else 1.0)
+        if best is None or score > best[0]:
+            best = (score, [sx + x, sy + y, w, h])
     return best
 
 
@@ -1017,7 +1025,7 @@ def run(args):
                     ch, ca = ch or (known.get(kh) if kh else None), ca or (known.get(ka) if ka else None)
                 if ch and ca and ch != ca:
                     codes = {"h": ch, "a": ca}
-            plate = find_plate(frame, cfg.get("search"))
+            plate = find_plate(frame, cfg.get("search"), last_plate)
             if plate:
                 # the board moves and changes size during a match, so where it
                 # is now beats where it was when the camera was calibrated
@@ -1294,7 +1302,14 @@ def run(args):
                 if warm_note != int(warm_until):
                     print(now, "המצלמה מתייצבת — לא שולח עדיין")
                     warm_note = int(warm_until)
-            elif stable_n == args.stable and (h, a) != last_sent:
+            elif stable_n >= args.stable and (h, a) != last_sent:
+                # Nobody scores four while the reader blinks. A leap that big
+                # is the clock being read as a score, not a goal rush.
+                if last_sent and (h - last_sent[0] > 3 or a - last_sent[1] > 3):
+                    if stable_n == args.stable:
+                        print(now, "קריאה לא הגיונית", last_sent, "->", (h, a), "· מתעלם")
+                    time.sleep(args.interval)
+                    continue
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
                 if jump and stable_n < args.stable * 2:
                     print(now, "קפיצה חשודה", last_sent, "->", (h, a), "· מחכה לאישור נוסף")
@@ -1310,6 +1325,7 @@ def run(args):
                                 idle_note = time.time()
                         else:
                             last_sent = (h, a)
+                            goals["h"], goals["a"] = h, a
                             print(now, "נשלח", h, "-", a, r.get("updated") and "✓" or "")
                     except Exception as e:
                         print(now, "שליחה נכשלה:", e)
