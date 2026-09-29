@@ -1422,6 +1422,16 @@ def run(args):
                     time.sleep(args.interval)
                     continue
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
+                # A jump of several goals is either a stretch the reader slept
+                # through or a digit misread — an 8 for a 0 is an easy mistake.
+                # Only believe one when the club codes were read off the same
+                # board in the same breath, which says it is the scoreboard
+                # being looked at and not a panel that resembles one.
+                if jump and not codes:
+                    if stable_n == args.stable:
+                        print(now, "קפיצה בלי שמות קבוצות", last_sent, "->", (h, a), "· לא מקבל")
+                    time.sleep(args.interval)
+                    continue
                 if jump and stable_n < args.stable * 2:
                     print(now, "קפיצה חשודה", last_sent, "->", (h, a), "· מחכה לאישור נוסף")
                 else:
