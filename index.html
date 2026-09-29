@@ -4196,7 +4196,9 @@ function withLiveScores(t) {
   if (!open.length) return { t: t, live: [] };
   const rec = JSON.parse(JSON.stringify(t.rec));
   open.forEach(x => { rec.scores[x.k] = [x.h, x.a]; });
-  return { t: hydrate(rec), live: open.map(x => x.k) };
+  /* hydrate lays out the fixtures; decorate is what works out who is where,
+     and the table cannot be drawn without it */
+  return { t: decorate(hydrate(rec)), live: open.map(x => x.k) };
 }
 
 /* redraw the live table in place when a goal lands, without rebuilding the
