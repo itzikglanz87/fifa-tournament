@@ -921,6 +921,41 @@ def send(key, h, a, dry, clubs=None, restart=False):
         return json.loads(r.read().decode()).get("result", {})
 
 
+class Watcher:
+    """Asks the server what it wants, out of the way of the reading.
+
+    The question — is a match open, is the camera wanted — changes once in a
+    quarter of an hour, but asking it costs a round trip to Europe, and asking
+    it on the reading loop meant every few seconds the camera simply stopped
+    being looked at. A thread carries the cost instead; the loop reads the last
+    answer and never waits."""
+
+    def __init__(self, key):
+        import threading
+        self.key = key
+        self.state = {}
+        self.error = None
+        self.stamp = 0
+        self.lock = threading.Lock()
+        t = threading.Thread(target=self._run, daemon=True)
+        t.start()
+
+    def _run(self):
+        while True:
+            try:
+                st = ping(self.key)
+                with self.lock:
+                    self.state, self.error, self.stamp = st, None, time.time()
+            except Exception as e:
+                with self.lock:
+                    self.error = e
+            time.sleep(4)
+
+    def get(self):
+        with self.lock:
+            return dict(self.state), self.error, self.stamp
+
+
 def ping(key):
     """tell the app the computer is here, and ask whether to read right now"""
     body = json.dumps({"data": {"key": key, "ping": True, "h": 0, "a": 0}}).encode()
@@ -958,20 +993,20 @@ def run(args):
     beat = 0                                 # last heartbeat line
     warm_until = 0                           # no goals counted right after waking
     warm_note = None
+    watcher = None if args.test else Watcher(key)
     try:
         while True:
             # the app decides when there is something to read; while there is
             # nothing, the camera is left alone and we only check now and then
-            if not args.test and time.time() - checked > (3 if working else 15):
-                checked = time.time()
-                try:
-                    st = ping(key)
+            if not args.test:
+                st, err, stamp = watcher.get()
+                if stamp and time.time() - stamp < 60:
                     # a live tournament is enough: the camera opens the match
                     want = st.get("on", True) and bool(st.get("live", False) or st.get("tournament"))
-                except Exception as e:
+                else:
                     want = False
-                    if time.time() - idle_note > 120:
-                        print(time.strftime("%H:%M:%S"), "אין קשר לשרת:", e)
+                    if err and time.time() - idle_note > 120:
+                        print(time.strftime("%H:%M:%S"), "אין קשר לשרת:", err)
                         idle_note = time.time()
                 if want != working:
                     working = want
@@ -980,7 +1015,7 @@ def run(args):
                         change_ref, change_pending = {}, {}
                         warm_until = time.time() + args.warmup
                         try:
-                            st2 = ping(key)
+                            st2 = st
                             last_sent = (st2.get("h") or 0, st2.get("a") or 0) if st2.get("live") else None
                             goals["h"], goals["a"] = last_sent
                             print(time.strftime("%H:%M:%S"), "מתחיל מ־", last_sent[0], "-", last_sent[1])
@@ -1219,7 +1254,9 @@ def run(args):
             if h is not None and a is not None:
                 last_read = time.time()
             if h is not None and a is not None and 0 <= h <= 20 and 0 <= a <= 20:
-                if (h, a) != (goals["h"], goals["a"]) and (h, a) == stable and stable_n >= args.stable:
+                wild = last_sent and (h - last_sent[0] > 3 or a - last_sent[1] > 3)
+                if (not wild and (h, a) != (goals["h"], goals["a"])
+                        and (h, a) == stable and stable_n >= args.stable):
                     print(now, "הספרות אומרות", h, "-", a, "· מיישר את הספירה")
                     goals["h"], goals["a"] = h, a
                     cell_ref, cell_pending = {}, {}
@@ -1386,10 +1423,10 @@ def main():
                    help="לאסוף פריימים בזמן משחק לתיקיית frames, כדי לכייל אחר כך")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
     p.add_argument("--settle", type=float, default=3.5, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
-    p.add_argument("--warmup", type=float, default=25.0, help="כמה שניות להתייצב לפני שסופרים גולים")
+    p.add_argument("--warmup", type=float, default=8.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
-    p.add_argument("--interval", type=float, default=0.4, help="כל כמה שניות לקרוא")
+    p.add_argument("--interval", type=float, default=0.25, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=2, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
