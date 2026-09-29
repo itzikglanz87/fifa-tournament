@@ -761,6 +761,12 @@ def clear_border(th):
 
 
 def find_plate(frame, search=None, near=None):
+    """the most board-like bright block, or None (see find_plates)"""
+    got = find_plates(frame, search, near)
+    return got[0] if got else None
+
+
+def find_plates(frame, search=None, near=None):
     """Locate the white scoreboard plate, wherever FC has put it this minute.
 
     A fixed rectangle does not survive a match: the board is large at kick-off
@@ -781,26 +787,32 @@ def find_plate(frame, search=None, near=None):
     # and glaring in a day one. Take the threshold from the picture itself —
     # the plate is among the brightest things in the corner — and try a couple
     # of levels rather than betting on one.
-    levels = [max(120.0, float(np.percentile(g, p))) for p in (97, 92, 85)]
-    best_overall = None
+    levels = [max(120.0, float(np.percentile(g, p))) for p in (99, 97, 94, 90, 85, 75)]
+    found = []
     for lvl in levels:
         _t, th = cv2.threshold(g, lvl, 255, cv2.THRESH_BINARY)
-        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((9, 25), np.uint8))
-        got = _plate_from(th, sx, sy, sw, sh, near)
-        if got and (best_overall is None or got[0] > best_overall[0]):
-            best_overall = got
-    if not best_overall:
-        return None
-    x, y, w, h = best_overall[1]
-    pad = int(h * 0.06)                         # a hair of margin, no more
-    x, y = max(0, x - pad), max(0, y - pad)
-    return [x, y, min(w + 2 * pad, W - x), min(h + 2 * pad, H - y)]
+        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((5, 15), np.uint8))
+        found += _plate_from(th, sx, sy, sw, sh, near)
+    if not found:
+        return []
+    out = []
+    for _score, box in sorted(found, key=lambda t: -t[0]):
+        x, y, w, h = box
+        pad = int(h * 0.06)                     # a hair of margin, no more
+        x, y = max(0, x - pad), max(0, y - pad)
+        cand = [x, y, min(w + 2 * pad, W - x), min(h + 2 * pad, H - y)]
+        if any(abs(cand[0] - o[0]) < 30 and abs(cand[1] - o[1]) < 30 for o in out):
+            continue                            # the same thing at another level
+        out.append(cand)
+        if len(out) >= 12:
+            break
+    return out
 
 
 def _plate_from(th, sx, sy, sw, sh, near=None):
     import cv2
     cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    best = None
+    out = []
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
         # the board is a third of the size it was when the camera looked only
@@ -810,8 +822,12 @@ def _plate_from(th, sx, sy, sw, sh, near=None):
             continue
         if not (1.3 < w / float(h) < 4.0):
             continue
-        if cv2.countNonZero(th[y:y + h, x:x + w]) / float(w * h) < 0.55:
-            continue                            # a real plate is solidly bright
+        # Not too strict about how solid it is: at a threshold high enough to
+        # separate the board from a bright crowd behind it, only the whitest
+        # part of the board survives, and demanding most of the box be white
+        # threw the board away and kept an advertising hoarding.
+        if cv2.countNonZero(th[y:y + h, x:x + w]) / float(w * h) < 0.33:
+            continue
         # Once the board has been found, staying on it beats jumping to
         # whatever is brightest: a caption or a white shirt can be larger for a
         # frame, and following that loses the comparison the goals rely on.
@@ -820,9 +836,8 @@ def _plate_from(th, sx, sy, sw, sh, near=None):
             cx, cy = sx + x + w / 2.0, sy + y + h / 2.0
             nx, ny = near[0] + near[2] / 2.0, near[1] + near[3] / 2.0
             score = score * (4.0 if abs(cx - nx) < near[2] and abs(cy - ny) < near[3] else 1.0)
-        if best is None or score > best[0]:
-            best = (score, [sx + x, sy + y, w, h])
-    return best
+        out.append((score, [sx + x, sy + y, w, h]))
+    return out
 
 
 def plate_signature(img):
@@ -1202,7 +1217,27 @@ def run(args):
             if held_plate and time.time() - held_at < (2 if held_ok else 0.5):
                 plate = held_plate
             else:
-                plate = find_plate(frame, cfg.get("search"), last_plate)
+                # An advertising hoarding is bright, wide and rectangular, and
+                # on a Premier League pitch it is bigger than the scoreboard.
+                # Size cannot choose between them; being readable can. Try the
+                # likely blocks and keep the one a score comes off.
+                cands = find_plates(frame, cfg.get("search"), last_plate)
+                plate = cands[0] if cands else None
+                # The block that is found often takes in the clock strip under
+                # the board as well, and a third row of figures breaks the
+                # reading. Try the block and a couple of trims of it, and keep
+                # whichever a score actually comes off.
+                done = False
+                for c in cands[:6]:
+                    for b in (c,
+                              [c[0], c[1], c[2], max(60, int(c[3] * 0.62))],
+                              [c[0] + int(c[2] * 0.15), c[1], int(c[2] * 0.85), max(60, int(c[3] * 0.70))]):
+                        if score_in_region(cut(b)):
+                            plate = b
+                            done = True
+                            break
+                    if done:
+                        break
                 held_plate, held_at = plate, time.time()
             t_find += time.time() - _t0
             if plate:
