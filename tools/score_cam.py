@@ -770,6 +770,7 @@ def run(args):
     last_good_block = None
     beat = 0                                 # last heartbeat line
     warm_until = 0                           # no goals counted right after waking
+    warm_note = None
     try:
         while True:
             # the app decides when there is something to read; while there is
@@ -972,6 +973,13 @@ def run(args):
                 print(now, "נקרא", h, "-", a, "· יציב", stable_n, "פעמים" +
                       (" · מהפס התחתון" if from_bar else "") +
                       (" · " + codes["h"] + " נגד " + codes["a"] if codes else ""))
+            elif time.time() < warm_until:
+                # The camera opens dark and sharpens over a few seconds; digits
+                # read out of those first frames are guesswork, and a wrong one
+                # here starts the match on a score nobody scored.
+                if warm_note != int(warm_until):
+                    print(now, "המצלמה מתייצבת — לא שולח עדיין")
+                    warm_note = int(warm_until)
             elif stable_n == args.stable and (h, a) != last_sent:
                 jump = last_sent and (h - last_sent[0]) + (a - last_sent[1]) > 1
                 if jump and stable_n < args.stable * 2:
@@ -1035,10 +1043,10 @@ def main():
                    help="לאסוף פריימים בזמן משחק לתיקיית frames, כדי לכייל אחר כך")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
     p.add_argument("--settle", type=float, default=5.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
-    p.add_argument("--warmup", type=float, default=12.0, help="כמה שניות להתייצב לפני שסופרים גולים")
+    p.add_argument("--warmup", type=float, default=25.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
-    p.add_argument("--interval", type=float, default=0.6, help="כל כמה שניות לקרוא")
+    p.add_argument("--interval", type=float, default=0.4, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=2, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
