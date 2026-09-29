@@ -495,6 +495,7 @@ def score_in_region(img, debug=None):
     for invert in (False, True):
         work = 255 - g if invert else g
         _t, th = cv2.threshold(work, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        th = clear_border(th)
         cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
@@ -503,6 +504,10 @@ def score_in_region(img, debug=None):
             if not (0.01 * W < w < 0.22 * W) or w > 1.4 * h:
                 continue
             marks.append({"x": x, "y": y, "w": w, "h": h, "img": th[y:y + h, x:x + w]})
+    inside = lambda m, o: (m["x"] >= o["x"] and m["y"] >= o["y"] and
+                           m["x"] + m["w"] <= o["x"] + o["w"] and
+                           m["y"] + m["h"] <= o["y"] + o["h"] and m is not o)
+    marks = [m for m in marks if not any(inside(m, o) for o in marks)]
     if len(marks) < 2:
         return None
     tall = sorted(marks, key=lambda m: -m["h"])[:14]
@@ -526,11 +531,100 @@ def score_in_region(img, debug=None):
             digits += str(val)
         if not ok or not digits:
             return None
+        if int(digits) > 20:                          # that is the clock, not a score
+            return None
         out.append(int(digits))
         shapes.append([m["img"] for m in group])
     if debug is not None:
         debug["marks"] = len(marks)
     return out[0], out[1], shapes[0], shapes[1]
+
+
+def plate_parts(crop):
+    """The scoreboard plate split into the four things it carries: a club code
+       on the left of each row, and that row's score at the right end."""
+    h, w = crop.shape[:2]
+    mid, code_x, score_x = h // 2, int(w * 0.42), int(w * 0.68)
+    return {"code_h": crop[0:mid, 0:code_x], "code_a": crop[mid:h, 0:code_x],
+            "cell_h": crop[0:mid, score_x:w], "cell_a": crop[mid:h, score_x:w]}
+
+
+def clear_border(th):
+    """Wipe everything that touches the edge of the cut-out.
+
+    Whichever way round the board is drawn — dark digits on a white plate or
+    white digits on a dark one — one of the two polarities leaves the digits as
+    separate white shapes and everything around them as a single white mass
+    running off the edge. Flooding that mass away from the border leaves the
+    digits standing alone, with the ink white, which is what the classifier
+    expects and what keeps the hole in a 0 a hole."""
+    import cv2, numpy as np
+    h, w = th.shape
+    out = th.copy()
+    mask = np.zeros((h + 2, w + 2), np.uint8)
+    for x in range(w):
+        for y in (0, h - 1):
+            if out[y, x]:
+                cv2.floodFill(out, mask, (x, y), 0)
+    for y in range(h):
+        for x in (0, w - 1):
+            if out[y, x]:
+                cv2.floodFill(out, mask, (x, y), 0)
+    return out
+
+
+def find_plate(frame, search=None):
+    """Locate the white scoreboard plate, wherever FC has put it this minute.
+
+    A fixed rectangle does not survive a match: the board is large at kick-off
+    and shrinks once play settles, and it sits higher or lower depending on the
+    broadcast camera. What stays constant is the thing itself — a bright, almost
+    white block, about twice as wide as it is tall, up in the corner. Find that
+    and the digits are inside it. Returns [x, y, w, h] or None."""
+    import cv2, numpy as np
+    H, W = frame.shape[:2]
+    sx, sy, sw, sh = search or [0, int(H * 0.05), int(W * 0.60), int(H * 0.45)]
+    sx, sy = max(0, sx), max(0, sy)
+    sw, sh = min(sw, W - sx), min(sh, H - sy)
+    if sw < 100 or sh < 100:
+        return None
+    area = frame[sy:sy + sh, sx:sx + sw]
+    g = cv2.cvtColor(area, cv2.COLOR_BGR2GRAY) if area.ndim == 3 else area
+    # A fixed brightness cannot serve: the television is dim in a night match
+    # and glaring in a day one. Take the threshold from the picture itself —
+    # the plate is among the brightest things in the corner — and try a couple
+    # of levels rather than betting on one.
+    levels = [max(120.0, float(np.percentile(g, p))) for p in (97, 92, 85)]
+    best_overall = None
+    for lvl in levels:
+        _t, th = cv2.threshold(g, lvl, 255, cv2.THRESH_BINARY)
+        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((9, 25), np.uint8))
+        got = _plate_from(th, sx, sy, sw, sh)
+        if got and (best_overall is None or got[0] > best_overall[0]):
+            best_overall = got
+    if not best_overall:
+        return None
+    x, y, w, h = best_overall[1]
+    pad = int(h * 0.06)                         # a hair of margin, no more
+    x, y = max(0, x - pad), max(0, y - pad)
+    return [x, y, min(w + 2 * pad, W - x), min(h + 2 * pad, H - y)]
+
+
+def _plate_from(th, sx, sy, sw, sh):
+    import cv2
+    cnts, _h = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best = None
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if w < 200 or h < 70 or w > sw * 0.9:
+            continue
+        if not (1.3 < w / float(h) < 4.0):
+            continue
+        if cv2.countNonZero(th[y:y + h, x:x + w]) / float(w * h) < 0.55:
+            continue                            # a real plate is solidly bright
+        if best is None or w * h > best[0]:
+            best = (w * h, [sx + x, sy + y, w, h])
+    return best
 
 
 def plate_signature(img):
@@ -766,6 +860,10 @@ def run(args):
     checked = 0
     last_block = None           # where the board was a moment ago
     change_ref, change_pending = {}, {}      # what each plate looked like
+    cell_ref, cell_pending = {}, {}          # the two score squares
+    last_plate = None
+    last_seen_plate = None                   # when the board was last on screen
+    open_try = 0
     goals = {"h": 0, "a": 0}
     last_good_block = None
     beat = 0                                 # last heartbeat line
@@ -839,12 +937,24 @@ def run(args):
                     ch, ca = ch or (known.get(kh) if kh else None), ca or (known.get(ka) if ka else None)
                 if ch and ca and ch != ca:
                     codes = {"h": ch, "a": ca}
+            plate = find_plate(frame, cfg.get("search"))
+            if plate:
+                # the board moves and changes size during a match, so where it
+                # is now beats where it was when the camera was calibrated
+                pc = cut(plate)
+                parts = plate_parts(pc)
+                if cfg.get("clubs") and not codes:
+                    kh = read_code(parts["code_h"], cfg["clubs"])
+                    ka = read_code(parts["code_a"], cfg["clubs"])
+                    if kh and ka and kh != ka:
+                        codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
             dh, da = {}, {}
-            if region:
+            if region or plate:
                 # the board drifts a little between styles and camera nudges, so
                 # try the marked area and a few shifts around it
-                got = None
+                got = score_in_region(cut(plate)) if plate else None
                 H, W = frame.shape[:2]
+                region = region or plate
                 for dx, dy, ds in ((0, 0, 0), (0, 0, -40), (-40, 0, 0), (40, 0, 0),
                                    (0, -30, 0), (0, 30, 0), (60, 0, -60), (-60, 0, -60), (0, 0, 60)):
                     rx = [max(0, region[0] + dx), max(0, region[1] + dy),
@@ -888,6 +998,90 @@ def run(args):
                     if len(os.listdir(folder)) < 12:
                         imwrite_any(os.path.join(folder, "bar_%d.png" % int(time.time() * 1000)), shape)
                         print(now, "למד את הספרה", val, "מהפס")
+
+            # --- the match starts: open it at nil-nil --------------------
+            # Two clubs on a scoreboard mean a match is under way, and nobody
+            # scores in the first second, so nil-nil is the safe opening. The
+            # server works out which fixture it is from the two club codes.
+            if plate:
+                last_seen_plate = time.time()
+                if (last_sent is None and codes and not args.test
+                        and time.time() >= warm_until and time.time() - open_try > 10):
+                    open_try = time.time()
+                    try:
+                        r = send(key, 0, 0, args.dry_run, codes)
+                        if r.get("live"):
+                            last_sent = (r.get("h", 0), r.get("a", 0))
+                            goals["h"], goals["a"] = last_sent
+                            cell_ref, cell_pending = {}, {}
+                            print(now, "נפתח משחק חי:", codes["h"], "נגד", codes["a"], "· 0 - 0")
+                        elif r.get("noFixture"):
+                            print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
+                    except Exception as e:
+                        print(now, "פתיחה נכשלה:", e)
+            elif last_seen_plate and time.time() - last_seen_plate > 90:
+                # The board has been off the screen for a minute and a half:
+                # the match is over. Forget it and be ready for the next one,
+                # which the server will pick from the clubs that come up.
+                print(now, "הלוח נעלם — סוגר את המשחק ומחכה לבא")
+                goals["h"], goals["a"] = 0, 0
+                cell_ref, cell_pending, last_plate = {}, {}, None
+                last_sent, last_seen_plate = None, None
+
+            # --- goals by the squares changing --------------------------
+            # The digits cannot be read in every frame, but a goal always shows
+            # as the square at the end of a row changing and then staying
+            # changed. Top row is the home side, bottom row the away side. A
+            # change must hold for a few seconds, so a replay cannot score, and
+            # a board that has resized is a new baseline rather than two goals.
+            if plate and not args.no_change:
+                if last_plate and (abs(plate[2] - last_plate[2]) > last_plate[2] * 0.15 or
+                                   abs(plate[3] - last_plate[3]) > last_plate[3] * 0.15 or
+                                   abs(plate[0] - last_plate[0]) > 60 or
+                                   abs(plate[1] - last_plate[1]) > 60):
+                    cell_ref, cell_pending = {}, {}
+                    print(now, "הלוח זז או שינה גודל — משווה מחדש")
+                last_plate = plate
+                for side, cell in (("h", parts["cell_h"]), ("a", parts["cell_a"])):
+                    sig = plate_signature(cell)
+                    ref = cell_ref.get(side)
+                    if ref is None:
+                        cell_ref[side] = sig
+                        continue
+                    if sig_same(sig, ref):
+                        cell_pending.pop(side, None)
+                        continue
+                    pend = cell_pending.get(side)
+                    if pend is None or not sig_same(sig, pend[0]):
+                        cell_pending[side] = (sig, time.time())
+                        continue
+                    if time.time() - pend[1] < args.settle:
+                        continue
+                    cell_ref[side] = sig
+                    cell_pending.pop(side, None)
+                    if time.time() < warm_until:
+                        continue                      # still settling: not a goal
+                    goals[side] += 1
+                    print(now, "שינוי במשבצת", "העליונה (בית)" if side == "h" else "התחתונה (חוץ)",
+                          "— גול. ספירה:", goals["h"], "-", goals["a"])
+                    if not args.test:
+                        try:
+                            r = send(key, goals["h"], goals["a"], args.dry_run, codes)
+                            if r.get("live") is False:
+                                print(now, "אין משחק חי פתוח באפליקציה")
+                            else:
+                                last_sent = (r.get("h", goals["h"]), r.get("a", goals["a"]))
+                                print(now, "נשלח", goals["h"], "-", goals["a"], "(ספירת שינויים)")
+                        except Exception as e:
+                            print(now, "שליחה נכשלה:", e)
+
+            # digits win whenever they can be read: they say what the score is,
+            # not merely that it moved, so they put the count straight
+            if h is not None and a is not None and 0 <= h <= 20 and 0 <= a <= 20:
+                if (h, a) != (goals["h"], goals["a"]) and (h, a) == stable and stable_n >= args.stable:
+                    print(now, "הספרות אומרות", h, "-", a, "· מיישר את הספירה")
+                    goals["h"], goals["a"] = h, a
+                    cell_ref, cell_pending = {}, {}
 
             if time.time() - beat > 20:
                 beat = time.time()
@@ -1042,7 +1236,7 @@ def main():
     p.add_argument("--collect", type=int, metavar="שניות",
                    help="לאסוף פריימים בזמן משחק לתיקיית frames, כדי לכייל אחר כך")
     p.add_argument("--no-change", action="store_true", help="לא לספור גולים לפי שינוי במשבצת")
-    p.add_argument("--settle", type=float, default=5.0, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
+    p.add_argument("--settle", type=float, default=3.5, help="כמה שניות שינוי צריך להחזיק כדי להיחשב גול")
     p.add_argument("--warmup", type=float, default=25.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
