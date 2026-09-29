@@ -288,25 +288,34 @@ exports.liveScore = onCall(async req => {
     /* No match is open, but the tournament is marked live: the clubs on the
        television say which fixture is being played, so open that one. */
     const tour = (await db.doc("meta/live").get()).data() || {};
-    if (!(tour.on === true && tour.t)) return { live: false };
-    const snap = await db.doc("tournaments/t" + tour.t).get();
-    if (!snap.exists) return { live: false };
-    const der = T.derive(T.unpack(snap.data()));
+    if (tour.on !== true) return { live: false };
     const unplayed = m => !(m.s && m.s[0] != null && m.s[1] != null);
     const same = (x, y) => String(x || "").trim() === String(y || "").trim();
+    /* Which tournament is on the television? The last one. Not the one that
+       happened to be open in the app when the switch was flipped — that one is
+       usually finished — and never an older one that still has empty fixtures.
+       Whatever is being played now belongs to the newest tournament there is. */
+    const all = (await db.collection("tournaments").get()).docs
+      .map(x => ({ id: Number(String(x.id).replace(/^t/, "")), data: x.data() }))
+      .filter(x => isFinite(x.id))
+      .sort((p, q) => q.id - p.id);
+    if (!all.length) return { live: false };
+    const latest = all[0];
+    const der = T.derive(T.unpack(latest.data));
     /* the clubs on screen say which fixture it is; when the camera cannot make
        them out, the next fixture in order is the sensible guess */
     const hit = (d.clubs && d.clubs.h && d.clubs.a)
       ? der.m.find(m => unplayed(m) &&
           ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))))
       : der.m.find(unplayed);
-    if (!hit) return { live: false, noFixture: true };
+    if (!hit) return { live: false, noFixture: true, t: latest.id };
+    const pick = { t: latest.id };
     const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));
-    const doc = { t: tour.t, k: hit.i, h: flip ? a : h, a: flip ? h : a,
+    const doc = { t: pick.t, k: hit.i, h: flip ? a : h, a: flip ? h : a,
                   startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
-    await db.doc("live/" + tour.t + "_" + hit.i).set(doc);
-    console.log("cam opened live match", tour.t + "_" + hit.i, doc.h + "-" + doc.a);
-    return { live: true, h: doc.h, a: doc.a, k: hit.i, opened: true };
+    await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
+    console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
+    return { live: true, h: doc.h, a: doc.a, k: hit.i, t: pick.t, opened: true };
   }
   let ref = docs[0].ref, cur = docs[0].data() || {};
   if (d.check) return { live: true, h: cur.h, a: cur.a, t: cur.t, k: cur.k };

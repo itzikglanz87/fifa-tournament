@@ -939,6 +939,7 @@ def run(args):
     cell_ref, cell_pending = {}, {}          # the two score squares
     last_plate = None
     last_seen_plate = None                   # when the board was last on screen
+    plate_reset = 0
     open_try = 0
     goals = {"h": 0, "a": 0}
     last_good_block = None
@@ -1017,8 +1018,7 @@ def run(args):
             if plate:
                 # the board moves and changes size during a match, so where it
                 # is now beats where it was when the camera was calibrated
-                pc = cut(plate)
-                parts = plate_parts(pc)
+                parts = plate_parts(cut(plate))
                 if cfg.get("clubs") and not codes:
                     kh = read_code_plate(parts["code_h"], cfg["clubs"])
                     ka = read_code_plate(parts["code_a"], cfg["clubs"])
@@ -1111,13 +1111,22 @@ def run(args):
             # change must hold for a few seconds, so a replay cannot score, and
             # a board that has resized is a new baseline rather than two goals.
             if plate and not args.no_change:
-                if last_plate and (abs(plate[2] - last_plate[2]) > last_plate[2] * 0.15 or
-                                   abs(plate[3] - last_plate[3]) > last_plate[3] * 0.15 or
-                                   abs(plate[0] - last_plate[0]) > 60 or
-                                   abs(plate[1] - last_plate[1]) > 60):
+                # The found box breathes by a few pixels from frame to frame.
+                # Only a real move — the board changing size at half time, or
+                # jumping across the picture — is worth forgetting the squares
+                # over, and never twice within a few seconds.
+                if (last_plate and time.time() - plate_reset > 5 and
+                        (abs(plate[2] - last_plate[2]) > last_plate[2] * 0.30 or
+                         abs(plate[3] - last_plate[3]) > last_plate[3] * 0.30 or
+                         abs(plate[0] - last_plate[0]) > 150 or
+                         abs(plate[1] - last_plate[1]) > 150)):
                     cell_ref, cell_pending = {}, {}
+                    plate_reset = time.time()
                     print(now, "הלוח זז או שינה גודל — משווה מחדש")
-                last_plate = plate
+                # keep the steadier of the two so a one-frame wobble is not a move
+                last_plate = plate if last_plate is None else [
+                    int(round(o * 0.7 + n * 0.3)) for o, n in zip(last_plate, plate)]
+                fired = []
                 for side, cell in (("h", parts["cell_h"]), ("a", parts["cell_a"])):
                     sig = plate_signature(cell)
                     ref = cell_ref.get(side)
@@ -1135,6 +1144,13 @@ def run(args):
                         continue
                     cell_ref[side] = sig
                     cell_pending.pop(side, None)
+                    fired.append(side)
+                if len(fired) == 2:
+                    # both squares at once is not two goals in the same instant;
+                    # it is the board itself having changed
+                    print(now, "שתי המשבצות השתנו יחד — לא גול, הלוח התחלף")
+                    fired = []
+                for side in fired:
                     if time.time() < warm_until:
                         continue                      # still settling: not a goal
                     goals[side] += 1
