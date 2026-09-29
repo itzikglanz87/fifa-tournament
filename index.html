@@ -3155,56 +3155,143 @@ function drawLuck(t) {
    archive can be rebuilt from it by hand if it ever comes to that. The BOM is
    what makes Excel read the Hebrew, and the sep line is what stops it putting
    every row in one column. */
-/* One tournament as a spreadsheet: its matches, then its table.
+/* One tournament as a real spreadsheet file.
 
-   A backup is only a backup if it can be read without this app, so it is a
-   plain table file that opens in Excel, in Sheets, in anything — and the
-   tournament could be typed back in from it by hand if it ever came to that.
-   The BOM is what makes Excel read the Hebrew rather than mojibake, and the
-   sep line is what stops it putting every row in one column. */
-function tournamentCsv(t) {
-  const NL = String.fromCharCode(13) + String.fromCharCode(10);
-  const q = v => {
-    const x = v == null ? "" : String(v);
-    const needs = x.indexOf(",") >= 0 || x.indexOf('"') >= 0 ||
-                  x.indexOf(String.fromCharCode(10)) >= 0;
-    return needs ? '"' + x.split('"').join('""') + '"' : x;
-  };
-  const pair = (a, b) => P[a] + " ו" + P[b];
-  const out = [];
-  const line = r => out.push(r.map(q).join(","));
+   It used to be a CSV, and Excel read the Hebrew as mojibake on the phone and
+   on the computer alike: a CSV carries no statement of its own encoding that
+   Excel is obliged to believe, so it guesses, and with Hebrew it guesses
+   wrong. An xlsx declares UTF-8 inside the file, in XML, where there is
+   nothing left to guess. It is a zip of a few small XML parts — little enough
+   to write by hand, and worth it to stop arguing with a guess. */
+const CRC_TABLE = (() => {
+  const t = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
 
-  line(["טורניר " + t.num, seasonById(t.season).name]);
-  line([]);
-  line(["משחקים"]);
-  line(["מחזור", "בית", "קבוצת בית", "חוץ", "קבוצת חוץ", "שערי בית", "שערי חוץ"]);
-  t.m.forEach((m, i) => {
-    line([i + 1, pair(m[0], m[1]), CLUBS[m[2]] || "", pair(m[3], m[4]), CLUBS[m[5]] || "",
-          m[6] == null ? "" : m[6], m[7] == null ? "" : m[7]]);
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/* a zip with everything stored uncompressed: the parts are a few kilobytes,
+   and a deflate would be more code than all the rest of this put together */
+function zipBlob(files) {
+  const enc = new TextEncoder();
+  const u16 = n => [n & 255, (n >>> 8) & 255];
+  const u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const parts = [], dir = [];
+  let offset = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.path), data = f.data, crc = crc32(data);
+    const head = new Uint8Array([].concat(
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)));
+    parts.push(head, name, data);
+    dir.push(new Uint8Array([].concat(
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length), u16(name.length),
+      u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset))));
+    dir.push(name);
+    offset += head.length + name.length + data.length;
   });
+  let dirLen = 0;
+  dir.forEach(b => { dirLen += b.length; });
+  const end = new Uint8Array([].concat(
+    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+    u32(dirLen), u32(offset), u16(0)));
+  return new Blob(parts.concat(dir, [end]),
+                  { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
 
-  line([]);
-  line(["טבלה"]);
-  line(["מקום", "שחקן", "קבוצה", "משחקים", "נצחונות", "תיקו", "הפסדים",
-        "שערי זכות", "שערי חובה", "הפרש", "נקודות"]);
+function xmlText(v) {
+  return String(v).split("&").join("&amp;").split("<").join("&lt;").split(">").join("&gt;");
+}
+
+function sheetXml(rows) {
+  const col = i => {
+    let out = "", n = i + 1;
+    while (n > 0) { const m = (n - 1) % 26; out = String.fromCharCode(65 + m) + out; n = Math.floor((n - 1) / 26); }
+    return out;
+  };
+  let body = "";
+  rows.forEach((row, r) => {
+    let cells = "";
+    row.forEach((v, c) => {
+      if (v === "" || v == null) return;
+      const ref = col(c) + (r + 1);
+      const num = typeof v === "number";
+      cells += num ? '<c r="' + ref + '"><v>' + v + "</v></c>"
+                   : '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlText(v) + "</t></is></c>";
+    });
+    body += '<row r="' + (r + 1) + '">' + cells + "</row>";
+  });
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>' +
+    "<sheetData>" + body + "</sheetData></worksheet>";
+}
+
+function xlsxBlob(sheets) {
+  const enc = new TextEncoder();
+  const files = [];
+  const add = (path, text) => files.push({ path, data: enc.encode(text) });
+  const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  add("[Content_Types].xml", head +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    sheets.map((sh, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) +
+      '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("") +
+    "</Types>");
+  add("_rels/.rels", head +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    "</Relationships>");
+  add("xl/workbook.xml", head +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    sheets.map((sh, i) => '<sheet name="' + xmlText(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join("") +
+    "</sheets></workbook>");
+  add("xl/_rels/workbook.xml.rels", head +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    sheets.map((sh, i) => '<Relationship Id="rId' + (i + 1) +
+      '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' +
+      (i + 1) + '.xml"/>').join("") + "</Relationships>");
+  sheets.forEach((sh, i) => add("xl/worksheets/sheet" + (i + 1) + ".xml", sheetXml(sh.rows)));
+  return zipBlob(files);
+}
+
+/* the two sheets of a tournament: what was played, and where it left everyone */
+function tournamentSheets(t) {
+  const pair = (a, b) => P[a] + " ו" + P[b];
+  const games = [["מחזור", "בית", "קבוצת בית", "חוץ", "קבוצת חוץ", "שערי בית", "שערי חוץ"]];
+  t.m.forEach((m, i) => {
+    games.push([i + 1, pair(m[0], m[1]), CLUBS[m[2]] || "", pair(m[3], m[4]), CLUBS[m[5]] || "",
+                m[6] == null ? "" : m[6], m[7] == null ? "" : m[7]]);
+  });
+  const table = [["מקום", "שחקן", "קבוצה", "משחקים", "נצחונות", "תיקו", "הפסדים",
+                  "שערי זכות", "שערי חובה", "הפרש", "נקודות"]];
   t.table.forEach((p, i) => {
     const a = t.acc[p];
-    line([i + 1, P[p], CLUBS[t.teamOf[p]] || "", a.g, a.w, a.dr, a.l, a.gf, a.ga, a.gf - a.ga, a.pts]);
+    table.push([i + 1, P[p], CLUBS[t.teamOf[p]] || "", a.g, a.w, a.dr, a.l, a.gf, a.ga, a.gf - a.ga, a.pts]);
   });
-
   if (t.c && t.c.length === 2) {
-    line([]);
-    line(["אלופים", pair(t.c[0], t.c[1])]);
+    table.push([]);
+    table.push(["אלופים", pair(t.c[0], t.c[1])]);
   }
-  return "sep=," + NL + out.join(NL) + NL;
+  return [{ name: "משחקים", rows: games }, { name: "טבלה", rows: table }];
 }
 
 function downloadTournament(t, btn) {
   try {
-    const name = "טורניר-" + t.num + "-" + seasonById(t.season).name + ".csv";
-    const bom = String.fromCharCode(65279);
-    const blob = new Blob([bom + tournamentCsv(t)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const name = "טורניר " + t.num + " - " + seasonById(t.season).name + ".xlsx";
+    const url = URL.createObjectURL(xlsxBlob(tournamentSheets(t)));
     const a = el("a");
     a.href = url;
     a.download = name;
