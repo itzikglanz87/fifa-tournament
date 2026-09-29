@@ -215,6 +215,12 @@ def digit_boxes(img):
     return sorted(out, key=lambda b: b[1])
 
 
+def cached_letters():
+    if "letters" not in _TPL_CACHE:
+        _TPL_CACHE["letters"] = letter_templates()
+    return _TPL_CACHE["letters"]
+
+
 def letter_templates():
     """the same idea as the digits, for the three-letter club codes"""
     global _TPL_L
@@ -245,7 +251,7 @@ def read_code(img, known, min_score=0.45):
     boxes = digit_boxes(img)
     if not (2 <= len(boxes) <= 4):
         return None
-    TPL = letter_templates()
+    TPL = cached_letters()
     got = ""
     for img_b, _x in boxes:
         b = cv2.resize(img_b, (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -393,12 +399,24 @@ def find_board(frame, search, last=None):
             "away_crest": away_crest, "block": [x, y, w, h]}
 
 
+_TPL_CACHE = {}
+
+
+def all_templates():
+    """Every digit template, built once. Reading them off the disk for each
+       digit of each frame cost more than everything else the reader does."""
+    if "digits" not in _TPL_CACHE:
+        TPL = dict(templates())
+        for d, v in learned_templates().items():
+            TPL[d] = v + TPL.get(d, [])
+        _TPL_CACHE["digits"] = TPL
+    return _TPL_CACHE["digits"]
+
+
 def classify_shape(mask, min_score=0.60):
     """one cut-out digit (white ink on black) against every template we have"""
     import cv2, numpy as np
-    TPL = dict(templates())
-    for d, v in learned_templates().items():
-        TPL[d] = v + TPL.get(d, [])
+    TPL = all_templates()
     b = cv2.resize(mask, (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
     b -= b.mean()
     n = np.linalg.norm(b)
@@ -584,7 +602,7 @@ def read_code_plate(cell, known, min_score=0.40):
     if not (2 <= len(marks) <= 5):
         return None
     marks = sorted(marks, key=lambda m: m["x"])[:4]
-    TPL = letter_templates()
+    TPL = cached_letters()
     seen, got = [], ""
     for m in marks:
         b = cv2.resize(m["img"], (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -635,18 +653,14 @@ def clear_border(th):
     digits standing alone, with the ink white, which is what the classifier
     expects and what keeps the hole in a 0 a hole."""
     import cv2, numpy as np
-    h, w = th.shape
-    out = th.copy()
-    mask = np.zeros((h + 2, w + 2), np.uint8)
-    for x in range(w):
-        for y in (0, h - 1):
-            if out[y, x]:
-                cv2.floodFill(out, mask, (x, y), 0)
-    for y in range(h):
-        for x in (0, w - 1):
-            if out[y, x]:
-                cv2.floodFill(out, mask, (x, y), 0)
-    return out
+    n, lab, _st, _c = cv2.connectedComponentsWithStats(th, 8)
+    if n <= 1:
+        return th
+    edge = np.concatenate([lab[0, :], lab[-1, :], lab[:, 0], lab[:, -1]])
+    keep = np.ones(n, np.uint8)
+    keep[np.unique(edge)] = 0
+    keep[0] = 0                                  # label 0 is the background
+    return (keep[lab] * 255).astype(np.uint8)
 
 
 def find_plate(frame, search=None, near=None):
@@ -991,6 +1005,10 @@ def run(args):
     goals = {"h": 0, "a": 0}
     last_good_block = None
     beat = 0                                 # last heartbeat line
+    cycles = reads_ok = 0                    # what the loop managed since then
+    t_find = t_score = t_code = 0.0
+    held_plate, held_at, held_ok = None, 0, False
+    stuck, dumped = 0, 0                     # for keeping a picture of a failure
     warm_until = 0                           # no goals counted right after waking
     warm_note = None
     watcher = None if args.test else Watcher(key)
@@ -1061,21 +1079,56 @@ def run(args):
                     ch, ca = ch or (known.get(kh) if kh else None), ca or (known.get(ka) if ka else None)
                 if ch and ca and ch != ca:
                     codes = {"h": ch, "a": ca}
-            plate = find_plate(frame, cfg.get("search"), last_plate)
+            cycles += 1
+            # Hunting for the board costs more than everything else here put
+            # together, and the board does not move between one frame and the
+            # next. Keep the box that worked, and go looking again only when it
+            # stops yielding a score, or every couple of seconds in case the
+            # board has quietly shifted.
+            _t0 = time.time()
+            if held_plate and time.time() - held_at < (2 if held_ok else 0.5):
+                plate = held_plate
+            else:
+                plate = find_plate(frame, cfg.get("search"), last_plate)
+                held_plate, held_at = plate, time.time()
+            t_find += time.time() - _t0
             if plate:
                 # the board moves and changes size during a match, so where it
                 # is now beats where it was when the camera was calibrated
                 parts = plate_parts(cut(plate))
                 if cfg.get("clubs") and not codes:
+                    _t0 = time.time()
                     kh = read_code_plate(parts["code_h"], cfg["clubs"])
                     ka = read_code_plate(parts["code_a"], cfg["clubs"])
+                    t_code += time.time() - _t0
                     if kh and ka and kh != ka:
                         codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
             dh, da = {}, {}
             if region or plate:
                 # the board drifts a little between styles and camera nudges, so
                 # try the marked area and a few shifts around it
+                _t0 = time.time()
                 got = score_in_region(cut(plate)) if plate else None
+                t_score += time.time() - _t0
+                if got:
+                    reads_ok += 1
+                    held_ok = True
+                    stuck = 0
+                else:
+                    # Nothing legible for a good while: keep one picture of what
+                    # the reader is looking at, so the fault can be seen without
+                    # taking the camera away from the match.
+                    stuck = stuck or time.time()
+                    if time.time() - stuck > 30 and time.time() - dumped > 120:
+                        dumped = time.time()
+                        folder = os.path.join(HERE, "debug")
+                        os.makedirs(folder, exist_ok=True)
+                        tag = time.strftime("%H%M%S")
+                        imwrite_any(os.path.join(folder, tag + "_frame.png"), frame)
+                        if plate:
+                            imwrite_any(os.path.join(folder, tag + "_plate.png"), cut(plate))
+                        print(now, "לא מצליח לקרוא — שמרתי תמונה ב־debug/" + tag)
+                    held_ok = False              # this box has gone stale
                 H, W = frame.shape[:2]
                 region = plate or region
                 # only when the board could not be found do the marked area and
@@ -1269,8 +1322,14 @@ def run(args):
                     ref = change_ref.get(side)
                     sig = plate_signature(plate_crop(crop)) if (found or cfg.get("fixed")) else None
                     sims.append("%s=%s" % (side, "-" if (ref is None or sig is None) else "%.2f" % float((sig * ref).sum())))
-                print(now, "מצב · לוח:", "קבוע" if cfg.get("fixed") else ("נמצא" if found else "לא"), "· ספרות:", h, "-", a,
-                      "· פס:", "כן" if bar_shapes else "לא", "· דמיון:", " ".join(sims))
+                took = time.time() - beat if beat else 0
+                print(now, "מצב · לוח:", ("נמצא" if plate else "לא"), "· ספרות:", h, "-", a,
+                      "· קצב: %.1f פריימים לשנייה · קריאות מוצלחות: %d/%d" %
+                      ((cycles / took) if took else 0, reads_ok, cycles),
+                      "· זמן: איתור %.0f מ״ש, ספרות %.0f מ״ש, קודים %.0f מ״ש" %
+                      (t_find * 1000 / max(1, cycles), t_score * 1000 / max(1, cycles), t_code * 1000 / max(1, cycles)))
+                cycles = reads_ok = 0
+                t_find = t_score = t_code = 0.0
             now = time.strftime("%H:%M:%S")
             # --- goals by change ---------------------------------------
             # When the digits cannot be read, the plate itself still says a
@@ -1426,7 +1485,7 @@ def main():
     p.add_argument("--warmup", type=float, default=8.0, help="כמה שניות להתייצב לפני שסופרים גולים")
     p.add_argument("--log", action="store_true", help="לכתוב את הפלט לקובץ במקום למסך (לריצה ברקע)")
     p.add_argument("--dry-run", action="store_true", help="לרוץ רגיל אבל בלי לשלוח")
-    p.add_argument("--interval", type=float, default=0.25, help="כל כמה שניות לקרוא")
+    p.add_argument("--interval", type=float, default=0.05, help="כל כמה שניות לקרוא")
     p.add_argument("--stable", type=int, default=2, help="כמה קריאות זהות ברצף לפני שליחה")
     p.add_argument("--key-file", default=KEY_FILE_DEFAULT, help="קובץ מפתח האדמין")
     args = p.parse_args()
