@@ -3247,6 +3247,24 @@ function viewNews(root) {
   bar.appendChild(all);
   feed.appendChild(bar);
 
+  /* the last message the admin sent everyone, kept at the top for a fortnight */
+  (async () => {
+    try {
+      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+      const doc = db ? await db.doc("meta/announce").get() : null;
+      if (!doc || !doc.exists) return;
+      const an = doc.data();
+      if (!an || !an.body) return;
+      const age = Date.now() - Date.parse(an.at || 0);
+      if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
+      const card = el("article", "ncard lead announce");
+      card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
+        '</h3><div class="nbody">' + esc(an.body).replace(/
+/g, "<br>") + "</div>";
+      feed.insertBefore(card, feed.children[1] || null);
+    } catch (e) {}
+  })();
+
   n.items.forEach((it, k) => {
     const card = el("button", "ncard" + (k === 0 ? " lead" : ""));
     card.type = "button";

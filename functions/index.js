@@ -244,6 +244,13 @@ exports.adminPush = onCall(async req => {
   }
   const r = await sendToAll(title, body, typeof d.token === "string" ? d.token : null, url,
                            typeof d.tag === "string" ? d.tag : null);
+  /* A push is read once and gone. Keep the last one sent to everybody as an
+     announcement, so it also sits at the top of the newsroom for whoever had
+     notifications off, or read it half asleep and wanted it again. A push
+     aimed at one phone is a test and is not kept. */
+  if (!d.token) {
+    await db.doc("meta/announce").set({ title, body, at: new Date().toISOString() }).catch(() => {});
+  }
   console.log("admin push", JSON.stringify(r), title, body, storyId || "");
   return Object.assign({ ok: true, story: storyId }, r);
 });
@@ -319,7 +326,9 @@ exports.liveScore = onCall(async req => {
       .filter(x => isFinite(x.id)).sort((p, q) => q.id - p.id);
     if (!all.length) return { tournaments: 0 };
     const rec = T.unpack(all[0].data);
-    return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null };
+    const tst = await db.doc("meta/test").get();
+    return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null,
+             tournaments: all.length, quiet: tst.exists && tst.data().on === true };
   }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };

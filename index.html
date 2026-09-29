@@ -675,6 +675,9 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
   .sttbl td.rank{padding-inline:5px}
 }
 
+.ncard.announce{cursor:default; border-inline-start:3px solid var(--gold)}
+.ncard.announce .nbody{white-space:normal; line-height:1.7; font-size:14px}
+
 /* ---------- charts ---------- */
 .chart-card{background:var(--panel); border:1px solid var(--line); padding:14px 12px 8px}
 svg.chart{display:block; width:100%; height:auto}
@@ -7882,6 +7885,24 @@ function viewNews(root) {
   const all = el("button", "btn ghost sm", "העתק הכל");
   bar.appendChild(all);
   feed.appendChild(bar);
+
+  /* the last message the admin sent everyone, kept at the top for a fortnight */
+  (async () => {
+    try {
+      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
+      const doc = db ? await db.doc("meta/announce").get() : null;
+      if (!doc || !doc.exists) return;
+      const an = doc.data();
+      if (!an || !an.body) return;
+      const age = Date.now() - Date.parse(an.at || 0);
+      if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
+      const card = el("article", "ncard lead announce");
+      card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
+        '</h3><div class="nbody">' + esc(an.body).replace(/
+/g, "<br>") + "</div>";
+      feed.insertBefore(card, feed.children[1] || null);
+    } catch (e) {}
+  })();
 
   n.items.forEach((it, k) => {
     const card = el("button", "ncard" + (k === 0 ? " lead" : ""));

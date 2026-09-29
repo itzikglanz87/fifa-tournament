@@ -207,6 +207,18 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   await call({ key: "right-key", title: "📅 סקר", body: "איזה יום?", tag: "poll", open: "poll" });
   expect("…and open the poll page on tap", /#poll$/.test(sentUrls[sentUrls.length - 1]), sentUrls[sentUrls.length - 1]);
 
+  /* a push to everybody is kept, so the newsroom can show it */
+  {
+    delete store["meta/announce"];
+    await F.adminPush.run({ data: { key: "right-key", title: "כותרת", body: "שורה" }, auth: null, rawRequest: {} });
+    expect("a push to everybody is kept as the standing announcement",
+           !!(store["meta/announce"] && store["meta/announce"].body === "שורה"),
+           JSON.stringify(store["meta/announce"] || null));
+    delete store["meta/announce"];
+    await F.adminPush.run({ data: { key: "right-key", title: "כותרת", body: "רק אליי", token: "tok1" }, auth: null, rawRequest: {} });
+    expect("…but a push to one phone is a test and is not kept", !store["meta/announce"]);
+  }
+
   /* test mode: a trial tournament makes no noise */
   {
     store["meta/test"] = { on: true };
