@@ -12,3 +12,7 @@ tools/score_cam_frame.png
 tools/crests/
 tools/score_cam.log
 tools/score_cam.log.old
+
+# pictures the camera reader keeps of its own mistakes
+tools/debug/
+tools/frames/
