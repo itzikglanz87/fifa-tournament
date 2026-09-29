@@ -1242,16 +1242,22 @@ def run(args):
             # clean nil-nil readings in a row, off a board whose club codes were
             # made out, say the same thing in about two seconds, and say it on
             # better evidence than the clock ever did.
-            sure = zero_since and zero_n >= 4 and zero_codes and time.time() - zero_since > 1.5
-            # and if the club codes cannot be made out at all, fall back to the
-            # long wait rather than never resetting
-            patient = zero_since and zero_n >= 10 and time.time() - zero_since > 8
+            # Four clean nil-nil readings off a board whose clubs were also
+            # made out is the quickest safe answer. Failing that, six clean
+            # readings on their own will do — a stray nil-nil is unlikely to
+            # survive six times over now that lines of writing are refused.
+            waited = (time.time() - zero_since) if zero_since else 0
+            sure = zero_since and ((zero_n >= 4 and zero_codes and waited > 1.5) or
+                                   (zero_n >= 6 and waited > 2.5))
+            patient = zero_since and zero_n >= 10 and waited > 8
             if ((sure or patient) and last_sent
                     and (last_sent[0] or last_sent[1]) and not args.test):
                 try:
                     r = send(key, 0, 0, args.dry_run, codes, restart=True)
                     if r.get("restart"):
-                        print(now, "המשחק התחיל מחדש — התוצאה חזרה ל־0 - 0")
+                        print(now, "המשחק התחיל מחדש — התוצאה חזרה ל־0 - 0",
+                              "· לקח %.1f שניות · %d קריאות · שמות: %s" %
+                              (waited, zero_n, "כן" if zero_codes else "לא"))
                         goals["h"], goals["a"] = 0, 0
                         last_sent = (0, 0)
                         cell_ref, cell_pending = {}, {}
