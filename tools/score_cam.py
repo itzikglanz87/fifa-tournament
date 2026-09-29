@@ -951,6 +951,7 @@ def run(args):
     last_seen_plate = None                   # when the board was last on screen
     plate_reset = 0
     zero_since = None                        # since when the board has read nil-nil
+    last_read = 0                            # when the digits were last legible
     open_try = 0
     goals = {"h": 0, "a": 0}
     last_good_block = None
@@ -1041,8 +1042,11 @@ def run(args):
                 # try the marked area and a few shifts around it
                 got = score_in_region(cut(plate)) if plate else None
                 H, W = frame.shape[:2]
-                region = region or plate
-                for dx, dy, ds in ((0, 0, 0), (0, 0, -40), (-40, 0, 0), (40, 0, 0),
+                region = plate or region
+                # only when the board could not be found do the marked area and
+                # a few shifts around it get a turn; a reading already taken off
+                # the real board must not be thrown away for one of those
+                for dx, dy, ds in () if got else ((0, 0, 0), (0, 0, -40), (-40, 0, 0), (40, 0, 0),
                                    (0, -30, 0), (0, 30, 0), (60, 0, -60), (-60, 0, -60), (0, 0, 60)):
                     rx = [max(0, region[0] + dx), max(0, region[1] + dy),
                           max(120, region[2] + ds), max(120, region[3] + ds // 2)]
@@ -1181,6 +1185,13 @@ def run(args):
                     cell_ref[side] = sig
                     cell_pending.pop(side, None)
                     fired.append(side)
+                # The squares changing is the fallback, not the main story.
+                # When the digits are being read there is no need to guess from
+                # a picture moving, and guessing alongside them is how a 1-0
+                # became a 1-1. Only if nothing has been read for a while does
+                # a change get to stand for a goal on its own.
+                if fired and time.time() - last_read < 20:
+                    fired = []
                 if len(fired) == 2:
                     # both squares at once is not two goals in the same instant;
                     # it is the board itself having changed
@@ -1205,6 +1216,8 @@ def run(args):
 
             # digits win whenever they can be read: they say what the score is,
             # not merely that it moved, so they put the count straight
+            if h is not None and a is not None:
+                last_read = time.time()
             if h is not None and a is not None and 0 <= h <= 20 and 0 <= a <= 20:
                 if (h, a) != (goals["h"], goals["a"]) and (h, a) == stable and stable_n >= args.stable:
                     print(now, "הספרות אומרות", h, "-", a, "· מיישר את הספירה")
@@ -1326,7 +1339,7 @@ def run(args):
                         else:
                             last_sent = (h, a)
                             goals["h"], goals["a"] = h, a
-                            print(now, "נשלח", h, "-", a, r.get("updated") and "✓" or "")
+                            print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "")
                     except Exception as e:
                         print(now, "שליחה נכשלה:", e)
             time.sleep(args.interval)
