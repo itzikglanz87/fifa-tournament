@@ -1126,6 +1126,7 @@ def run(args):
     open_try = 0
     code_run = None                          # the same club pair, seen how often
     full_time, clock_seen = None, None        # when the clock first showed ninety
+    ninety = 0                                # how often it has said so
     final_seen, final_try = None, 0           # the MATCH RESULTS screen, read twice
     goals = {"h": 0, "a": 0}
     last_good_block = None
@@ -1377,11 +1378,16 @@ def run(args):
                 if mins is not None:
                     clock_seen = mins
                     if mins >= 90:
-                        if full_time is None:
+                        # The clock is read the same way the score is, and it
+                        # has been seen to say ninety and then eighty-three.
+                        # Closing a match on one such reading would end it in
+                        # the middle, so it has to say ninety three times.
+                        ninety += 1
+                        if ninety >= 3 and full_time is None:
                             full_time = time.time()
-                            print(now, "השעון הגיע ל־90 — סוגר בעוד עשר שניות")
+                            print(now, "השעון הגיע ל־90 שלוש פעמים — סוגר בעוד עשר שניות")
                     elif mins < 80:
-                        full_time = None          # a new match has started counting
+                        full_time, ninety = None, 0   # a new match is counting
             # full time on the clock, and then the board goes: that is the
             # whistle, and there is no need to wait four minutes to be sure
             # --- ninety minutes on the clock -----------------------------
@@ -1403,7 +1409,7 @@ def run(args):
                 goals["h"], goals["a"] = 0, 0
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate, code_run = None, None, None
-                full_time, final_seen, clock_seen = None, None, None
+                full_time, final_seen, clock_seen, ninety = None, None, None, 0
                 time.sleep(args.interval)
                 continue
 
@@ -1749,6 +1755,16 @@ def run(args):
                         learn_from(crop_h, h, "home")
                         learn_from(crop_a, a, "away")
                     try:
+                        # Keep the very picture each accepted reading came
+                        # from. A high proportion of frames yielding a number
+                        # says nothing about the numbers being right, and only
+                        # the crop itself settles whether the board was read or
+                        # something else was.
+                        if plate:
+                            folder = os.path.join(HERE, "debug", "sent")
+                            os.makedirs(folder, exist_ok=True)
+                            imwrite_any(os.path.join(folder, "%s_%d-%d.png" %
+                                                     (time.strftime("%H%M%S"), h, a)), cut(plate))
                         r = send(key, h, a, args.dry_run, codes, correct=fix)
                         if r.get("live") is False:
                             if time.time() - idle_note > 60:
