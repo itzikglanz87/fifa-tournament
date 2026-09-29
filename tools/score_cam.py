@@ -1455,7 +1455,12 @@ def run(args):
                 goals["h"], goals["a"] = 0, 0
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate, code_run, full_time = None, None, None, None
-            elif last_seen_plate and gone > 240:
+            # The four-minute rule only applies to a match we watched get
+            # somewhere. Without that, a board missing because the reader was
+            # restarted, or because nobody had started playing yet, was enough
+            # to write down a result for a match still in progress — which is
+            # exactly what it did to Liverpool against Bayern.
+            elif last_seen_plate and gone > 240 and (clock_seen or 0) >= 45:
                 # Four minutes with no board. A pause to argue about a penalty
                 # does not last that long, so the match is over: write the score
                 # into the tournament and be ready for the next one. Four
