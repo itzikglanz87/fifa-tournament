@@ -1217,8 +1217,10 @@ def run(args):
             if h == 0 and a == 0 and plate:
                 if zero_since is None:
                     zero_since = time.time()
-            else:
-                zero_since = None
+            elif h is not None and a is not None:
+                zero_since = None        # a score was read, and it is not nil-nil
+            # a frame nothing could be read from says nothing either way, and
+            # must not keep restarting the count
             if (zero_since and time.time() - zero_since > 10 and last_sent
                     and (last_sent[0] or last_sent[1]) and not args.test):
                 try:
