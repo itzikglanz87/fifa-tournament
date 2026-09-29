@@ -9,6 +9,7 @@ const Store = {
   lastError: null,
   lastSaveAt: null,
   dirty: {},            // tournament ids edited before the store answered
+  cleared: {},          // "tid:fixture" this phone emptied on purpose
 
   /* Whichever host we are running in, and never waiting on it forever.
      window.APP_DB is the standalone build (Firestore); window.claude.use is
@@ -115,11 +116,43 @@ const Store = {
   },
 
   /* one attempt at the cloud, always a local copy, never a permanent give-up */
+  /* Saving used to put this phone's whole record over whatever the cloud
+     held, which was fine while this phone was the only thing that ever wrote
+     one. It is not any more: the camera writes a result when a match ends. A
+     phone that had the tournament open from before then would wipe it on its
+     next save. So a result the cloud has and this phone does not is carried
+     across — unless this phone deliberately cleared that fixture, which is
+     remembered for exactly this reason. */
+  async merged(rec) {
+    try {
+      const snap = await this.db.doc("tournaments/t" + rec.i).get();
+      if (!snap.exists) return rec;
+      const cloud = thaw(snap.data());
+      if (!cloud || !Array.isArray(cloud.scores)) return rec;
+      const out = JSON.parse(JSON.stringify(rec));
+      let took = 0;
+      cloud.scores.forEach((sc, k) => {
+        if (!sc || sc[0] == null || sc[1] == null) return;
+        const mine = out.scores[k] || [null, null];
+        if (mine[0] != null && mine[1] != null) return;
+        if (this.cleared[rec.i + ":" + k]) return;      // this phone erased it on purpose
+        out.scores[k] = [sc[0], sc[1]];
+        took++;
+      });
+      if (took) {
+        LIVE[rec.i] = hydrate(out);
+        rebuild(); refreshChrome();
+      }
+      return out;
+    } catch (e) { return rec; }
+  },
+
   async write(t) {
     let ok = false;
     if (this.db) {
       try {
-        await this.db.doc("tournaments/t" + t.i).set(t.rec);
+        const rec = await this.merged(t.rec);
+        await this.db.doc("tournaments/t" + t.i).set(rec);
         ok = true; this.mode = "cloud"; this.lastError = null;
       } catch (e) {
         this.lastError = (e && (e.code || e.message)) || "save failed";
@@ -142,7 +175,7 @@ const Store = {
       if (String(k) === String(skip)) continue;
       const o = LIVE[k];
       if (!o) { delete this.dirty[k]; continue; }
-      try { await this.db.doc("tournaments/t" + o.i).set(o.rec); delete this.dirty[k]; }
+      try { await this.db.doc("tournaments/t" + o.i).set(await this.merged(o.rec)); delete this.dirty[k]; }
       catch (e) { this.lastError = (e && (e.code || e.message)) || "save failed"; break; }
     }
   },
@@ -1597,6 +1630,8 @@ function livePanel(t, pane) {
       const h = iH.value === "" ? null : Math.max(0, parseInt(iH.value, 10) || 0);
       const was = t.rec.scores[idx] || [null, null];
       if (was[0] === h && was[1] === a) return false;
+      if (was[0] != null && h == null) Store.cleared[t.i + ":" + idx] = true;
+      else delete Store.cleared[t.i + ":" + idx];
       t.rec.scores[idx] = [h, a];
       const fresh = hydrate(t.rec);
       LIVE[t.i] = fresh;
