@@ -3694,6 +3694,12 @@ function livePanel(t, pane) {
         fx.appendChild(socialLine(LIVE[t.i] || t, idx));
         return;
       }
+      /* A fixture that has a result can still be on the television: the
+         players restarted it. Then it wants the live strip as well as the
+         saved line, or the replay happens with nothing on screen to show it. */
+      try {
+        if (Live && Live.get && Live.get(LIVE[t.i] || t, idx)) fx.appendChild(liveLine(LIVE[t.i] || t, idx));
+      } catch (e) {}
       const d = el("div", "doneline");
       d.setAttribute("data-t", String(t.i));
       const pend = !!Store.dirty[t.i];
