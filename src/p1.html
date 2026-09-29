@@ -653,7 +653,10 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
 .stlegend{display:flex; flex-wrap:wrap; gap:5px 16px; font-size:11.5px; color:var(--muted); padding-top:9px}
 .stlegend b{color:var(--ink2); font-weight:700}
 @media (max-width:600px){
-  .sttbl .cn{display:none}
+  /* the name, not a coloured dot: on a phone the dot was all that was left of
+     the club, and a colour is not something anyone reads a table by */
+  .sttbl .cdot{display:none}
+  .sttbl .club{font-size:11.5px}
   .sttbl th,.sttbl td{padding:7px 4px; font-size:12.5px}
   .sttbl td.rank{padding-inline:5px}
 }
