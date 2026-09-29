@@ -236,6 +236,9 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const call3 = data => F.liveScore.run({ data, auth: null, rawRequest: {} });
     const none = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: "לא קיימת", a: "גם לא" } });
     expect("clubs that are not in the tournament open nothing", none.live === false);
+    const blind = await call3({ key: "right-key", h: 1, a: 0 });
+    expect("…and no clubs at all opens nothing either — no guessing at the next fixture",
+           blind.live === false && blind.noClubs === true, JSON.stringify(blind));
     const kickBefore = sent.length;
     const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
     expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));

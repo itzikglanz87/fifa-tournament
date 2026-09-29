@@ -336,12 +336,13 @@ exports.liveScore = onCall(async req => {
     if (!all.length) return { live: false };
     const latest = all[0];
     const der = T.derive(T.unpack(latest.data));
-    /* the clubs on screen say which fixture it is; when the camera cannot make
-       them out, the next fixture in order is the sensible guess */
-    const hit = (d.clubs && d.clubs.h && d.clubs.a)
-      ? der.m.find(m => unplayed(m) &&
-          ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))))
-      : der.m.find(unplayed);
+    /* The clubs on screen say which fixture it is, and nothing else does.
+       Guessing at the next one in order looks harmless until somebody plays
+       the fixtures out of order — PSG against Liverpool, match eight — and the
+       goals land on match two. Without clubs, open nothing. */
+    if (!(d.clubs && d.clubs.h && d.clubs.a)) return { live: false, noClubs: true };
+    const hit = der.m.find(m => unplayed(m) &&
+      ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))));
     if (!hit) return { live: false, noFixture: true, t: latest.id };
     const pick = { t: latest.id };
     const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));
