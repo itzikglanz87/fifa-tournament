@@ -2182,6 +2182,8 @@ const Live = {
     const host = document.getElementById("v-live");
     /* a match that went live while this screen was open needs its strip */
     if (host && !host.hidden && LIVE_PANE === "games" && Object.keys(this.map).length && !document.querySelector(".livebar")) refreshLive();
+    /* the table is watching the same goal: move it too */
+    if (host && !host.hidden && LIVE_PANE === "table") refreshStandings();
   },
   async set(t, k, h, a, extra) {
     const db = Store.db || (window.APP_DB && await window.APP_DB.open());

@@ -1488,6 +1488,11 @@ function livePanel(t, pane) {
   adm.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
     '</h2><span class="note">שמירה, גיבוי ומחיקה של הטורניר.</span></div>';
   adm.appendChild(actions);
+  const toTable = el("div", "chips");
+  const bTable = el("button", "btn sm", "📊 לטבלה");
+  bTable.onclick = () => go("live:table");
+  toTable.appendChild(bTable);
+  head.appendChild(toTable);
   add(head, "games");
   add(adm, "manage");
 
@@ -1519,9 +1524,17 @@ function livePanel(t, pane) {
 
   /* live table */
   const st = el("section", "block");
-  st.innerHTML = '<div class="bhead"><h2>טבלה חיה</h2><span class="note">ארבעת הראשונים עולים לגמר.</span></div>';
+  const lv = withLiveScores(t);
+  st.innerHTML = '<div class="bhead"><h2>טבלה חיה</h2><span class="note" id="liveTableNote">' +
+    (lv.live.length ? "כולל את המשחק שמשוחק עכשיו — הטבלה זזה עם כל שער."
+                    : "ארבעת הראשונים עולים לגמר.") + "</span></div>";
+  const backRow = el("div", "chips");
+  const bBack = el("button", "btn ghost sm", "⬅ חזרה לתוצאות");
+  bBack.onclick = () => go("live:games");
+  backRow.appendChild(bBack);
+  st.appendChild(backRow);
   const stHost = el("div"); stHost.id = "liveStandings";
-  stHost.appendChild(standingsTable(t));
+  stHost.appendChild(standingsTable(lv.t));
   st.appendChild(stHost);
   add(st, "table");
 
@@ -2133,6 +2146,36 @@ function formOf(t, p) {
    replaced, and charts (the points race and the goals). */
 const TABLE_MODES = [["fancy", "מפוארת"], ["classic", "קלאסית"], ["charts", "גרפים"]];
 const tableMode = () => { try { const v = localStorage.getItem("fifa-table-mode"); return TABLE_MODES.some(m => m[0] === v) ? v : "fancy"; } catch (e) { return "fancy"; } };
+/* The table as it stands this second: the matches already entered, plus
+   whatever the match on the television is at right now. A goal moves the
+   standings while it is still being celebrated, which is the whole point of
+   watching a table during a match. The stored tournament is left alone — the
+   live score is only folded into a copy. */
+function withLiveScores(t) {
+  const live = (typeof Live === "object" && Live && Live.map) ? Live.map : {};
+  const open = Object.keys(live).map(k => live[k]).filter(x => x && x.t === t.i &&
+    x.h != null && x.a != null && t.rec.scores[x.k] && t.rec.scores[x.k][0] == null);
+  if (!open.length) return { t: t, live: [] };
+  const rec = JSON.parse(JSON.stringify(t.rec));
+  open.forEach(x => { rec.scores[x.k] = [x.h, x.a]; });
+  return { t: hydrate(rec), live: open.map(x => x.k) };
+}
+
+/* redraw the live table in place when a goal lands, without rebuilding the
+   whole screen under the reader's finger */
+function refreshStandings() {
+  const host = document.getElementById("liveStandings");
+  const t = liveId != null ? LIVE[liveId] : null;
+  if (!host || !t) return;
+  const lv = withLiveScores(t);
+  host.innerHTML = "";
+  host.appendChild(standingsTable(lv.t));
+  const note = document.getElementById("liveTableNote");
+  if (note) note.textContent = lv.live.length
+    ? "כולל את המשחק שמשוחק עכשיו — הטבלה זזה עם כל שער."
+    : "ארבעת הראשונים עולים לגמר.";
+}
+
 function standingsTable(t, opts) {
   const host = el("div", "ltwrap");
   const draw = () => {
