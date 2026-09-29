@@ -1233,6 +1233,13 @@ def run(args):
                     for b in (c,
                               [c[0], c[1], c[2], max(60, int(c[3] * 0.62))],
                               [c[0] + int(c[2] * 0.15), c[1], int(c[2] * 0.85), max(60, int(c[3] * 0.70))]):
+                        # A scoreboard carries two club codes and two scores,
+                        # so it is always about twice as wide as it is tall and
+                        # never small. An advertising hoarding reading AXA came
+                        # through as 0-3 from a crop almost square; shape alone
+                        # rules that out before a single digit is considered.
+                        if b[2] < 230 or not (1.6 < b[2] / float(max(1, b[3])) < 3.4):
+                            continue
                         if score_in_region(cut(b)):
                             plate = b
                             done = True
