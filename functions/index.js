@@ -362,6 +362,21 @@ exports.liveScore = onCall(async req => {
     const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));
     const doc = { t: pick.t, k: hit.i, h: flip ? a : h, a: flip ? h : a, flip: flip,
                   startAt: new Date().toISOString(), at: new Date().toISOString(), by: -1, src: "cam" };
+    /* Reopening a fixture that had a result means it is being played again,
+       so the old result is no longer true. Clear it now rather than at the
+       final whistle: leaving it in place shows a score nobody is playing for
+       in the table for the length of a match. */
+    if (!unplayed(hit)) {
+      const tref = db.doc("tournaments/t" + pick.t);
+      const snap2 = await tref.get();
+      if (snap2.exists) {
+        const rec2 = T.unpack(snap2.data());
+        const sc = (rec2.scores || []).map(x => (Array.isArray(x) ? x.slice() : [null, null]));
+        sc[hit.i] = [null, null];
+        await tref.update({ scores: sc.map(x => ({ __a: x })) });
+        console.log("cam cleared the old result of", pick.t + "_" + hit.i, "— it is being played again");
+      }
+    }
     await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
     console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
     /* The whistle has gone. Everyone gets told which match is being played —

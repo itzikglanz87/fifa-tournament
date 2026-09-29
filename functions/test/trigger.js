@@ -249,6 +249,9 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const again = await call3({ key: "right-key", h: 0, a: 0, clubs: { h: fx.hc, a: fx.ac } });
     expect("…but a restart of it, at nil-nil, opens it again",
            again.opened === true && again.k === fx.i, JSON.stringify(again));
+    expect("…and the result it used to have is cleared at once, not at the whistle",
+           store["tournaments/t4001"].scores[fx.i].__a[0] === null,
+           JSON.stringify(store["tournaments/t4001"].scores[fx.i]));
     delete store["live/4001_" + fx.i];
     store["tournaments/t4001"].scores[fx.i] = { __a: [null, null] };
     const kickBefore = sent.length;
