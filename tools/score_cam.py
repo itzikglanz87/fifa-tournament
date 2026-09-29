@@ -585,7 +585,7 @@ def read_code_plate(cell, known, min_score=0.40):
         return None
     marks = sorted(marks, key=lambda m: m["x"])[:4]
     TPL = letter_templates()
-    got = ""
+    seen, got = [], ""
     for m in marks:
         b = cv2.resize(m["img"], (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
         b -= b.mean()
@@ -593,24 +593,27 @@ def read_code_plate(cell, known, min_score=0.40):
         if not n:
             return None
         b /= n
-        best, bs = "?", -2.0
-        for ch, tl in TPL.items():
-            sc = max(float((b * t).sum()) for t in tl)
-            if sc > bs:
-                best, bs = ch, sc
-        got += best if bs >= min_score else "?"
+        scores = {ch: max(float((b * t).sum()) for t in tl) for ch, tl in TPL.items()}
+        seen.append(scores)
+        ch = max(scores, key=scores.get)
+        got += ch if scores[ch] >= min_score else "?"
     if not known:
         return got
-    def dist(a, b):
-        if len(a) != len(b):
-            return 9
-        return sum(1 for x, y in zip(a, b) if x != y and x != "?")
-    scored = sorted(((dist(got, k), k) for k in known), key=lambda x: x[0])
-    if not scored or scored[0][0] > 1:
+    # Do not snap to the nearest spelling — BAR and BAY differ by one letter,
+    # and a letter read as neither would toss a coin between two clubs. Ask
+    # instead how well each code we know fits the letters actually on screen,
+    # and take the winner only if it beats the runner-up by a clear margin.
+    fit = []
+    for code in known:
+        if len(code) != len(seen):
+            continue
+        fit.append((sum(sc.get(ch, -1.0) for ch, sc in zip(code, seen)) / len(code), code))
+    fit.sort(reverse=True)
+    if not fit or fit[0][0] < min_score:
         return None
-    if len(scored) > 1 and scored[1][0] == scored[0][0]:
-        return None          # BAR and BAY differ by one letter: a tie is a guess
-    return scored[0][1]
+    if len(fit) > 1 and fit[0][0] - fit[1][0] < 0.04:
+        return None                      # two codes fit equally: that is a guess
+    return fit[0][1]
 
 
 def plate_parts(crop):
