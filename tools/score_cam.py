@@ -1008,6 +1008,7 @@ def run(args):
     last_seen_plate = None                   # when the board was last on screen
     plate_reset = 0
     zero_since = None                        # since when the board has read nil-nil
+    zero_n, zero_codes = 0, False            # how many, and were the clubs made out
     last_read = 0                            # when the digits were last legible
     open_try = 0
     goals = {"h": 0, "a": 0}
@@ -1227,14 +1228,25 @@ def run(args):
                              (h - last_sent[0] > 3 or a - last_sent[1] > 3))
             if h == 0 and a == 0 and plate:
                 if zero_since is None:
-                    zero_since = time.time()
+                    zero_since, zero_n, zero_codes = time.time(), 0, False
+                zero_n += 1
+                zero_codes = zero_codes or bool(codes)
             elif h is not None and a is not None and plausible:
                 zero_since = None        # a score was read, and it is not nil-nil
             # a reading already known to be impossible must not cancel the wait
             # either: it is a misread, and a misread is not evidence of a score
             # a frame nothing could be read from says nothing either way, and
             # must not keep restarting the count
-            if (zero_since and time.time() - zero_since > 10 and last_sent
+            # Waiting ten seconds to believe a restart was cautious to the
+            # point of being useless — the players are already playing. Several
+            # clean nil-nil readings in a row, off a board whose club codes were
+            # made out, say the same thing in about two seconds, and say it on
+            # better evidence than the clock ever did.
+            sure = zero_since and zero_n >= 4 and zero_codes and time.time() - zero_since > 1.5
+            # and if the club codes cannot be made out at all, fall back to the
+            # long wait rather than never resetting
+            patient = zero_since and zero_n >= 10 and time.time() - zero_since > 8
+            if ((sure or patient) and last_sent
                     and (last_sent[0] or last_sent[1]) and not args.test):
                 try:
                     r = send(key, 0, 0, args.dry_run, codes, restart=True)
