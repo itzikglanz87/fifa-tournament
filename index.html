@@ -6757,11 +6757,13 @@ function fillLive(n) {
     return;
   }
   n.hidden = false;
-  const mins = cur.startAt ? Math.max(0, Math.floor((Date.now() - Date.parse(cur.startAt)) / 60000)) : 0;
   const side = (names, goals, which) => '<div class="lv-side"><div class="lv-names">' + names + "</div>" +
     '<div class="lv-goals">' + goals + "</div></div>";
+  /* no minutes: the only clock we have counts from when the session opened,
+     which is not the minute the match is in, and a wrong minute is worse than
+     none */
   const head = el("div", "lv-head",
-    '<span class="lv-dot"></span><b>חי</b><span class="mut">· ' + mins + " דק׳ · " +
+    '<span class="lv-dot"></span><b>חי</b><span class="mut">· ' +
     (cur.src === "cam" ? "מהמצלמה" : cur.by >= 0 ? esc(P[cur.by]) : "מהאפליקציה") + "</span>");
   const score = el("div", "lv-score",
     /* home is on the right in the app, so inside a left-to-right score the
