@@ -306,6 +306,14 @@ exports.liveScore = onCall(async req => {
     await Promise.all(docs.map(x => x.ref.delete().catch(() => {})));
     return { live: false, cleared: docs.length };
   }
+  if (d.dump) {                                   // read-only: what is stored now
+    const all = (await db.collection("tournaments").get()).docs
+      .map(x => ({ id: Number(String(x.id).replace(/^t/, "")), data: x.data() }))
+      .filter(x => isFinite(x.id)).sort((p, q) => q.id - p.id);
+    if (!all.length) return { tournaments: 0 };
+    const rec = T.unpack(all[0].data);
+    return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null };
+  }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };
     return await finishMatch(docs[0].ref, docs[0].data() || {});

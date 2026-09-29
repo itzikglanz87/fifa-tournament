@@ -51,6 +51,7 @@ const Store = {
     this.ready = (async () => {
       await this.connect(9000);
       if (this.db) await this.loadCloud();
+      if (this.db) this.watchCloud();
       await this.flushDirty(null);
       this.paint();
     })();
@@ -75,6 +76,32 @@ const Store = {
     } catch (e) {
       this.lastError = (e && (e.code || e.message)) || "load failed";
     }
+  },
+
+  /* Keep watching the tournaments after the first load. A result can now
+     arrive without anybody touching this phone — the camera writes one when a
+     match ends, and another phone may enter one — and a scores app that needs
+     to be closed and reopened to show a score is not a scores app. Anything
+     this phone has not managed to save yet is left alone. */
+  watchCloud() {
+    if (this.watching || !this.db || !this.db.collection("tournaments").watch) return;
+    this.watching = true;
+    this.db.collection("tournaments").watch(snap => {
+      let changed = false;
+      snap.docs.forEach(d => {
+        const r = d.data();
+        if (!r || !r.i || this.dirty[r.i]) return;
+        const fresh = thaw(r);
+        const cur = LIVE[r.i];
+        if (cur && JSON.stringify(cur.rec) === JSON.stringify(fresh)) return;
+        LIVE[r.i] = hydrate(fresh);
+        changed = true;
+      });
+      if (!changed) return;                     // the echo of our own save
+      rebuild();
+      refreshChrome();
+      if (typeof go === "function" && typeof CUR_KEY === "string") go(CUR_KEY);
+    });
   },
 
   localFlush() {

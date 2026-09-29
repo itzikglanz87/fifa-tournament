@@ -3402,12 +3402,15 @@ SECTIONS.forEach(sec => {
   tabsHost.appendChild(b);
 });
 
+let CUR_KEY = "live:games";      // what is on screen, so it can be drawn again
+
 function go(key) {
   key = String(key || "live:games");
   const parts = key.split(":"), view = parts[0];
   if (view === "live") { if (parts[1]) LIVE_PANE = parts[1]; key = "live:" + LIVE_PANE; }
   const sec = SECTIONS.find(x => x.tabs.some(t => t[0] === key)) || SECTIONS[0];
   SECTION_LAST[sec.id] = key;
+  CUR_KEY = key;
 
   SECTIONS.forEach(x => {
     const b = document.getElementById("nav-" + x.id);
