@@ -3247,7 +3247,9 @@ function viewNews(root) {
   bar.appendChild(all);
   feed.appendChild(bar);
 
-  /* the last message the admin sent everyone, kept at the top for a fortnight */
+  /* the last message the admin sent everyone, kept at the top for a fortnight.
+     It is a news card like any other — same shape, and it opens — because a
+     card that looks different and does nothing when tapped reads as broken. */
   (async () => {
     try {
       const db = Store.db || (window.APP_DB && await window.APP_DB.open());
@@ -3257,9 +3259,21 @@ function viewNews(root) {
       if (!an || !an.body) return;
       const age = Date.now() - Date.parse(an.at || 0);
       if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
-      const card = el("article", "ncard lead announce");
-      card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
-        '</h3><div class="nbody">' + esc(an.body).split(String.fromCharCode(10)).join("<br>") + "</div>";
+      const lines = String(an.body).split(String.fromCharCode(10)).filter(x => x.trim());
+      const it = {
+        tag: "הודעה",
+        head: esc(an.title || "עדכון"),
+        body: lines.map(x => "<p>" + esc(x) + "</p>").join(""),
+        plain: (an.title || "") + String.fromCharCode(10) + an.body,
+        icon: "📣"
+      };
+      const card = el("button", "ncard");
+      card.type = "button";
+      card.innerHTML = newsArt(it, false) +
+        '<div class="ntext"><div class="nmeta"><span class="ntag">' + esc(it.tag) + "</span></div>" +
+        '<div class="nhead">' + it.head + "</div>" +
+        '<div class="nsnip">' + esc(lines.join(" · ")) + "</div></div>";
+      card.onclick = () => openStory(it, t, n);
       feed.insertBefore(card, feed.children[1] || null);
     } catch (e) {}
   })();

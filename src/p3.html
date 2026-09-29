@@ -1096,6 +1096,56 @@ function drawLuck(t) {
   return v;
 }
 
+/* Every result there has ever been, as a spreadsheet.
+   A backup is only a backup if it can be read without this app: a plain table
+   of one row per match opens in Excel, in Sheets, in anything, and the whole
+   archive can be rebuilt from it by hand if it ever comes to that. The BOM is
+   what makes Excel read the Hebrew, and the sep line is what stops it putting
+   every row in one column. */
+function resultsCsv() {
+  const NL = String.fromCharCode(13) + String.fromCharCode(10);
+  const q = v => {
+    const t = v == null ? "" : String(v);
+    const needs = t.indexOf(",") >= 0 || t.indexOf('"') >= 0 ||
+                  t.indexOf(String.fromCharCode(10)) >= 0;
+    return needs ? '"' + t.split('"').join('""') + '"' : t;
+  };
+  const rows = [["עונה", "טורניר", "מחזור", "בית א", "בית ב", "קבוצת בית",
+                 "חוץ א", "חוץ ב", "קבוצת חוץ", "שערי בית", "שערי חוץ", "אלופים"]];
+  TS.slice().sort((a, b) => a.season - b.season || a.num - b.num).forEach(t => {
+    const champs = (t.c || []).map(x => P[x]).join(" ו");
+    t.m.forEach((m, i) => {
+      rows.push([seasonById(t.season).name, t.num, i + 1,
+                 P[m[0]], P[m[1]], CLUBS[m[2]] || "",
+                 P[m[3]], P[m[4]], CLUBS[m[5]] || "",
+                 m[6] == null ? "" : m[6], m[7] == null ? "" : m[7],
+                 i === 0 ? champs : ""]);
+    });
+  });
+  return "sep=," + NL + rows.map(r => r.map(q).join(",")).join(NL);
+}
+
+function downloadResults(btn) {
+  try {
+    const name = "fifa-tournament-" + new Date().toISOString().slice(0, 10) + ".csv";
+    const bom = String.fromCharCode(65279);
+    const blob = new Blob([bom + resultsCsv()], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    if (btn) {
+      const was = btn.textContent;
+      btn.textContent = "ירד ✓";
+      setTimeout(() => { btn.textContent = was; }, 2200);
+    }
+  } catch (e) { flash("הייצוא נכשל: " + (e && e.message ? e.message : e), true); }
+}
+
 function copyText(txt, btn) {
   const done = ok => {
     btn.textContent = ok ? "הועתק ✓" : "לא ניתן להעתיק";
@@ -1213,6 +1263,10 @@ function managePanel(open, inScope) {
   const bNew = el("button", "btn", "＋ טורניר חדש");
   bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
   row.appendChild(bNew);
+  const bXls = el("button", "btn ghost", "⬇ גיבוי לאקסל");
+  bXls.title = "כל התוצאות של כל הטורנירים, כקובץ טבלה";
+  bXls.onclick = () => downloadResults(bXls);
+  row.appendChild(bXls);
   bar.appendChild(row);
   box.appendChild(bar);
   /* Ten panels on one screen is not a control room, it is a pile. They are

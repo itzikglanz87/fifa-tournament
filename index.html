@@ -687,9 +687,6 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
 .agroup>.block:first-of-type{border-top:0}
 .agroup>.view{padding:0}
 
-.ncard.announce{cursor:default; border-inline-start:3px solid var(--gold)}
-.ncard.announce .nbody{white-space:normal; line-height:1.7; font-size:14px}
-
 /* ---------- charts ---------- */
 .chart-card{background:var(--panel); border:1px solid var(--line); padding:14px 12px 8px}
 svg.chart{display:block; width:100%; height:auto}
@@ -3152,6 +3149,56 @@ function drawLuck(t) {
   return v;
 }
 
+/* Every result there has ever been, as a spreadsheet.
+   A backup is only a backup if it can be read without this app: a plain table
+   of one row per match opens in Excel, in Sheets, in anything, and the whole
+   archive can be rebuilt from it by hand if it ever comes to that. The BOM is
+   what makes Excel read the Hebrew, and the sep line is what stops it putting
+   every row in one column. */
+function resultsCsv() {
+  const NL = String.fromCharCode(13) + String.fromCharCode(10);
+  const q = v => {
+    const t = v == null ? "" : String(v);
+    const needs = t.indexOf(",") >= 0 || t.indexOf('"') >= 0 ||
+                  t.indexOf(String.fromCharCode(10)) >= 0;
+    return needs ? '"' + t.split('"').join('""') + '"' : t;
+  };
+  const rows = [["עונה", "טורניר", "מחזור", "בית א", "בית ב", "קבוצת בית",
+                 "חוץ א", "חוץ ב", "קבוצת חוץ", "שערי בית", "שערי חוץ", "אלופים"]];
+  TS.slice().sort((a, b) => a.season - b.season || a.num - b.num).forEach(t => {
+    const champs = (t.c || []).map(x => P[x]).join(" ו");
+    t.m.forEach((m, i) => {
+      rows.push([seasonById(t.season).name, t.num, i + 1,
+                 P[m[0]], P[m[1]], CLUBS[m[2]] || "",
+                 P[m[3]], P[m[4]], CLUBS[m[5]] || "",
+                 m[6] == null ? "" : m[6], m[7] == null ? "" : m[7],
+                 i === 0 ? champs : ""]);
+    });
+  });
+  return "sep=," + NL + rows.map(r => r.map(q).join(",")).join(NL);
+}
+
+function downloadResults(btn) {
+  try {
+    const name = "fifa-tournament-" + new Date().toISOString().slice(0, 10) + ".csv";
+    const bom = String.fromCharCode(65279);
+    const blob = new Blob([bom + resultsCsv()], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    if (btn) {
+      const was = btn.textContent;
+      btn.textContent = "ירד ✓";
+      setTimeout(() => { btn.textContent = was; }, 2200);
+    }
+  } catch (e) { flash("הייצוא נכשל: " + (e && e.message ? e.message : e), true); }
+}
+
 function copyText(txt, btn) {
   const done = ok => {
     btn.textContent = ok ? "הועתק ✓" : "לא ניתן להעתיק";
@@ -3269,6 +3316,10 @@ function managePanel(open, inScope) {
   const bNew = el("button", "btn", "＋ טורניר חדש");
   bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
   row.appendChild(bNew);
+  const bXls = el("button", "btn ghost", "⬇ גיבוי לאקסל");
+  bXls.title = "כל התוצאות של כל הטורנירים, כקובץ טבלה";
+  bXls.onclick = () => downloadResults(bXls);
+  row.appendChild(bXls);
   bar.appendChild(row);
   box.appendChild(bar);
   /* Ten panels on one screen is not a control room, it is a pile. They are
@@ -7923,7 +7974,9 @@ function viewNews(root) {
   bar.appendChild(all);
   feed.appendChild(bar);
 
-  /* the last message the admin sent everyone, kept at the top for a fortnight */
+  /* the last message the admin sent everyone, kept at the top for a fortnight.
+     It is a news card like any other — same shape, and it opens — because a
+     card that looks different and does nothing when tapped reads as broken. */
   (async () => {
     try {
       const db = Store.db || (window.APP_DB && await window.APP_DB.open());
@@ -7933,9 +7986,21 @@ function viewNews(root) {
       if (!an || !an.body) return;
       const age = Date.now() - Date.parse(an.at || 0);
       if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
-      const card = el("article", "ncard lead announce");
-      card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
-        '</h3><div class="nbody">' + esc(an.body).split(String.fromCharCode(10)).join("<br>") + "</div>";
+      const lines = String(an.body).split(String.fromCharCode(10)).filter(x => x.trim());
+      const it = {
+        tag: "הודעה",
+        head: esc(an.title || "עדכון"),
+        body: lines.map(x => "<p>" + esc(x) + "</p>").join(""),
+        plain: (an.title || "") + String.fromCharCode(10) + an.body,
+        icon: "📣"
+      };
+      const card = el("button", "ncard");
+      card.type = "button";
+      card.innerHTML = newsArt(it, false) +
+        '<div class="ntext"><div class="nmeta"><span class="ntag">' + esc(it.tag) + "</span></div>" +
+        '<div class="nhead">' + it.head + "</div>" +
+        '<div class="nsnip">' + esc(lines.join(" · ")) + "</div></div>";
+      card.onclick = () => openStory(it, t, n);
       feed.insertBefore(card, feed.children[1] || null);
     } catch (e) {}
   })();
