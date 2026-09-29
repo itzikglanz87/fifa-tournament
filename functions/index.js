@@ -263,10 +263,8 @@ async function finishMatch(ref, cur, exact) {
   const rec = T.unpack(snap.data());
   const scores = (rec.scores || []).map(x => (Array.isArray(x) ? x.slice() : [null, null]));
   if (!scores[cur.k]) return { saved: false, why: "no such fixture" };
-  if (scores[cur.k][0] != null && scores[cur.k][1] != null) {
-    await ref.delete().catch(() => {});
-    return { saved: false, why: "already entered" };
-  }
+  /* a replayed fixture overwrites the result it had: that is what replaying
+     it means */
   /* The MATCH RESULTS screen states the score with Home on the left, which is
      the television's home, not necessarily the fixture's. Whichever way round
      the live match was opened is remembered on it, so the same turn is made
@@ -350,8 +348,15 @@ exports.liveScore = onCall(async req => {
        the fixtures out of order — PSG against Liverpool, match eight — and the
        goals land on match two. Without clubs, open nothing. */
     if (!(d.clubs && d.clubs.h && d.clubs.a)) return { live: false, noClubs: true };
-    const hit = der.m.find(m => unplayed(m) &&
-      ((same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) || (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h))));
+    const fits = m => (same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) ||
+                      (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h));
+    /* A fixture that has already been entered can be played again — somebody
+       restarts a match they were not happy with. The same two clubs never meet
+       twice in a tournament, so there is nothing to confuse it with. Only at
+       nil-nil, though: a board showing goals is the match that was just saved
+       lingering on screen, not a new one. */
+    const hit = der.m.find(m => unplayed(m) && fits(m)) ||
+                ((h === 0 && a === 0) ? der.m.find(fits) : null);
     if (!hit) return { live: false, noFixture: true, t: latest.id };
     const pick = { t: latest.id };
     const flip = !!(d.clubs && d.clubs.a && same(hit.hc, d.clubs.a));

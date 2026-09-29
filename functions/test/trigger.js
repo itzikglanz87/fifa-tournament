@@ -239,6 +239,18 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const blind = await call3({ key: "right-key", h: 1, a: 0 });
     expect("…and no clubs at all opens nothing either — no guessing at the next fixture",
            blind.live === false && blind.noClubs === true, JSON.stringify(blind));
+    /* a fixture already entered can be played again, but only from nil-nil */
+    const rec2 = T3.unpack(store["tournaments/t4001"]);
+    rec2.scores[fx.i] = [2, 2];
+    store["tournaments/t4001"].scores[fx.i] = { __a: [2, 2] };
+    const late = await call3({ key: "right-key", h: 3, a: 0, clubs: { h: fx.hc, a: fx.ac } });
+    expect("a finished fixture is not reopened on a board that already has goals",
+           late.live === false, JSON.stringify(late));
+    const again = await call3({ key: "right-key", h: 0, a: 0, clubs: { h: fx.hc, a: fx.ac } });
+    expect("…but a restart of it, at nil-nil, opens it again",
+           again.opened === true && again.k === fx.i, JSON.stringify(again));
+    delete store["live/4001_" + fx.i];
+    store["tournaments/t4001"].scores[fx.i] = { __a: [null, null] };
     const kickBefore = sent.length;
     const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
     expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));
