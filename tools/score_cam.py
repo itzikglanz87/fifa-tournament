@@ -1376,14 +1376,37 @@ def run(args):
                 mins = read_clock(frame, plate)
                 if mins is not None:
                     clock_seen = mins
-                    if mins >= 89:
+                    if mins >= 90:
                         if full_time is None:
                             full_time = time.time()
-                            print(now, "השעון הגיע ל־" + str(mins) + " — סוף המשחק קרוב")
+                            print(now, "השעון הגיע ל־90 — סוגר בעוד עשר שניות")
                     elif mins < 80:
                         full_time = None          # a new match has started counting
             # full time on the clock, and then the board goes: that is the
             # whistle, and there is no need to wait four minutes to be sure
+            # --- ninety minutes on the clock -----------------------------
+            # The clock reaching ninety is the end of the match, and waiting
+            # for the board to leave the screen after that only delays writing
+            # down what is already settled. Ten seconds for a goal in stoppage
+            # time to appear, and then it goes down. A goal later than that is
+            # rare enough to be worth typing in by hand.
+            if full_time and time.time() - full_time > 10 and not args.test:
+                print(now, "דקה 90 ועברו עשר שניות — מסיים ושומר")
+                try:
+                    r = send(key, 0, 0, args.dry_run, None, finish=True)
+                    if r.get("saved"):
+                        print(now, "התוצאה נשמרה בטורניר:", r.get("h"), "-", r.get("a"))
+                    elif r.get("why"):
+                        print(now, "לא נשמר:", r.get("why"))
+                except Exception as e:
+                    print(now, "סיום נכשל:", e)
+                goals["h"], goals["a"] = 0, 0
+                cell_ref, cell_pending, last_plate = {}, {}, None
+                last_sent, last_seen_plate, code_run = None, None, None
+                full_time, final_seen, clock_seen = None, None, None
+                time.sleep(args.interval)
+                continue
+
             # --- the final whistle, stated in figures --------------------
             if not plate and not args.test and time.time() - final_try > 3:
                 final_try = time.time()
