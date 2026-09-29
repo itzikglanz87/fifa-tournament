@@ -1102,34 +1102,55 @@ function drawLuck(t) {
    archive can be rebuilt from it by hand if it ever comes to that. The BOM is
    what makes Excel read the Hebrew, and the sep line is what stops it putting
    every row in one column. */
-function resultsCsv() {
+/* One tournament as a spreadsheet: its matches, then its table.
+
+   A backup is only a backup if it can be read without this app, so it is a
+   plain table file that opens in Excel, in Sheets, in anything — and the
+   tournament could be typed back in from it by hand if it ever came to that.
+   The BOM is what makes Excel read the Hebrew rather than mojibake, and the
+   sep line is what stops it putting every row in one column. */
+function tournamentCsv(t) {
   const NL = String.fromCharCode(13) + String.fromCharCode(10);
   const q = v => {
-    const t = v == null ? "" : String(v);
-    const needs = t.indexOf(",") >= 0 || t.indexOf('"') >= 0 ||
-                  t.indexOf(String.fromCharCode(10)) >= 0;
-    return needs ? '"' + t.split('"').join('""') + '"' : t;
+    const x = v == null ? "" : String(v);
+    const needs = x.indexOf(",") >= 0 || x.indexOf('"') >= 0 ||
+                  x.indexOf(String.fromCharCode(10)) >= 0;
+    return needs ? '"' + x.split('"').join('""') + '"' : x;
   };
-  const rows = [["עונה", "טורניר", "מחזור", "בית א", "בית ב", "קבוצת בית",
-                 "חוץ א", "חוץ ב", "קבוצת חוץ", "שערי בית", "שערי חוץ", "אלופים"]];
-  TS.slice().sort((a, b) => a.season - b.season || a.num - b.num).forEach(t => {
-    const champs = (t.c || []).map(x => P[x]).join(" ו");
-    t.m.forEach((m, i) => {
-      rows.push([seasonById(t.season).name, t.num, i + 1,
-                 P[m[0]], P[m[1]], CLUBS[m[2]] || "",
-                 P[m[3]], P[m[4]], CLUBS[m[5]] || "",
-                 m[6] == null ? "" : m[6], m[7] == null ? "" : m[7],
-                 i === 0 ? champs : ""]);
-    });
+  const pair = (a, b) => P[a] + " ו" + P[b];
+  const out = [];
+  const line = r => out.push(r.map(q).join(","));
+
+  line(["טורניר " + t.num, seasonById(t.season).name]);
+  line([]);
+  line(["משחקים"]);
+  line(["מחזור", "בית", "קבוצת בית", "חוץ", "קבוצת חוץ", "שערי בית", "שערי חוץ"]);
+  t.m.forEach((m, i) => {
+    line([i + 1, pair(m[0], m[1]), CLUBS[m[2]] || "", pair(m[3], m[4]), CLUBS[m[5]] || "",
+          m[6] == null ? "" : m[6], m[7] == null ? "" : m[7]]);
   });
-  return "sep=," + NL + rows.map(r => r.map(q).join(",")).join(NL);
+
+  line([]);
+  line(["טבלה"]);
+  line(["מקום", "שחקן", "קבוצה", "משחקים", "נצחונות", "תיקו", "הפסדים",
+        "שערי זכות", "שערי חובה", "הפרש", "נקודות"]);
+  t.table.forEach((p, i) => {
+    const a = t.acc[p];
+    line([i + 1, P[p], CLUBS[t.teamOf[p]] || "", a.g, a.w, a.dr, a.l, a.gf, a.ga, a.gf - a.ga, a.pts]);
+  });
+
+  if (t.c && t.c.length === 2) {
+    line([]);
+    line(["אלופים", pair(t.c[0], t.c[1])]);
+  }
+  return "sep=," + NL + out.join(NL) + NL;
 }
 
-function downloadResults(btn) {
+function downloadTournament(t, btn) {
   try {
-    const name = "fifa-tournament-" + new Date().toISOString().slice(0, 10) + ".csv";
+    const name = "טורניר-" + t.num + "-" + seasonById(t.season).name + ".csv";
     const bom = String.fromCharCode(65279);
-    const blob = new Blob([bom + resultsCsv()], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([bom + tournamentCsv(t)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = el("a");
     a.href = url;
@@ -1263,10 +1284,6 @@ function managePanel(open, inScope) {
   const bNew = el("button", "btn", "＋ טורניר חדש");
   bNew.onclick = () => { draft = null; liveId = null; startDraft(6); };
   row.appendChild(bNew);
-  const bXls = el("button", "btn ghost", "⬇ גיבוי לאקסל");
-  bXls.title = "כל התוצאות של כל הטורנירים, כקובץ טבלה";
-  bXls.onclick = () => downloadResults(bXls);
-  row.appendChild(bXls);
   bar.appendChild(row);
   box.appendChild(bar);
   /* Ten panels on one screen is not a control room, it is a pile. They are
@@ -1627,6 +1644,13 @@ function livePanel(t, pane) {
   adm.innerHTML = '<div class="bhead"><h2>טורניר ' + t.num + " · " + esc(seasonById(t.season).name) +
     '</h2><span class="note">שמירה, גיבוי ומחיקה של הטורניר.</span></div>';
   adm.appendChild(actions);
+  const xls = el("div", "chips");
+  const bX = el("button", "btn ghost sm", "⬇ ייצוא לאקסל");
+  bX.title = "המשחקים והטבלה של הטורניר הזה, כקובץ טבלה";
+  bX.onclick = () => downloadTournament(t, bX);
+  xls.appendChild(bX);
+  head.appendChild(xls);
+
   /* only when no match is live: while one is, the button lives on its strip */
   if (!(typeof Live === "object" && Live && Live.map && Object.keys(Live.map).length)) {
     const toTable = el("div", "chips");

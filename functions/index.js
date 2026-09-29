@@ -332,7 +332,7 @@ exports.liveScore = onCall(async req => {
     const rec = T.unpack(all[0].data);
     const tst = await db.doc("meta/test").get();
     return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null,
-             tournaments: all.length, quiet: tst.exists && tst.data().on === true };
+             rec: rec, tournaments: all.length, quiet: tst.exists && tst.data().on === true };
   }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };
