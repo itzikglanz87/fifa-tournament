@@ -274,6 +274,11 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     const r3 = await call2({ key: "right-key", h: 1, a: 2, clubs: { h: fx.hc, a: fx.ac } });
     expect("a lower reading never takes goals away", r3.ignored === "lower" && store["live/2001_" + fx.i].h === 3,
            JSON.stringify(r3));
+    const fix = await call2({ key: "right-key", h: 3, a: 1, correct: true, clubs: { h: fx.hc, a: fx.ac } });
+    expect("a deliberate correction may take a goal back",
+           fix.corrected === true && store["live/2001_" + fx.i].a === 1, JSON.stringify(fix));
+    await call2({ key: "right-key", h: 3, a: 2, clubs: { h: fx.hc, a: fx.ac } });
+
     /* the match is over: the score goes into the tournament and the live one
        is closed, exactly as if the admin had pressed the button */
     const fin = await call2({ key: "right-key", h: 0, a: 0, finish: true });

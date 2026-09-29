@@ -506,7 +506,12 @@ def score_in_region(img, debug=None):
         return None                              # a crop that fell outside the picture
     import cv2, numpy as np
     g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-    g = cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    # Blow the cut-out up to a working size rather than by a fixed amount: the
+    # same board is three times smaller when the camera takes in the whole
+    # television instead of one corner of it, and a doubling that was ample
+    # there leaves the digits too coarse to tell apart here.
+    k = max(2.0, min(6.0, 1100.0 / max(40, g.shape[1])))
+    g = cv2.resize(g, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
     g = cv2.GaussianBlur(g, (3, 3), 0)
     H, W = g.shape
     marks = []
@@ -577,7 +582,12 @@ def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
     if img is None or getattr(img, "size", 0) == 0 or min(img.shape[:2]) < 16:
         return []
     g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-    g = cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    # Blow the cut-out up to a working size rather than by a fixed amount: the
+    # same board is three times smaller when the camera takes in the whole
+    # television instead of one corner of it, and a doubling that was ample
+    # there leaves the digits too coarse to tell apart here.
+    k = max(2.0, min(6.0, 1100.0 / max(40, g.shape[1])))
+    g = cv2.resize(g, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
     g = cv2.GaussianBlur(g, (3, 3), 0)
     H, W = g.shape
     marks = []
@@ -746,7 +756,10 @@ def _plate_from(th, sx, sy, sw, sh, near=None):
     best = None
     for c in cnts:
         x, y, w, h = cv2.boundingRect(c)
-        if w < 200 or h < 70 or w > sw * 0.9:
+        # the board is a third of the size it was when the camera looked only
+        # at the corner of the screen, so what counts as big enough has to come
+        # down with it
+        if w < 110 or h < 40 or w > sw * 0.9:
             continue
         if not (1.3 < w / float(h) < 4.0):
             continue
@@ -960,7 +973,7 @@ def teach_clubs(args):
     print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
 
 
-def send(key, h, a, dry, clubs=None, restart=False, finish=False):
+def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
@@ -971,6 +984,8 @@ def send(key, h, a, dry, clubs=None, restart=False, finish=False):
         payload["restart"] = True
     if finish:
         payload["finish"] = True
+    if correct:
+        payload["correct"] = True
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -1054,7 +1069,8 @@ def run(args):
     t_find = t_score = t_code = 0.0
     held_plate, held_at, held_ok = None, 0, False
     stuck, dumped = 0, 0                     # for keeping a picture of a failure
-    refused, refused_at = None, 0            # a value the server has turned down
+    dumped_codes = 0
+    refused, refused_at, refused_first = None, 0, 0   # a value the server turned down
     warm_until = 0                           # no goals counted right after waking
     warm_note = None
     watcher = None if args.test else Watcher(key)
@@ -1170,6 +1186,17 @@ def run(args):
                     reads_ok += 1
                     held_ok = True
                     stuck = 0
+                    # A board that gives a score but never gives the club
+                    # names cannot open a fixture, and the names are what say
+                    # which match is being played. Keep one picture of that so
+                    # the codes can be taught.
+                    if not codes and time.time() - dumped_codes > 90:
+                        dumped_codes = time.time()
+                        folder = os.path.join(HERE, "debug")
+                        os.makedirs(folder, exist_ok=True)
+                        tag = time.strftime("%H%M%S") + "_nocodes"
+                        imwrite_any(os.path.join(folder, tag + "_plate.png"), cut(plate))
+                        print(now, "תוצאה נקראת אבל לא השמות — שמרתי תמונה ב־debug/" + tag)
                     # This is the board: a score came off it. A pale card on
                     # the main menu is bright and rectangular too, and while
                     # that counted as the board the match on screen never
@@ -1543,6 +1570,11 @@ def run(args):
                     warm_note = int(warm_until)
             elif (stable_n >= args.stable and (h, a) != last_sent
                   and not ((h, a) == refused and time.time() - refused_at < 10)):
+                # The same lower score, read steadily for a quarter of a minute
+                # with the clubs matching, is not noise — it is the score, and
+                # an extra goal from one misread got in somewhere.
+                fix = bool(refused and (h, a) == refused and codes
+                           and time.time() - refused_first > 15)
                 # Nobody scores four while the reader blinks. A leap that big
                 # is the clock being read as a score, not a goal rush.
                 if last_sent and (h - last_sent[0] > 3 or a - last_sent[1] > 3):
@@ -1577,7 +1609,7 @@ def run(args):
                         learn_from(crop_h, h, "home")
                         learn_from(crop_a, a, "away")
                     try:
-                        r = send(key, h, a, args.dry_run, codes)
+                        r = send(key, h, a, args.dry_run, codes, correct=fix)
                         if r.get("live") is False:
                             if time.time() - idle_note > 60:
                                 print(now, "אין משחק חי פתוח באפליקציה")
@@ -1588,7 +1620,12 @@ def run(args):
                             # and recording ours would hide that a restart has
                             # taken the board back to nil-nil
                             if r.get("ignored") == "lower":
+                                if refused != (h, a):
+                                    refused_first = time.time()
                                 refused, refused_at = (h, a), time.time()
+                            if r.get("corrected"):
+                                print(now, "תוקן כלפי מטה:", h, "-", a)
+                                refused, refused_first = None, 0
                             last_sent = (r.get("h", h), r.get("a", a))
                             goals["h"], goals["a"] = last_sent
                             print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "- נדחה")

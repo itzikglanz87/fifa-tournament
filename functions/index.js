@@ -410,6 +410,18 @@ exports.liveScore = onCall(async req => {
     console.log("cam restart", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "-> 0-0");
     return { live: true, h: 0, a: 0, updated: true, k: cur.k, restart: true };
   }
+  /* A goal that never happened cannot be taken back, which is a poor rule to
+     live with: one misread put an extra goal on Bayern and the camera then
+     spent the rest of the match being told its correct reading was too low.
+     The camera may correct the score downwards, but only when it says so
+     deliberately — it asks for this after reading the same lower score
+     steadily for a quarter of a minute, with the clubs on the board matching
+     the fixture. */
+  if (d.correct && (h < (cur.h || 0) || a < (cur.a || 0))) {
+    await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
+    console.log("cam corrected", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "->", h + "-" + a);
+    return { live: true, h, a, updated: true, k: cur.k, corrected: true };
+  }
   if (h < (cur.h || 0) || a < (cur.a || 0)) return { live: true, h: cur.h, a: cur.a, ignored: "lower" };
   if (h === cur.h && a === cur.a) return { live: true, h: cur.h, a: cur.a, same: true };
   await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
