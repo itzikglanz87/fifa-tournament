@@ -236,6 +236,10 @@ exports.adminPush = onCall(async req => {
   const title = String(d.title || "טורניר פיפא").slice(0, 80);
   const body = String(d.body || "").slice(0, 400);
   if (!body.trim()) throw new HttpsError("invalid-argument", "ההודעה ריקה");
+  if (d.announceOnly) {                       // put it in the news without ringing anyone
+    await db.doc("meta/announce").set({ title, body, at: new Date().toISOString() });
+    return { ok: true, announced: true };
+  }
   let url = null, storyId = null;
   if (d.open === "poll") url = APP_URL + "#poll";
   if (d.story) {

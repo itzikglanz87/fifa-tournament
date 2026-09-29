@@ -661,6 +661,18 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
   .sttbl td.rank{padding-inline:5px}
 }
 
+.agroup{border:1px solid var(--line); background:var(--panel); margin-bottom:10px}
+.agroup>summary{list-style:none; cursor:pointer; padding:13px 14px; display:flex; align-items:baseline;
+  gap:10px; font-weight:700; font-size:15px; color:var(--ink); user-select:none}
+.agroup>summary::-webkit-details-marker{display:none}
+.agroup>summary::after{content:"▾"; margin-inline-start:auto; color:var(--muted); font-size:12px; transition:transform .15s}
+.agroup[open]>summary::after{transform:rotate(180deg)}
+.agroup>summary .mut{font-weight:500; font-size:12px}
+.agroup[open]>summary{border-bottom:1px solid var(--line)}
+.agroup>.block{border:0; margin:0; border-top:1px solid var(--line)}
+.agroup>.block:first-of-type{border-top:0}
+.agroup>.view{padding:0}
+
 .ncard.announce{cursor:default; border-inline-start:3px solid var(--gold)}
 .ncard.announce .nbody{white-space:normal; line-height:1.7; font-size:14px}
 

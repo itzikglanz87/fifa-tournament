@@ -3259,8 +3259,7 @@ function viewNews(root) {
       if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
       const card = el("article", "ncard lead announce");
       card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
-        '</h3><div class="nbody">' + esc(an.body).replace(/
-/g, "<br>") + "</div>";
+        '</h3><div class="nbody">' + esc(an.body).split(String.fromCharCode(10)).join("<br>") + "</div>";
       feed.insertBefore(card, feed.children[1] || null);
     } catch (e) {}
   })();

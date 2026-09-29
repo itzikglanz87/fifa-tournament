@@ -675,6 +675,18 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
   .sttbl td.rank{padding-inline:5px}
 }
 
+.agroup{border:1px solid var(--line); background:var(--panel); margin-bottom:10px}
+.agroup>summary{list-style:none; cursor:pointer; padding:13px 14px; display:flex; align-items:baseline;
+  gap:10px; font-weight:700; font-size:15px; color:var(--ink); user-select:none}
+.agroup>summary::-webkit-details-marker{display:none}
+.agroup>summary::after{content:"▾"; margin-inline-start:auto; color:var(--muted); font-size:12px; transition:transform .15s}
+.agroup[open]>summary::after{transform:rotate(180deg)}
+.agroup>summary .mut{font-weight:500; font-size:12px}
+.agroup[open]>summary{border-bottom:1px solid var(--line)}
+.agroup>.block{border:0; margin:0; border-top:1px solid var(--line)}
+.agroup>.block:first-of-type{border-top:0}
+.agroup>.view{padding:0}
+
 .ncard.announce{cursor:default; border-inline-start:3px solid var(--gold)}
 .ncard.announce .nbody{white-space:normal; line-height:1.7; font-size:14px}
 
@@ -3259,11 +3271,36 @@ function managePanel(open, inScope) {
   row.appendChild(bNew);
   bar.appendChild(row);
   box.appendChild(bar);
-  box.appendChild(pushPanel());
-  box.appendChild(mePanel());
-  if (adminKey()) { box.appendChild(liveTournamentPanel(open)); box.appendChild(testModePanel()); box.appendChild(pollAdmin()); box.appendChild(cameraPanel()); box.appendChild(activityPanel()); }
-  if (open) box.appendChild(livePanel(open, "manage"));
-  box.appendChild(idlePanel(!!open));
+  /* Ten panels on one screen is not a control room, it is a pile. They are
+     grouped by when they are actually reached for — during a tournament, to
+     say something to everybody, to look after the open tournament, and the
+     rest — and all but the first are folded away. */
+  const fold = (title, note, nodes, openIt) => {
+    const kept = nodes.filter(Boolean);
+    if (!kept.length) return null;
+    const d = el("details", "agroup");
+    d.open = !!openIt;
+    const sum = el("summary");
+    sum.innerHTML = "<span>" + title + "</span>" + (note ? '<span class="mut">' + note + "</span>" : "");
+    d.appendChild(sum);
+    kept.forEach(n => d.appendChild(n));
+    try { d.open = localStorage.getItem("fifa-adm-" + title) === "1" || (!!openIt && localStorage.getItem("fifa-adm-" + title) !== "0"); } catch (e) {}
+    d.addEventListener("toggle", () => { try { localStorage.setItem("fifa-adm-" + title, d.open ? "1" : "0"); } catch (e) {} });
+    return d;
+  };
+  const admin = adminKey();
+  [fold("בזמן טורניר", "מצלמה, טורניר חי, מצב בדיקה",
+        admin ? [liveTournamentPanel(open), cameraPanel(), testModePanel()] : [], true),
+   fold("הודעות לחברים", "פוש וסקר ימים",
+        [pushPanel(), admin ? pollAdmin() : null], false),
+   fold("הטורניר הפתוח", "הרכב, קבוצות, שמירה ומחיקה",
+        open ? [livePanel(open, "manage")] : [], false),
+   fold("המכשיר הזה", "מי אתה, התראות",
+        [mePanel()], false),
+   fold("מעקב", "מי נכנס ומתי",
+        admin ? [activityPanel()] : [], false),
+   fold("איך זה עובד", "", [idlePanel(!!open)], false)
+  ].forEach(g => { if (g) box.appendChild(g); });
   setTimeout(() => Store.paint(), 0);
   return box;
 }
@@ -7898,8 +7935,7 @@ function viewNews(root) {
       if (!(age >= 0 && age < 14 * 24 * 3600 * 1000)) return;
       const card = el("article", "ncard lead announce");
       card.innerHTML = '<div class="ntag">📣 הודעה</div><h3 class="nhead">' + esc(an.title || "עדכון") +
-        '</h3><div class="nbody">' + esc(an.body).replace(/
-/g, "<br>") + "</div>";
+        '</h3><div class="nbody">' + esc(an.body).split(String.fromCharCode(10)).join("<br>") + "</div>";
       feed.insertBefore(card, feed.children[1] || null);
     } catch (e) {}
   })();
