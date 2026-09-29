@@ -1170,6 +1170,11 @@ def run(args):
                     reads_ok += 1
                     held_ok = True
                     stuck = 0
+                    # This is the board: a score came off it. A pale card on
+                    # the main menu is bright and rectangular too, and while
+                    # that counted as the board the match on screen never
+                    # appeared to end, so nothing was ever written down.
+                    last_seen_plate = time.time()
                 else:
                     # Nothing legible for a good while: keep one picture of what
                     # the reader is looking at, so the fault can be seen without
@@ -1239,7 +1244,8 @@ def run(args):
             # scores in the first second, so nil-nil is the safe opening. The
             # server works out which fixture it is from the two club codes.
             if plate:
-                last_seen_plate = time.time()
+                pass        # found something bright; whether it is the board
+                            # is decided below, by whether it can be read
                 if (last_sent is None and codes and not args.test
                         and time.time() >= warm_until and time.time() - open_try > 10):
                     open_try = time.time()
@@ -1254,7 +1260,7 @@ def run(args):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
                     except Exception as e:
                         print(now, "פתיחה נכשלה:", e)
-            if plate and not args.no_clock:
+            if plate and got and not args.no_clock:
                 mins = read_clock(frame, plate)
                 if mins is not None:
                     clock_seen = mins
