@@ -2419,7 +2419,9 @@ async function savePrediction(t, k, h, a) {
    the app shows you, full screen, with the score a couple of taps away. It
    closes when the match reaches its twentieth minute, which the camera reads
    off the television. */
-const PRED_QUICK = [[1, 0], [2, 0], [2, 1], [3, 1], [1, 1], [0, 0]];
+/* the scorelines that actually happen, each one offered both ways round,
+   so a guess for either side is one tap either way */
+const PRED_QUICK = [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2], [2, 2], [3, 2], [2, 3]];
 let PRED_SHOWN = null;              // the fixture already put in front of us
 
 function predOpenFor(me) {
