@@ -269,6 +269,35 @@ exports.adminPush = onCall(async req => {
 /* The scoreboard reader on the computer sends what it read off the screen.
    It never picks a match: it updates whichever match the app has open as
    live, and only upwards (a replay or a misread cannot take goals away). */
+/* The golden goal.
+
+   Both legs of the final played and level on aggregate, so they restart from
+   nothing and the first to score takes the tournament. Until now somebody had
+   to watch that and then tell the app who won; the camera is watching anyway.
+
+   Which pair scored is settled by the club on the board: every club in a
+   tournament belongs to exactly one player, and every player is in one of the
+   two pairs. Only a clean first goal counts — one side on one, the other on
+   nothing — because that is what a golden goal looks like and anything else
+   is a misreading. */
+function goldenPending(der, rec) {
+  if (!der.legs || !der.legs.every(l => l.s && l.s[0] != null && l.s[1] != null)) return false;
+  if (rec.gg && (rec.champs || []).length === 2) return false;
+  const top = der.legs[0].s[1] + der.legs[1].s[0];
+  const bot = der.legs[0].s[0] + der.legs[1].s[1];
+  return top === bot;
+}
+
+function pairOfClub(der, club) {
+  const same = (x, y) => String(x || "").trim() === String(y || "").trim();
+  const who = Object.keys(der.teamOf || {}).map(Number).find(p => same(der.teamOf[p], club));
+  if (who == null) return null;
+  const top = [der.table[0], der.table[1]], bot = [der.table[2], der.table[3]];
+  if (top.indexOf(who) >= 0) return top;
+  if (bot.indexOf(who) >= 0) return bot;
+  return null;
+}
+
 /* Write a finished match into the tournament and close the live one.
    Everything downstream — the next-match push, the prediction window, the
    table — already happens when a tournament document changes, so this needs
@@ -378,6 +407,29 @@ exports.liveScore = onCall(async req => {
        the fixtures out of order — PSG against Liverpool, match eight — and the
        goals land on match two. Without clubs, open nothing. */
     if (!(d.clubs && d.clubs.h && d.clubs.a)) return { live: false, noClubs: true };
+
+    /* the final ended level and they are playing it out: the first goal wins */
+    if (goldenPending(der, T.unpack(latest.data))) {
+      const hp = pairOfClub(der, d.clubs.h), ap = pairOfClub(der, d.clubs.a);
+      if (hp && ap && hp[0] !== ap[0]) {
+        const clean = (h === 1 && a === 0) || (h === 0 && a === 1);
+        if (!clean) return { live: false, golden: "pending" };
+        const win = (h === 1 ? hp : ap).slice().sort((x, y) => x - y);
+        const tref2 = db.doc("tournaments/t" + latest.id);
+        const snap3 = await tref2.get();
+        if (!snap3.exists) return { live: false };
+        const rec3 = T.unpack(snap3.data());
+        if (rec3.gg && (rec3.champs || []).length === 2) return { live: false, golden: "done" };
+        await tref2.update({ champs: win, gg: true });
+        console.log("golden goal decided", latest.id, win.join("+"));
+        if (!(await quiet())) {
+          const r2 = await sendToAll("🥇 שער זהב!",
+            "האלופים: " + win.map(x => T.P[x]).join(" ו") + " — הכריעו את הגמר בשער הראשון");
+          console.log("golden push", JSON.stringify(r2));
+        }
+        return { live: false, golden: "decided", champs: win };
+      }
+    }
     const fits = m => (same(m.hc, d.clubs.h) && same(m.ac, d.clubs.a)) ||
                       (same(m.hc, d.clubs.a) && same(m.ac, d.clubs.h));
     /* A fixture that has already been entered can be played again — somebody

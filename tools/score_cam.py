@@ -1383,6 +1383,15 @@ def run(args):
                             cell_ref, cell_pending = {}, {}
                             pred_closed = False
                             print(now, "נפתח משחק חי:", codes["h"], "נגד", codes["a"], "· 0 - 0")
+                        elif r.get("golden") == "pending":
+                            # the final is level and being played out: no fixture
+                            # to open, but the first goal has to reach the server
+                            last_sent = (0, 0)
+                            goals["h"], goals["a"] = 0, 0
+                            print(now, "שער זהב — ממתין לשער הראשון")
+                        elif r.get("golden") == "decided":
+                            print(now, "שער הזהב הוכרע")
+                            last_sent = None
                         elif r.get("noFixture"):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
                     except Exception as e:
@@ -1807,8 +1816,13 @@ def run(args):
                             if r.get("corrected"):
                                 print(now, "תוקן כלפי מטה:", h, "-", a)
                                 refused, refused_first = None, 0
-                            last_sent = (r.get("h", h), r.get("a", a))
-                            goals["h"], goals["a"] = last_sent
+                            if r.get("golden") == "decided":
+                                print(now, "שער הזהב הוכרע:", h, "-", a)
+                                last_sent = None
+                                goals["h"], goals["a"] = 0, 0
+                            else:
+                                last_sent = (r.get("h", h), r.get("a", a))
+                                goals["h"], goals["a"] = last_sent
                             print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "- נדחה")
                     except Exception as e:
                         print(now, "שליחה נכשלה:", e)

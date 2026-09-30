@@ -219,6 +219,48 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     expect("…but a push to one phone is a test and is not kept", !store["meta/announce"]);
   }
 
+  /* the golden goal: the final level, and the first to score takes it */
+  {
+    const T3 = require("../tournament");
+    const rec = { i: 9001, s: 1, n: 9, tpl: "6", slots: [1, 3, 0, 5, 4, 2],
+      clubs: ["באיירן", "פסז", "ליברפול", "סיטי", "ריאל", "ברצלונה"],
+      scores: Array.from({ length: 12 }, (_, i) => [i % 3, (i + 1) % 3]),
+      final: [[1, 1], [1, 1]], champs: [] };
+    store["tournaments/t9001"] = pack(rec);
+    store["meta/live"] = { on: true, t: 9001 };
+    Object.keys(store).filter(k => k.indexOf("live/") === 0).forEach(k => { delete store[k]; });
+    const der = T3.derive(rec);
+    const topClub = der.teamOf[der.table[0]], botClub = der.teamOf[der.table[2]];
+    const call9 = data => F.liveScore.run({ data, auth: null, rawRequest: {} });
+
+    const waiting = await call9({ key: "right-key", h: 0, a: 0, clubs: { h: topClub, a: botClub } });
+    expect("a level final at nil-nil is a golden goal waiting to happen",
+           waiting.golden === "pending", JSON.stringify(waiting));
+
+    const messy = await call9({ key: "right-key", h: 2, a: 1, clubs: { h: topClub, a: botClub } });
+    expect("…and a score that is not a clean first goal decides nothing",
+           messy.golden === "pending" && !store["tournaments/t9001"].gg, JSON.stringify(messy));
+
+    const before9 = sent.length;
+    const done = await call9({ key: "right-key", h: 0, a: 1, clubs: { h: topClub, a: botClub } });
+    const want = [der.table[2], der.table[3]].slice().sort((x, y) => x - y);
+    expect("the pair that scores first are the champions",
+           done.golden === "decided" && JSON.stringify(store["tournaments/t9001"].champs) === JSON.stringify(want),
+           JSON.stringify(done) + " want " + JSON.stringify(want));
+    expect("…the tournament is marked as settled by a golden goal", store["tournaments/t9001"].gg === true);
+    expect("…and everybody is told", sent.length > before9 && /שער זהב/.test(sent[sent.length - 1].title || ""),
+           JSON.stringify(sent[sent.length - 1] || null));
+
+    const after9 = sent.length;
+    await call9({ key: "right-key", h: 1, a: 0, clubs: { h: topClub, a: botClub } });
+    expect("…and a goal for the other pair afterwards crowns nobody",
+           JSON.stringify(store["tournaments/t9001"].champs) === JSON.stringify(want) && sent.length === after9,
+           JSON.stringify(store["tournaments/t9001"].champs));
+
+    delete store["tournaments/t9001"];
+    delete store["meta/live"];
+  }
+
   /* test mode: a trial tournament makes no noise */
   {
     store["meta/test"] = { on: true };
