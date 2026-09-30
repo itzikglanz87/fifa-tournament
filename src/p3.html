@@ -1397,8 +1397,8 @@ function managePanel(open, inScope) {
         [pushPanel(), admin ? pollAdmin() : null], false),
    fold("הטורניר הפתוח", "הרכב, קבוצות, שמירה ומחיקה",
         open ? [livePanel(open, "manage")] : [], false),
-   fold("המכשיר הזה", "מי אתה, התראות",
-        [mePanel()], false),
+   fold("המכשיר הזה", "מי אתה, התראות, צליל גול",
+        [mePanel(), goalSoundPanel()], false),
    fold("מעקב", "מי נכנס ומתי",
         admin ? [activityPanel()] : [], false),
    fold("איך זה עובד", "", [idlePanel(!!open)], false)

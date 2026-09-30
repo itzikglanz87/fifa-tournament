@@ -1877,6 +1877,219 @@ function publishBulletin(t, pre) {
    Sounds: a cheer for a win, a whistle for a draw (switchable)
    ========================================================================== */
 const soundOn = () => { try { return localStorage.getItem("fifa-sound") !== "0"; } catch (e) { return true; } };
+
+/* ==========================================================================
+   The goal sound
+
+   A goal, while you are holding the phone, should be something happening and
+   not a number quietly changing — that is the whole point for the four who
+   are not playing. Which sound, though, is a matter of taste that cannot be
+   settled in words, so there are several and the choice is remembered on the
+   phone. Everything is synthesised: no files to download, and it works with
+   no signal.
+   ========================================================================== */
+const GOAL_LS = "fifa-goal-sound";
+const goalPick = () => { try { return localStorage.getItem(GOAL_LS) || "horn"; } catch (e) { return "horn"; } };
+
+function audioOut(gain) {
+  SFX = SFX || new (window.AudioContext || window.webkitAudioContext)();
+  const ctx = SFX;
+  if (ctx.state === "suspended") ctx.resume();
+  const out = ctx.createGain();
+  out.gain.value = gain == null ? 0.9 : gain;
+  out.connect(ctx.destination);
+  return { ctx, out, t0: ctx.currentTime + 0.02 };
+}
+
+/* a swell of crowd noise: filtered white noise that rises, holds and fades */
+function sfxCrowd(ctx, out, at, len, peak) {
+  const n = Math.floor(ctx.sampleRate * len), buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 900;
+  bp.Q.value = 0.5;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(peak, at + len * 0.18);
+  g.gain.setValueAtTime(peak * 0.9, at + len * 0.55);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  src.connect(bp); bp.connect(g); g.connect(out);
+  src.start(at);
+}
+
+/* a chord of sawtooths under a lowpass: the horn in the stands */
+function sfxHorn(ctx, out, at, len, freqs, peak) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 1600;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(peak, at + 0.05);
+  g.gain.setValueAtTime(peak, at + len * 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  lp.connect(g); g.connect(out);
+  freqs.forEach(f => {
+    const o = ctx.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.value = f;
+    o.connect(lp);
+    o.start(at);
+    o.stop(at + len + 0.02);
+  });
+}
+
+/* the referee's whistle: two close tones with a trill on top */
+function sfxWhistle(ctx, out, at, len) {
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(0.12, at + 0.02);
+  g.gain.setValueAtTime(0.12, at + len - 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+  g.connect(out);
+  const tr = ctx.createOscillator(), tg = ctx.createGain();
+  tr.frequency.value = 34;
+  tg.gain.value = 90;
+  tr.connect(tg);
+  [2850, 3120].forEach(f => {
+    const o = ctx.createOscillator();
+    o.frequency.value = f;
+    tg.connect(o.frequency);
+    o.connect(g);
+    o.start(at);
+    o.stop(at + len + 0.02);
+  });
+  tr.start(at);
+  tr.stop(at + len + 0.02);
+}
+
+/* one drum: a low thump with a short noise crack over it */
+function sfxDrum(ctx, out, at, peak) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.setValueAtTime(150, at);
+  o.frequency.exponentialRampToValueAtTime(52, at + 0.16);
+  g.gain.setValueAtTime(peak, at);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
+  o.connect(g); g.connect(out);
+  o.start(at); o.stop(at + 0.3);
+  const n = Math.floor(ctx.sampleRate * 0.06), b = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 1800;
+  const ng = ctx.createGain();
+  ng.gain.value = peak * 0.5;
+  src.connect(hp); hp.connect(ng); ng.connect(out);
+  src.start(at);
+}
+
+const GOAL_SOUNDS = [
+  ["horn", "צופר אצטדיון", "צופר קצר מעל קהל מתפרץ", (ctx, out, t0) => {
+    sfxCrowd(ctx, out, t0, 1.1, 0.5);
+    sfxHorn(ctx, out, t0, 0.62, [294, 370, 440], 0.22);
+  }],
+  ["crowd", "קהל בלבד", "רק שאגת יציע, בלי צופר", (ctx, out, t0) => {
+    sfxCrowd(ctx, out, t0, 1.7, 0.62);
+  }],
+  ["whistle", "שריקה וקהל", "שריקת שופט ואחריה הקהל", (ctx, out, t0) => {
+    sfxWhistle(ctx, out, t0, 0.22);
+    sfxCrowd(ctx, out, t0 + 0.2, 1.3, 0.5);
+  }],
+  ["drums", "תופי אצטדיון", "שלוש הקשות ואז קהל", (ctx, out, t0) => {
+    sfxDrum(ctx, out, t0, 0.55);
+    sfxDrum(ctx, out, t0 + 0.24, 0.55);
+    sfxDrum(ctx, out, t0 + 0.48, 0.7);
+    sfxCrowd(ctx, out, t0 + 0.55, 1.2, 0.45);
+  }],
+  ["siren", "סירנה", "סירנה עולה מעל קהל", (ctx, out, t0) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(320, t0);
+    o.frequency.exponentialRampToValueAtTime(880, t0 + 0.45);
+    o.frequency.exponentialRampToValueAtTime(420, t0 + 0.8);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.13, t0 + 0.06);
+    g.gain.setValueAtTime(0.13, t0 + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.85);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2200;
+    o.connect(lp); lp.connect(g); g.connect(out);
+    o.start(t0); o.stop(t0 + 0.9);
+    sfxCrowd(ctx, out, t0 + 0.2, 1.2, 0.42);
+  }],
+  ["chime", "עדין", "שני צלילים נקיים, בלי המולה", (ctx, out, t0) => {
+    [[880, 0], [1320, 0.13]].forEach(([f, at]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(0.2, t0 + at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.5);
+      o.connect(g); g.connect(out);
+      o.start(t0 + at); o.stop(t0 + at + 0.55);
+    });
+  }]
+];
+
+function playGoalSound(which) {
+  try {
+    const row = GOAL_SOUNDS.find(x => x[0] === (which || goalPick())) || GOAL_SOUNDS[0];
+    const a = audioOut(0.9);
+    row[3](a.ctx, a.out, a.t0);
+  } catch (e) {}
+}
+
+function goalSound() { if (soundOn()) playGoalSound(); }
+
+/* the sound, a buzz, and a flash on the strip that carries the score */
+function celebrateGoal(key) {
+  goalSound();
+  try { if (navigator.vibrate) navigator.vibrate([40, 60, 120]); } catch (e) {}
+  try {
+    document.querySelectorAll(".livebar.on").forEach(n => {
+      if (key && n.getAttribute("data-t") + "_" + n.getAttribute("data-k") !== key) return;
+      n.classList.remove("goal");
+      void n.offsetWidth;                      // restart the animation
+      n.classList.add("goal");
+      setTimeout(() => n.classList.remove("goal"), 1400);
+    });
+  } catch (e) {}
+}
+
+/* pick one by ear — the only way anybody can choose a sound */
+function goalSoundPanel() {
+  const sec = el("section", "block");
+  sec.innerHTML = '<div class="bhead"><h2>🔊 צליל גול</h2><span class="note">' +
+    "מה נשמע בטלפון כשנכנס גול והאפליקציה פתוחה. לחיצה משמיעה ובוחרת.</span></div>";
+  const box = el("div", "snd");
+  const draw = () => {
+    box.innerHTML = "";
+    const cur = goalPick();
+    GOAL_SOUNDS.forEach(([id, name, about]) => {
+      const b = el("button", "snd-row" + (id === cur ? " on" : ""));
+      b.type = "button";
+      b.innerHTML = '<span class="snd-play">▶</span><span class="snd-txt"><b>' + esc(name) +
+        "</b><small>" + esc(about) + "</small></span>" +
+        '<span class="snd-tick">' + (id === cur ? "✓" : "") + "</span>";
+      b.onclick = () => {
+        try { localStorage.setItem(GOAL_LS, id); } catch (e) {}
+        playGoalSound(id);
+        draw();
+      };
+      box.appendChild(b);
+    });
+  };
+  draw();
+  sec.appendChild(box);
+  return sec;
+}
 let SFX = null;
 function resultSound(h, a) {
   if (!soundOn()) return;
@@ -2163,7 +2376,7 @@ function openWrapped(p) {
 let TEST_MODE = false;          // pushes held while a trial tournament runs
 let TOURNAMENT_LIVE = null;     // the camera may open matches in this tournament
 const Live = {
-  map: {}, stop: null, started: false,
+  map: {}, stop: null, started: false, seen: false,
   key: (t, k) => t.i + "_" + k,
   get(t, k) { return this.map[this.key(t, k)] || null; },
   async start() {
@@ -2174,6 +2387,17 @@ const Live = {
     this.stop = db.collection("live").watch(snap => {
       const m = {};
       snap.docs.forEach(d => { const x = d.data(); if (x && x.t != null) m[x.t + "_" + x.k] = x; });
+      /* a score that has gone up since the last snapshot is a goal, and worth
+         hearing. The first snapshot after opening the app is not — it is only
+         catching up on a match already under way. */
+      if (this.seen) {
+        Object.keys(m).forEach(k => {
+          const was = this.map[k], now = m[k];
+          if (!was || !now) return;
+          if ((now.h || 0) > (was.h || 0) || (now.a || 0) > (was.a || 0)) celebrateGoal(k);
+        });
+      }
+      this.seen = true;
       this.map = m;
       this.paint();
     });
@@ -2353,6 +2577,7 @@ const Social = {
    on coming back to it — that is the whole difference between a game people
    play and a page people never found. */
 setTimeout(() => Social.load().then(() => {
+  if (soundsFromHash()) return;
   if (!predViewFromHash()) offerPrediction();
 }).catch(() => {}), 1500);
 /* back from a notification tap: the window may have just opened */
@@ -3471,6 +3696,22 @@ function pollFromHash() {
    see it before it matters, and clearing a real result to conjure a window
    would both touch the archive and ring five phones. Nothing is saved from
    here. */
+function soundsFromHash() {
+  if (!/^#sounds$/.test(location.hash || "")) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  go("live:manage");
+  setTimeout(() => {
+    const n = document.querySelector(".snd");
+    if (n) {
+      const d = n.closest("details");
+      if (d) d.open = true;
+      n.scrollIntoView({ block: "center" });
+    }
+  }, 300);
+  return true;
+}
+addEventListener("hashchange", () => { soundsFromHash(); });
+
 function predViewFromHash() {
   if (!/^#predview$/.test(location.hash || "")) return false;
   try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
