@@ -7373,9 +7373,9 @@ setTimeout(() => Live.start(), 1200);
 let WATCH = null;          // {t, k} while the big screen is up
 let WATCH_LOCK = null;     // the promise that keeps the screen awake
 
-function watchScreen(t, k) {
+function watchScreen(t, k, preview) {
   closeWatch();
-  WATCH = { t: t.i, k };
+  WATCH = { t: t.i, k, preview: preview || null };
   const pg = el("div", "watch");
   pg.id = "watchScreen";
 
@@ -7412,7 +7412,7 @@ function paintWatch() {
   const host = document.querySelector("#watchScreen .watch-body");
   const t = LIVE[WATCH.t];
   if (!host || !t || !t.m[WATCH.k]) { closeWatch(); return; }
-  const m = t.m[WATCH.k], cur = Live.get(t, WATCH.k);
+  const m = t.m[WATCH.k], cur = WATCH.preview || Live.get(t, WATCH.k);
   if (!cur) { closeWatch(); return; }
 
   const side = (p1, p2, club) =>
@@ -7428,7 +7428,8 @@ function paintWatch() {
     '<div class="w-row">' + side(m[0], m[1], CLUBS[m[2]] || "") +
       '<div class="w-score"><b class="ltr">' + cur.a + " - " + cur.h + "</b></div>" +
       side(m[3], m[4], CLUBS[m[5]] || "") + "</div>" +
-    '<div class="w-foot">' + (cur.src === "cam" ? "🎥 מהמצלמה" : "מהאפליקציה") + "</div>";
+    '<div class="w-foot">' + (WATCH.preview ? "👀 תצוגה מקדימה — ככה זה ייראה בזמן משחק"
+      : (cur.src === "cam" ? "🎥 מהמצלמה" : "מהאפליקציה")) + "</div>";
 }
 
 /* the strip under an unplayed match: start it, tap goals, finish */
@@ -7581,7 +7582,7 @@ const Social = {
    on coming back to it — that is the whole difference between a game people
    play and a page people never found. */
 setTimeout(() => Social.load().then(() => {
-  if (soundsFromHash()) return;
+  if (soundsFromHash() || watchViewFromHash()) return;
   if (!predViewFromHash()) offerPrediction();
 }).catch(() => {}), 1500);
 /* back from a notification tap: the window may have just opened */
@@ -8700,6 +8701,18 @@ function pollFromHash() {
    see it before it matters, and clearing a real result to conjure a window
    would both touch the archive and ring five phones. Nothing is saved from
    here. */
+/* a look at the big screen with no match on, the same way the guessing screen
+   can be looked at: conjuring a live match would clear a real result */
+function watchViewFromHash() {
+  if (!/^#watchview$/.test(location.hash || "")) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  const t = Object.values(LIVE).sort((x, y) => y.i - x.i)[0] || TSS[TSS.length - 1];
+  if (!t || !t.m[0]) { flash("אין טורניר להציג עליו", true); return true; }
+  watchScreen(t, 0, { h: 2, a: 1, min: 67, src: "cam" });
+  return true;
+}
+addEventListener("hashchange", () => { watchViewFromHash(); });
+
 function soundsFromHash() {
   if (!/^#sounds$/.test(location.hash || "")) return false;
   try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
