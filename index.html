@@ -5384,6 +5384,7 @@ function squadPage(root) {
 
 function futCard(p) {
   const s = S[p], t = TIER[s.tier];
+  /* still wanted for the card's tint, though it is no longer named on it */
   const lastClub = (() => { for (let i = TSS.length - 1; i >= 0; i--) { const x = TSS[i]; if (x.done && x.teamOf[p] != null) return CLUBS[x.teamOf[p]]; } return "—"; })();
   const face = photoOf(p);
   const c = el("div", "fcard");
@@ -5432,8 +5433,8 @@ function futCard(p) {
     '<div class="hint">' + esc(s.role) + " — " + (s.role === "התקפה"
       ? "כובש יותר משהוא סופג." : "סופג יותר משהוא כובש.") + "</div>", e);
   top.appendChild(ovr);
-  top.insertAdjacentHTML("beforeend",
-    '<div class="badge"><i class="shield"></i><span class="cname">' + esc(lastClub) + "</span></div>");
+  /* no club on the card: a player is not his last club, and the badge said
+     little more than which colour the card is already tinted with */
   body.appendChild(top);
   body.appendChild(el("div", "pname", esc(P[p])));
 
