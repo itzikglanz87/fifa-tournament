@@ -2987,7 +2987,12 @@ function pollAdmin() {
   const sec = el("section", "block");
   sec.innerHTML = '<div class="bhead"><h2>סקר ימים</h2><span class="note">בחר תאריכים מהיומן, וכל אחד יסמן את הימים שהוא יכול. את הפושים שולח רק האדמין.</span></div>';
   const p = pollOpen();
-  const push = (title, body) => window.APP_PUSH.admin({ key: adminKey(), title, body, tag: "poll", open: "poll" });
+  const push = (title, body, onlyMe) => {
+    const token = onlyMe && window.APP_PUSH && window.APP_PUSH.token();
+    if (onlyMe && !token) { flash("הפעל קודם התראות בטלפון הזה", true); throw new Error("no token"); }
+    return window.APP_PUSH.admin({ key: adminKey(), title, body, tag: "poll", open: "poll",
+                                   token: onlyMe ? token : undefined });
+  };
   if (p) {
     const T = pollTally(p);
     sec.appendChild(el("div", "notice", "סקר פתוח: <b>" + esc(p.title || "") + "</b> · הצביעו " + T.voted.length + " מתוך " + P.length +
@@ -3016,14 +3021,15 @@ function pollAdmin() {
   }
   const title = textInput("איזה יום מתאים לטורניר?", "כותרת הסקר");
   sec.appendChild(title);
-  const go = el("button", "btn sm", "📊 פתח סקר ושלח פוש");
-  const cal = dayPicker(list => { go.disabled = !list.length; });
-  go.disabled = true;
+  const go = el("button", "btn sm", "📊 פתח סקר ושלח לכולם");
+  const mine = el("button", "btn ghost sm", "🔒 פתח ושלח רק אליי");
+  const cal = dayPicker(list => { go.disabled = mine.disabled = !list.length; });
+  go.disabled = mine.disabled = true;
   sec.appendChild(cal.node);
-  go.onclick = async () => {
+  const open = onlyMe => async () => {
     const list = cal.chosen();
     if (!list.length) { flash("בחר לפחות תאריך אחד", true); return; }
-    go.disabled = true;
+    go.disabled = mine.disabled = true;
     const poll = {
       id: "p" + Date.now().toString(36),
       title: (title.value.trim() || "איזה יום מתאים לטורניר?").slice(0, 60),
@@ -3034,14 +3040,21 @@ function pollAdmin() {
     };
     try {
       await Social.set("meta", "poll", poll);
-      try { await push("📊 " + poll.title, "סמנו באפליקציה את כל הימים שאתם יכולים"); } catch (e) { flash("הסקר נפתח, אבל הפוש לא נשלח: " + pushErr(e), true); }
+      try {
+        const r = await push("📊 " + poll.title, "סמנו באפליקציה את כל הימים שאתם יכולים", onlyMe);
+        if (onlyMe) flash("הסקר נפתח, והפוש נשלח רק לטלפון הזה");
+        else flash("הסקר נפתח, הפוש נשלח ל־" + r.sent + " טלפונים");
+      } catch (e) { flash("הסקר נפתח, אבל הפוש לא נשלח: " + pushErr(e), true); }
       await Social.load(true);
       viewLive(document.getElementById("v-live"));
-    } catch (e) { flash("הסקר לא נפתח — אין חיבור", true); go.disabled = false; }
+    } catch (e) { flash("הסקר לא נפתח — אין חיבור", true); go.disabled = mine.disabled = false; }
   };
+  go.onclick = open(false);
+  mine.onclick = open(true);
   const row = el("div", "chips");
-  row.appendChild(go);
+  row.append(go, mine);
   sec.appendChild(row);
+  sec.appendChild(el("div", "mut", "הסקר עצמו נראה לכולם באפליקציה בכל מקרה — 'רק אליי' נוגע לפוש בלבד. אפשר למחוק אותו אחרי הבדיקה."));
   return sec;
 }
 
