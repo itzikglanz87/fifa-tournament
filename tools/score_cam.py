@@ -1420,8 +1420,15 @@ def run(args):
                                 print(now, "דקה 20 — הניחושים נסגרו")
                         except Exception as e:
                             print(now, "סגירת ניחושים נכשלה:", e)
-                    elif mins < 80:
-                        full_time, ninety = None, 0   # a new match is counting
+                    elif mins < 85:
+                        # The clock is read as noisily as anything else — it
+                        # gave 81, 16 and 18 during a match that was nowhere
+                        # near any of them. Before ninety that noise only has
+                        # to not accumulate; after ninety it must not cancel
+                        # the ending, which is what stopped a match closing
+                        # three seconds before it would have. Only a new match
+                        # clears that, where it is opened.
+                        ninety = 0
             # full time on the clock, and then the board goes: that is the
             # whistle, and there is no need to wait four minutes to be sure
             # --- ninety minutes on the clock -----------------------------
