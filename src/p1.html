@@ -661,6 +661,33 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
   .sttbl td.rank{padding-inline:5px}
 }
 
+.predpage .pp-card{padding:14px 14px 20px; display:flex; flex-direction:column; gap:14px}
+.pp-head{display:flex; align-items:center; gap:10px}
+.pp-side{flex:1; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px}
+.pp-faces{display:flex}
+.pp-face{width:46px; height:46px; border-radius:50%; overflow:hidden; border:2px solid var(--c);
+  background:var(--panel2); display:grid; place-items:center; font-weight:700; margin-inline-start:-10px}
+.pp-face:first-child{margin-inline-start:0}
+.pp-names{font-weight:700; font-size:14px}
+.pp-club{font-size:12px; color:var(--ink2)}
+.pp-vs{color:var(--muted); font-size:12.5px}
+.pp-board{display:flex; align-items:center; justify-content:center; gap:16px}
+.pp-step{display:flex; flex-direction:column; align-items:center; gap:6px}
+.pp-pm{width:54px; height:38px; background:var(--panel2); border:1px solid var(--line2);
+  color:var(--ink); font-size:20px; line-height:1; cursor:pointer}
+.pp-num{font-size:44px; font-weight:800; min-width:54px; text-align:center; font-variant-numeric:tabular-nums}
+.pp-dash{font-size:30px; color:var(--muted)}
+.pp-quick{display:flex; flex-wrap:wrap; gap:7px; justify-content:center}
+.pp-q{background:var(--panel2); border:1px solid var(--line2); color:var(--ink2);
+  padding:7px 13px; font:inherit; font-size:13.5px; cursor:pointer}
+.pp-q.on{background:var(--gold); border-color:var(--gold); color:#1A1305; font-weight:700}
+.pp-note{text-align:center; font-size:12.5px; color:var(--muted)}
+.pp-note b{color:var(--gold)}
+.pp-lock{width:100%; padding:14px; font-size:16px}
+.pp-others{display:flex; flex-direction:column; gap:6px}
+.pp-other{display:flex; justify-content:space-between; background:var(--panel2);
+  border:1px solid var(--line2); padding:8px 11px; font-size:13.5px}
+
 .cal{margin-top:10px}
 .cal-head{display:flex; align-items:center; gap:8px; margin-bottom:8px}
 .cal-title{flex:1; text-align:center; font-weight:700}

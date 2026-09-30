@@ -2348,9 +2348,14 @@ const Social = {
     await db.doc(col + "/" + id).set(doc);
   }
 };
-setTimeout(() => Social.load(), 1500);
+/* A guess waiting for you is the first thing the app shows, on opening it and
+   on coming back to it — that is the whole difference between a game people
+   play and a page people never found. */
+setTimeout(() => Social.load().then(() => offerPrediction()).catch(() => {}), 1500);
 /* back from a notification tap: the window may have just opened */
-document.addEventListener("visibilitychange", () => { if (!document.hidden) Social.load(true); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) Social.load(true).then(() => offerPrediction()).catch(() => {});
+});
 
 /* the countdown: every open window ticks once a second, and the screen is
    redrawn the moment one closes */
@@ -2389,7 +2394,7 @@ function predPoints(p, h, a) {
 async function savePrediction(t, k, h, a) {
   const w = await needMe();
   if (w == null) return false;
-  if (!canPredict(t, k)) { flash("הניחוש סגור — רק מי שלא משחק, ורק 3 דקות מהפוש", true); Social.paint(); return false; }
+  if (!canPredict(t, k)) { flash("הניחוש סגור — רק מי שלא משחק, ורק עד דקה 20 של המשחק", true); Social.paint(); return false; }
   const key = t.i + "_" + k;
   (Social.pred[key] = Social.pred[key] || {})[w] = { h, a };
   Social.paint();
@@ -2402,6 +2407,140 @@ async function savePrediction(t, k, h, a) {
     flash(/permission/.test(String(e && (e.code || e.message))) ? "הזמן לניחוש נגמר" : "הניחוש לא נשמר — אין חיבור", true);
     return false;
   }
+}
+
+/* The guessing, put in front of whoever is guessing.
+
+   It used to live on a page you had to go and find, open for three minutes
+   from a push, and the two who could guess mostly missed it. So it stops
+   waiting to be found: if a window is open for you, it is the first thing
+   the app shows you, full screen, with the score a couple of taps away. It
+   closes when the match reaches its twentieth minute, which the camera reads
+   off the television. */
+const PRED_QUICK = [[1, 0], [2, 0], [2, 1], [3, 1], [1, 1], [0, 0]];
+let PRED_SHOWN = null;              // the fixture already put in front of us
+
+function predOpenFor(me) {
+  if (typeof me !== "number" || me < 0) return null;
+  for (const t of Object.values(LIVE)) {
+    for (let k = 0; k < t.m.length; k++) {
+      if (canPredict(t, k)) return { t, k };
+    }
+  }
+  return null;
+}
+
+/* the takeover: shown on opening the app while a window is open for you */
+function openPredictionPage(t, k) {
+  const m = t.m[k], key = t.i + "_" + k, me = meWho();
+  const mine = (Social.pred[key] || {})[me];
+  const old = document.getElementById("matchPage");
+  if (old) old.remove();
+
+  let h = mine ? mine.h : 1, a = mine ? mine.a : 0;
+  const pg = el("div", "mpage predpage");
+  pg.id = "matchPage";
+
+  const top = el("div", "mp-top");
+  top.innerHTML = '<span></span><div class="mp-title"><div>🔮 נחש את התוצאה</div>' +
+    '<div class="mut">מחזור ' + (k + 1) + " · טורניר " + t.num + "</div></div>";
+  const back = el("button", "mp-back", "←");
+  back.setAttribute("aria-label", "סגור");
+  back.onclick = () => closeMatch(false);
+  top.appendChild(back);
+  pg.appendChild(top);
+
+  const side = (p1, p2, club) =>
+    '<div class="pp-side"><div class="pp-faces">' +
+      [p1, p2].map(w => '<i class="pp-face" style="--c:' + PC(w) + '">' +
+        (photoOf(w) ? '<i class="pface pf' + w + '"></i>' : "<b>" + esc(P[w].slice(0, 1)) + "</b>") + "</i>").join("") +
+      '</div><div class="pp-names">' + esc(P[p1]) + " ו" + esc(P[p2]) + "</div>" +
+      '<div class="pp-club">' + esc(club) + "</div></div>";
+
+  const card = el("div", "pp-card");
+  const head = el("div", "pp-head");
+  head.innerHTML = side(m[3], m[4], CLUBS[m[5]] || "") +
+    '<div class="pp-vs">נגד</div>' + side(m[0], m[1], CLUBS[m[2]] || "");
+  card.appendChild(head);
+
+  /* the score, home on the right as everywhere else in the app */
+  const board = el("div", "pp-board");
+  const stepper = which => {
+    const box = el("div", "pp-step");
+    const up = el("button", "pp-pm", "+");
+    const val = el("div", "pp-num", "0");
+    const dn = el("button", "pp-pm", "−");
+    up.type = dn.type = "button";
+    up.onclick = () => { if (which === "h") h = Math.min(20, h + 1); else a = Math.min(20, a + 1); paint(); };
+    dn.onclick = () => { if (which === "h") h = Math.max(0, h - 1); else a = Math.max(0, a - 1); paint(); };
+    box.append(up, val, dn);
+    box.dataset.side = which;
+    return box;
+  };
+  const sa = stepper("a"), sh = stepper("h");
+  board.append(sa, el("div", "pp-dash", "-"), sh);
+  card.appendChild(board);
+
+  const quick = el("div", "pp-quick");
+  PRED_QUICK.forEach(([qh, qa]) => {
+    const b = el("button", "pp-q", '<span class="ltr">' + qa + " - " + qh + "</span>");
+    b.type = "button";
+    b.onclick = () => { h = qh; a = qa; paint(); };
+    quick.appendChild(b);
+  });
+  card.appendChild(quick);
+
+  const note = el("div", "pp-note");
+  card.appendChild(note);
+
+  const lock = el("button", "btn pp-lock", mine ? "🔮 עדכן את הניחוש" : "🔮 נעל את הניחוש");
+  lock.onclick = async () => {
+    lock.disabled = true;
+    const ok = await savePrediction(t, k, h, a);
+    lock.disabled = false;
+    if (ok) { paint(); lock.textContent = "נשמר ✓"; setTimeout(() => paint(), 1400); }
+  };
+  card.appendChild(lock);
+
+  const others = el("div", "pp-others");
+  card.appendChild(others);
+  pg.appendChild(card);
+
+  function paint() {
+    sa.querySelector(".pp-num").textContent = a;
+    sh.querySelector(".pp-num").textContent = h;
+    quick.querySelectorAll(".pp-q").forEach((b, i) => {
+      b.classList.toggle("on", PRED_QUICK[i][0] === h && PRED_QUICK[i][1] === a);
+    });
+    const w = winOf(t, k);
+    note.innerHTML = "⏳ אפשר לנחש עד <b>דקה 20</b> של המשחק" +
+      (w && w.sit ? ' · מנחשים: ' + w.sit.map(x => esc(P[x])).join(" ו") : "");
+    const now = (Social.pred[key] || {})[me];
+    lock.textContent = now ? "🔮 עדכן את הניחוש" : "🔮 נעל את הניחוש";
+    const w2 = winOf(t, k);
+    const rows = (w2 ? w2.sit : []).filter(x => x !== me).map(x => {
+      const g = (Social.pred[key] || {})[x];
+      return '<div class="pp-other"><span>' + esc(P[x]) + "</span><b>" +
+        (g ? '<span class="ltr">' + g.a + " - " + g.h + "</span>" : "עוד לא ניחש") + "</b></div>";
+    });
+    others.innerHTML = now && rows.length ? rows.join("") : "";
+  }
+  paint();
+
+  document.body.appendChild(pg);
+  requestAnimationFrame(() => pg.classList.add("in"));
+}
+
+/* called after the social layer loads: if there is a guess waiting, show it */
+function offerPrediction() {
+  const me = meWho();
+  const hit = predOpenFor(me);
+  if (!hit) return;
+  const key = hit.t.i + "_" + hit.k;
+  if (PRED_SHOWN === key) return;                 // only once per match per visit
+  if (document.getElementById("matchPage")) return;
+  PRED_SHOWN = key;
+  openPredictionPage(hit.t, hit.k);
 }
 
 /* ---- reactions under a played match */
@@ -2483,7 +2622,7 @@ function predTab(t, k, body) {
   if (!played && !canPredict(t, k)) {
     const who = w ? w.sit.map(x => esc(P[x])).join(" ו") : "";
     body.appendChild(el("div", "notice",
-      !w ? "הניחוש על המשחק הזה ייפתח עם הפוש שמודיע עליו — לשני השחקנים שלא משחקים בו, ל־3 דקות."
+      !w ? "הניחוש על המשחק הזה ייפתח עם הפוש שמודיע עליו — לשני השחקנים שלא משחקים בו, עד דקה 20 של המשחק."
          : winOpen(w) ? "🔮 " + who + " מנחשים עכשיו · " + '<span class="pred-timer" data-close="' + w.closeMs + '">⏳ ' + mmss(w.closeMs - Date.now()) + "</span>"
          : "הניחושים על המשחק הזה נסגרו."));
   }
@@ -2539,7 +2678,7 @@ function predBoard(t) {
   const sec = el("section", "block");
   sec.id = "predBoard";
   sec.setAttribute("data-t", String(t.i));
-  sec.innerHTML = '<div class="bhead"><h2>טבלת המנחשים 🔮</h2><span class="note">מנחשים רק מי שלא משחק, 3 דקות מהפוש · 3 על תוצאה מדויקת · 1 על המנצח או תיקו</span></div>';
+  sec.innerHTML = '<div class="bhead"><h2>טבלת המנחשים 🔮</h2><span class="note">מנחשים רק מי שלא משחק, עד דקה 20 של המשחק · 3 על תוצאה מדויקת · 1 על המנצח או תיקו</span></div>';
   const season = TS.filter(x => x.season === t.season);
   [["הטורניר", [t]], ["העונה", season]].forEach(([label, ts]) => {
     const rows = predTotals(ts);
@@ -2594,7 +2733,7 @@ function predPanel(t) {
         const m = t.m[nk], on = [m[0], m[1], m[3], m[4]];
         const sit = t.players.filter(p => on.indexOf(p) < 0);
         now.appendChild(el("div", "notice", sit.indexOf(me) >= 0
-          ? "🔮 <b>אתה מנחש את מחזור " + (nk + 1) + "!</b> הניחוש ייפתח עם הפוש שמודיע עליו — יהיו לך 3 דקות."
+          ? "🔮 <b>אתה מנחש את מחזור " + (nk + 1) + "!</b> הניחוש ייפתח עם הפוש, ואפשר לשנות עד דקה 20 של המשחק."
           : "במחזור " + (nk + 1) + " מנחשים " + sit.map(x => esc(P[x])).join(" ו") + ". אתה משחק בו — בהצלחה ⚽"));
       }
     }
@@ -2637,7 +2776,7 @@ function predPanel(t) {
   box.appendChild(el("section", "block pn-rules",
     '<div class="bhead"><h2>החוקים</h2></div>' +
     "<div>🔮 מנחשים רק שני השחקנים שלא משחקים במשחק.</div>" +
-    "<div>⏳ יש 3 דקות מרגע הפוש שמודיע על המשחק.</div>" +
+    "<div>⏳ פתוח מרגע הפוש ועד שהמשחק מגיע לדקה 20 — המצלמה קוראת את השעון מהמסך.</div>" +
     "<div>🎯 תוצאה מדויקת — 3 נקודות · ✓ המנצח הנכון או תיקו — נקודה · אחרת 0.</div>" +
     "<div>🙈 הניחוש של השני נחשף רק כשהזמן נגמר.</div>"));
   if (!Social.loaded) Social.load();
