@@ -1036,7 +1036,7 @@ def teach_clubs(args):
 
 
 def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False, exact=False,
-         close_pred=False):
+         close_pred=False, clock=None):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
@@ -1053,6 +1053,8 @@ def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False,
         payload["exact"] = True
     if close_pred:
         payload["closePred"] = True
+    if clock is not None:
+        payload["clock"] = clock          # the match minute, for the app to show
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -1788,7 +1790,7 @@ def run(args):
                             os.makedirs(folder, exist_ok=True)
                             imwrite_any(os.path.join(folder, "%s_%d-%d.png" %
                                                      (time.strftime("%H%M%S"), h, a)), cut(plate))
-                        r = send(key, h, a, args.dry_run, codes, correct=fix)
+                        r = send(key, h, a, args.dry_run, codes, correct=fix, clock=clock_seen)
                         if r.get("live") is False:
                             if time.time() - idle_note > 60:
                                 print(now, "אין משחק חי פתוח באפליקציה")

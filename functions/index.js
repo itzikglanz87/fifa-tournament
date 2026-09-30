@@ -484,7 +484,11 @@ exports.liveScore = onCall(async req => {
   }
   if (h < (cur.h || 0) || a < (cur.a || 0)) return { live: true, h: cur.h, a: cur.a, ignored: "lower" };
   if (h === cur.h && a === cur.a) return { live: true, h: cur.h, a: cur.a, same: true };
-  await ref.set(Object.assign({}, cur, { h, a, at: new Date().toISOString(), src: "cam", by: -1 }));
+  /* the match minute travels with the score, so the app can say where the
+     game is rather than how long ago somebody pressed a button */
+  const upd = { h, a, at: new Date().toISOString(), src: "cam", by: -1 };
+  if (typeof d.clock === "number" && d.clock >= 0 && d.clock <= 90) upd.min = d.clock;
+  await ref.set(Object.assign({}, cur, upd));
   console.log("cam score", cur.t + "_" + cur.k, cur.h + "-" + cur.a, "->", h + "-" + a, moved != null ? "(moved to match " + (moved + 1) + ")" : "");
   return { live: true, h, a, updated: true, k: cur.k, moved };
 });
