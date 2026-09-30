@@ -2351,7 +2351,9 @@ const Social = {
 /* A guess waiting for you is the first thing the app shows, on opening it and
    on coming back to it — that is the whole difference between a game people
    play and a page people never found. */
-setTimeout(() => Social.load().then(() => offerPrediction()).catch(() => {}), 1500);
+setTimeout(() => Social.load().then(() => {
+  if (!predViewFromHash()) offerPrediction();
+}).catch(() => {}), 1500);
 /* back from a notification tap: the window may have just opened */
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) Social.load(true).then(() => offerPrediction()).catch(() => {});
@@ -2431,7 +2433,7 @@ function predOpenFor(me) {
 }
 
 /* the takeover: shown on opening the app while a window is open for you */
-function openPredictionPage(t, k) {
+function openPredictionPage(t, k, preview) {
   const m = t.m[k], key = t.i + "_" + k, me = meWho();
   const mine = (Social.pred[key] || {})[me];
   const old = document.getElementById("matchPage");
@@ -2495,6 +2497,7 @@ function openPredictionPage(t, k) {
 
   const lock = el("button", "btn pp-lock", mine ? "🔮 עדכן את הניחוש" : "🔮 נעל את הניחוש");
   lock.onclick = async () => {
+    if (preview) { flash("תצוגה מקדימה — הניחוש לא נשמר"); return; }
     lock.disabled = true;
     const ok = await savePrediction(t, k, h, a);
     lock.disabled = false;
@@ -2513,8 +2516,10 @@ function openPredictionPage(t, k) {
       b.classList.toggle("on", PRED_QUICK[i][0] === h && PRED_QUICK[i][1] === a);
     });
     const w = winOf(t, k);
-    note.innerHTML = "⏳ אפשר לנחש עד <b>דקה 20</b> של המשחק" +
-      (w && w.sit ? ' · מנחשים: ' + w.sit.map(x => esc(P[x])).join(" ו") : "");
+    note.innerHTML = preview
+      ? "👀 <b>תצוגה מקדימה</b> — ככה זה ייראה למי שמנחש. שום דבר לא נשמר."
+      : "⏳ אפשר לנחש עד <b>דקה 20</b> של המשחק" +
+        (w && w.sit ? " · מנחשים: " + w.sit.map(x => esc(P[x])).join(" ו") : "");
     const now = (Social.pred[key] || {})[me];
     lock.textContent = now ? "🔮 עדכן את הניחוש" : "🔮 נעל את הניחוש";
     const w2 = winOf(t, k);
@@ -3441,6 +3446,20 @@ function pollFromHash() {
   try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
   return true;
 }
+/* A look at the guessing screen without a match being on: the admin asked to
+   see it before it matters, and clearing a real result to conjure a window
+   would both touch the archive and ring five phones. Nothing is saved from
+   here. */
+function predViewFromHash() {
+  if (!/^#predview$/.test(location.hash || "")) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  const t = Object.values(LIVE).sort((x, y) => y.i - x.i)[0] || TSS[TSS.length - 1];
+  if (!t) { flash("אין טורניר להציג עליו", true); return true; }
+  openPredictionPage(t, 0, true);
+  return true;
+}
+addEventListener("hashchange", () => { predViewFromHash(); });
+
 const openPollWhenReady = () => Social.load(true).then(() => { go("live:games"); openPollPage(); });
 addEventListener("hashchange", () => { if (pollFromHash()) openPollWhenReady(); });
 if ("serviceWorker" in navigator) {
