@@ -2726,6 +2726,14 @@ let PRED_SHOWN = null;              // the fixture already put in front of us
 
 function predOpenFor(me) {
   if (typeof me !== "number" || me < 0) return null;
+  /* the match on the television comes first: more than one window can be open
+     at once when they play out of order, and the one being played is the one
+     worth putting in front of anybody */
+  const live = Object.keys(Live.map || {}).map(k => Live.map[k]).filter(Boolean);
+  for (const x of live) {
+    const t = LIVE[x.t];
+    if (t && canPredict(t, x.k)) return { t, k: x.k };
+  }
   for (const t of Object.values(LIVE)) {
     for (let k = 0; k < t.m.length; k++) {
       if (canPredict(t, k)) return { t, k };
