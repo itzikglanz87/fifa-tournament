@@ -7582,7 +7582,7 @@ const Social = {
    on coming back to it — that is the whole difference between a game people
    play and a page people never found. */
 setTimeout(() => Social.load().then(() => {
-  if (soundsFromHash() || watchViewFromHash()) return;
+  if (soundsFromHash() || watchViewFromHash() || finalViewFromHash()) return;
   if (!predViewFromHash()) offerPrediction();
 }).catch(() => {}), 1500);
 /* back from a notification tap: the window may have just opened */
@@ -8712,6 +8712,73 @@ function watchViewFromHash() {
   return true;
 }
 addEventListener("hashchange", () => { watchViewFromHash(); });
+
+/* The final as it looks when the two legs end level and the golden goal is
+   still to come, and then as it looks once the camera has decided it.
+
+   Built on a copy of the latest tournament with the scores filled in, so
+   nothing real is touched: the buttons that would write are disabled, and the
+   copy never enters the store. */
+function finalViewFromHash() {
+  if (!/^#finalview$/.test(location.hash || "")) return false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  const src = Object.values(LIVE).sort((x, y) => y.i - x.i)[0] || TSS[TSS.length - 1];
+  if (!src || !src.rec) { flash("אין טורניר להציג עליו", true); return true; }
+
+  const build = decided => {
+    const rec = JSON.parse(JSON.stringify(src.rec));
+    rec.i = -1;                                   // never a real tournament
+    rec.scores = (rec.scores || []).map((x, i) => (x && x[0] != null) ? x : [i % 3, (i + 1) % 3]);
+    rec.final = [[1, 1], [1, 1]];                 // level on aggregate
+    const t = decorate(hydrate(rec));
+    if (decided) { rec.gg = true; rec.champs = [t.table[2], t.table[3]].slice().sort((a, b) => a - b); }
+    return decorate(hydrate(rec));
+  };
+
+  const old2 = document.getElementById("matchPage");
+  if (old2) old2.remove();
+  const pg = el("div", "mpage");
+  pg.id = "matchPage";
+  const top = el("div", "mp-top");
+  top.innerHTML = '<span></span><div class="mp-title"><div>🥇 הגמר</div>' +
+    '<div class="mut">תצוגה מקדימה — שום דבר לא נשמר</div></div>';
+  const back = el("button", "mp-back", "←");
+  back.onclick = () => closeMatch(false);
+  top.appendChild(back);
+  pg.appendChild(top);
+
+  const host = el("div");
+  pg.appendChild(host);
+
+  let decided = false;
+  const draw = () => {
+    const t = build(decided);
+    finalOpened[t.i] = true;                      // skip the "open the final" gate
+    host.innerHTML = "";
+    const inner = el("div");
+    renderFinal(t, inner);
+    host.appendChild(inner);
+    /* nothing in a preview may write: every control is dead */
+    inner.querySelectorAll("button, input").forEach(n => { n.disabled = true; });
+    const row = el("div", "chips");
+    row.style.cssText = "padding:12px 14px";
+    const b = el("button", "btn sm", decided ? "↩ חזרה למצב שלפני ההכרעה" : "⚽ הדמה שער זהב");
+    b.onclick = () => { decided = !decided; draw(); };
+    row.appendChild(b);
+    host.appendChild(row);
+    host.appendChild(el("div", "mut",
+      decided
+        ? "ככה ייראה המסך אחרי שהמצלמה מזהה את השער הראשון ומכריזה על האלופים."
+        : "השוויון המצרפי פתוח. במשחק אמיתי המצלמה תראה את השער הראשון ותכריע לבד — הכפתורים כאן הם הדרך הידנית."));
+    host.querySelectorAll(".chips button").forEach(n => { n.disabled = false; });
+  };
+  draw();
+
+  document.body.appendChild(pg);
+  requestAnimationFrame(() => pg.classList.add("in"));
+  return true;
+}
+addEventListener("hashchange", () => { finalViewFromHash(); });
 
 function soundsFromHash() {
   if (!/^#sounds$/.test(location.hash || "")) return false;
