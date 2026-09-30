@@ -1132,6 +1132,7 @@ def run(args):
     code_run = None                          # the same club pair, seen how often
     full_time, clock_seen = None, None        # when the clock first showed ninety
     pred_closed = False                       # told the server the guessing is over
+    late, late_first = False, None            # has this match reached its closing stretch
     ninety = 0                                # how often it has said so
     final_seen, final_try = None, 0           # the MATCH RESULTS screen, read twice
     goals = {"h": 0, "a": 0}
@@ -1382,6 +1383,7 @@ def run(args):
                             goals["h"], goals["a"] = last_sent
                             cell_ref, cell_pending = {}, {}
                             pred_closed = False
+                            late, late_first = False, None
                             print(now, "נפתח משחק חי:", codes["h"], "נגד", codes["a"], "· 0 - 0")
                         elif r.get("golden") == "pending":
                             # the final is level and being played out: no fixture
@@ -1400,6 +1402,18 @@ def run(args):
                 mins = read_clock(frame, plate)
                 if mins is not None:
                     clock_seen = mins
+                    # A match that has been late once is late from then on.
+                    # The last reading is no guide: the clock gave 89 and then
+                    # 28 while the game was ending, and both were the same
+                    # match. Two readings of 85 or more, half a minute apart,
+                    # are what a real second half looks like and what a stray
+                    # misread does not.
+                    if mins >= 85:
+                        if late_first is None:
+                            late_first = time.time()
+                        elif not late and time.time() - late_first > 30:
+                            late = True
+                            print(now, "המשחק בשלב מאוחר (דקה " + str(mins) + ")")
                     if mins >= 90:
                         # The clock is read the same way the score is, and it
                         # has been seen to say ninety and then eighty-three.
@@ -1451,6 +1465,7 @@ def run(args):
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate, code_run = None, None, None
                 full_time, final_seen, clock_seen, ninety = None, None, None, 0
+                late, late_first = False, None
                 time.sleep(args.interval)
                 continue
 
@@ -1487,9 +1502,9 @@ def run(args):
             # half a minute; otherwise this could be a pause to argue, and four
             # minutes is the careful answer.
             gone = (time.time() - last_seen_plate) if last_seen_plate else 0
-            patience = 20 if full_time else (30 if (clock_seen or 0) >= 80 else 240)
+            patience = 20 if full_time else (35 if late else 240)
             if (not plate and last_seen_plate and gone > patience and not args.test
-                    and (full_time or (clock_seen or 0) >= 80)):
+                    and (full_time or late)):
                 print(now, "המשחק נגמר (דקה " + str(clock_seen) + ", הלוח נעלם) — מסיים ושומר")
                 try:
                     r = send(key, 0, 0, args.dry_run, None, finish=True)
@@ -1507,7 +1522,7 @@ def run(args):
             # restarted, or because nobody had started playing yet, was enough
             # to write down a result for a match still in progress — which is
             # exactly what it did to Liverpool against Bayern.
-            elif last_seen_plate and gone > 240 and (clock_seen or 0) >= 45:
+            elif last_seen_plate and gone > 240 and late:
                 # Four minutes with no board. A pause to argue about a penalty
                 # does not last that long, so the match is over: write the score
                 # into the tournament and be ready for the next one. Four
