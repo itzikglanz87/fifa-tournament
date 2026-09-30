@@ -488,6 +488,14 @@ exports.liveScore = onCall(async req => {
       let body = "מחזור " + (hit.i + 1) + ", " + pr(hit.h[0], hit.h[1]) + " בבית עם " + hit.hc +
                  " נגד " + pr(hit.a[0], hit.a[1]) + " בחוץ עם " + hit.ac;
       if (opened) body += T.predLine(sit);
+      /* and who is up after this one, so the next pair can get themselves
+         ready rather than find out when the television changes */
+      const nextUp = der.m.find(m => unplayed(m) && m.i !== hit.i);
+      if (nextUp) {
+        body += String.fromCharCode(10) + "⏭ הבא בתור: מחזור " + (nextUp.i + 1) + ", " +
+                pr(nextUp.h[0], nextUp.h[1]) + " (" + nextUp.hc + ") נגד " +
+                pr(nextUp.a[0], nextUp.a[1]) + " (" + nextUp.ac + ")";
+      }
       const r = await sendToAll("🔴 מתחיל עכשיו · 0 - 0", body);
       console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r), opened ? "(window opened)" : "");
     }
