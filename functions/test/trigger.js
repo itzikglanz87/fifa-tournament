@@ -94,7 +94,7 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
 
   await change("t1001", null, base);
   expect("opening a tournament announces the first match", sent.length === 1 && /נפתח/.test(sent[0].title), sent[0] && sent[0].title);
-  expect("…with the two who sit it out invited to predict", /🔮 .+ו.+ — יש לכם 3 דקות לנחש!/.test(sent[0].body), sent[0] && sent[0].body);
+  expect("…with the two who sit it out invited to predict", /🔮 .+ו.+ — נחשו עד דקה 20!/.test(sent[0].body), sent[0] && sent[0].body);
   const w0 = store["predWindows/1001_0"];
   expect("…and opens the first prediction window for them", !!w0 && w0.sit.length === 2 && w0.closeMs - Date.now() > 170e3);
   sent.length = 0;
@@ -120,7 +120,7 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const r2 = withScores(r1b, [[1, [2, 2]]]);
   await change("t1001", r1b, r2);
   expect("the next new result sends again", sent.length === 2, sent[1] && sent[1].body);
-  expect("…and opens the next prediction window", !!store["predWindows/1001_2"] && /3 דקות לנחש/.test(sent[1].body));
+  expect("…and opens the next prediction window", !!store["predWindows/1001_2"] && /נחשו עד דקה 20/.test(sent[1].body));
   expect("the first result opened match 2's window once", !!store["predWindows/1001_1"]);
 
   await change("t1001", r2, null);
@@ -308,6 +308,16 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
 
     /* the match is over: the score goes into the tournament and the live one
        is closed, exactly as if the admin had pressed the button */
+    /* the twentieth minute shuts the guessing */
+    store["predWindows/2001_" + fx.i] = { t: 2001, k: fx.i, sit: [1, 2], closeMs: Date.now() + 600000 };
+    const shut = await call2({ key: "right-key", h: 0, a: 0, closePred: true });
+    expect("the twentieth minute closes the guessing",
+           shut.closedPred === true && store["predWindows/2001_" + fx.i].closeMs <= Date.now(),
+           JSON.stringify(shut));
+    const again2 = await call2({ key: "right-key", h: 0, a: 0, closePred: true });
+    expect("…and saying so twice changes nothing", again2.already === true, JSON.stringify(again2));
+    delete store["predWindows/2001_" + fx.i];
+
     store["live/2001_" + fx.i].flip = true;          // the board had the sides reversed
     const scr = await call2({ key: "right-key", h: 7, a: 0, finish: true, exact: true });
     expect("the result screen decides the final score, the right way round",

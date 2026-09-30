@@ -119,6 +119,6 @@ function nextLeagueMatch(rec) {
   const on = new Set([nx.h[0], nx.h[1], nx.a[0], nx.a[1]]);
   return { k: nx.i, sit: (rec.slots || []).filter(p => !on.has(p)) };
 }
-const predLine = sit => sit.length ? "\n🔮 " + sit.map(p => P[p]).join(" ו") + " — יש לכם 3 דקות לנחש!" : "";
+const predLine = sit => sit.length ? "\n🔮 " + sit.map(p => P[p]).join(" ו") + " — נחשו עד דקה 20!" : "";
 
 module.exports = { unpack, derive, progressOf, nextEventText, nextLeagueMatch, predLine, P, TPL };

@@ -102,7 +102,12 @@ async function sendToAll(title, body, onlyToken, url, tag) {
    this document, so a late or wrong-player prediction is refused there, not
    just hidden by the app. Opened once per match: a result cleared and typed
    again does not reopen it. */
-const PRED_MS = 3 * 60e3 + 5e3;
+/* Guessing used to close three minutes after the push, which asked people to
+   be holding their phone at that moment. It closes when the match reaches its
+   twentieth minute instead — the camera reads the clock and says so — which
+   is several real minutes, and early enough that the score is usually still
+   nothing much. This is only the fallback for when no camera is watching. */
+const PRED_MS = 25 * 60e3;
 async function openPredWindow(docId, rec, nx) {
   const tid = rec.s ? rec.s * 1000 + (rec.n || rec.i) : (rec.n || rec.i);
   const ref = db.doc("predWindows/" + tid + "_" + nx.k);
@@ -110,7 +115,8 @@ async function openPredWindow(docId, rec, nx) {
   return db.runTransaction(async tx => {
     const s = await tx.get(ref);
     if (s.exists) return false;
-    tx.set(ref, { t: tid, k: nx.k, sit: nx.sit, open: new Date(now), close: new Date(now + PRED_MS), closeMs: now + PRED_MS });
+    tx.set(ref, { t: tid, k: nx.k, sit: nx.sit, open: new Date(now),
+                  close: new Date(now + PRED_MS), closeMs: now + PRED_MS, byClock: 20 });
     return true;
   });
 }
@@ -333,6 +339,17 @@ exports.liveScore = onCall(async req => {
     const tst = await db.doc("meta/test").get();
     return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null,
              rec: rec, tournaments: all.length, quiet: tst.exists && tst.data().on === true };
+  }
+  if (d.closePred) {                              // the match has reached minute 20
+    if (!docs.length) return { live: false };
+    const cur = docs[0].data() || {};
+    const ref = db.doc("predWindows/" + cur.t + "_" + cur.k);
+    const s2 = await ref.get();
+    if (!s2.exists) return { live: true, noWindow: true };
+    if ((s2.data().closeMs || 0) <= Date.now()) return { live: true, already: true };
+    await ref.set(Object.assign({}, s2.data(), { closeMs: Date.now(), close: new Date(), byClockAt: 20 }));
+    console.log("predictions closed on the clock", cur.t + "_" + cur.k);
+    return { live: true, closedPred: true, k: cur.k };
   }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };

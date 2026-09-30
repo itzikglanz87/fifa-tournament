@@ -1035,7 +1035,8 @@ def teach_clubs(args):
     print("הקיצורים שידועים עכשיו:", json.dumps(known, ensure_ascii=False))
 
 
-def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False, exact=False):
+def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False, exact=False,
+         close_pred=False):
     if dry:
         print("   (בדיקה בלבד — לא נשלח)")
         return {"dry": True}
@@ -1050,6 +1051,8 @@ def send(key, h, a, dry, clubs=None, restart=False, finish=False, correct=False,
         payload["correct"] = True
     if exact:
         payload["exact"] = True
+    if close_pred:
+        payload["closePred"] = True
     body = json.dumps({"data": payload}).encode()
     req = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -1126,6 +1129,7 @@ def run(args):
     open_try = 0
     code_run = None                          # the same club pair, seen how often
     full_time, clock_seen = None, None        # when the clock first showed ninety
+    pred_closed = False                       # told the server the guessing is over
     ninety = 0                                # how often it has said so
     final_seen, final_try = None, 0           # the MATCH RESULTS screen, read twice
     goals = {"h": 0, "a": 0}
@@ -1375,6 +1379,7 @@ def run(args):
                             last_sent = (r.get("h", 0), r.get("a", 0))
                             goals["h"], goals["a"] = last_sent
                             cell_ref, cell_pending = {}, {}
+                            pred_closed = False
                             print(now, "נפתח משחק חי:", codes["h"], "נגד", codes["a"], "· 0 - 0")
                         elif r.get("noFixture"):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
@@ -1393,6 +1398,17 @@ def run(args):
                         if ninety >= 3 and full_time is None:
                             full_time = time.time()
                             print(now, "השעון הגיע ל־90 שלוש פעמים — סוגר בעוד עשר שניות")
+                    # Guessing closes when the match reaches its twentieth
+                    # minute. Nobody watching the television can be expected to
+                    # notice that themselves, so the reader says so once.
+                    if mins >= 20 and not pred_closed and not args.test:
+                        pred_closed = True
+                        try:
+                            r = send(key, 0, 0, args.dry_run, None, close_pred=True)
+                            if r.get("closedPred"):
+                                print(now, "דקה 20 — הניחושים נסגרו")
+                        except Exception as e:
+                            print(now, "סגירת ניחושים נכשלה:", e)
                     elif mins < 80:
                         full_time, ninety = None, 0   # a new match is counting
             # full time on the clock, and then the board goes: that is the
