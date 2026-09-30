@@ -7347,8 +7347,10 @@ function openPredictionPage(t, k, preview) {
 
   const card = el("div", "pp-card");
   const head = el("div", "pp-head");
-  head.innerHTML = side(m[3], m[4], CLUBS[m[5]] || "") +
-    '<div class="pp-vs">נגד</div>' + side(m[0], m[1], CLUBS[m[2]] || "");
+  /* home on the right, as everywhere else in the app: in a right-to-left row
+     the first child is the rightmost one */
+  head.innerHTML = side(m[0], m[1], CLUBS[m[2]] || "") +
+    '<div class="pp-vs">נגד</div>' + side(m[3], m[4], CLUBS[m[5]] || "");
   card.appendChild(head);
 
   /* the score, home on the right as everywhere else in the app */
@@ -7366,7 +7368,10 @@ function openPredictionPage(t, k, preview) {
     return box;
   };
   const sa = stepper("a"), sh = stepper("h");
-  board.append(sa, el("div", "pp-dash", "-"), sh);
+  /* and the home figure under the home pair, which put it on the right too —
+     it was sitting on the left, so the steppers disagreed with the quick
+     picks beneath them about which number belonged to whom */
+  board.append(sh, el("div", "pp-dash", "-"), sa);
   card.appendChild(board);
 
   const quick = el("div", "pp-quick");
