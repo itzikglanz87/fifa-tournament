@@ -308,12 +308,22 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
            JSON.stringify(store["tournaments/t4001"].scores[fx.i]));
     delete store["live/4001_" + fx.i];
     store["tournaments/t4001"].scores[fx.i] = { __a: [null, null] };
+    /* playing out of order: the fixture that kicks off opens its own window */
+    delete store["predWindows/1005_" + fx.i];   // uid = season*1000 + num
     const kickBefore = sent.length;
     const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
     expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));
     expect("…and tells everyone the match has kicked off",
            sent.length > kickBefore && /מתחיל עכשיו/.test(sent[sent.length - 1].title || ""),
            JSON.stringify(sent[sent.length - 1] || null));
+    const wk = store["predWindows/1005_" + fx.i];
+    const playing = [fx.h[0], fx.h[1], fx.a[0], fx.a[1]];
+    expect("…and opens the guessing on the match being played, not the next in order",
+           !!wk && wk.k === fx.i && wk.sit.every(p => playing.indexOf(p) < 0) && wk.sit.length > 0,
+           JSON.stringify(wk));
+    expect("…with the invitation in that same push",
+           /נחשו עד דקה 20/.test(sent[sent.length - 1].body || ""),
+           JSON.stringify(sent[sent.length - 1].body));
     expect("…with the sides the right way round", store["live/4001_" + fx.i].h === 0 && store["live/4001_" + fx.i].a === 1,
            JSON.stringify(store["live/4001_" + fx.i]));
     delete store["live/4001_" + fx.i]; delete store["meta/live"]; delete store["tournaments/t4001"];

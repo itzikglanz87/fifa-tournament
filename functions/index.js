@@ -108,6 +108,15 @@ async function sendToAll(title, body, onlyToken, url, tag) {
    is several real minutes, and early enough that the score is usually still
    nothing much. This is only the fallback for when no camera is watching. */
 const PRED_MS = 25 * 60e3;
+/* Who is sitting a given fixture out — the ones who may guess it. The
+   ordered version of this only knows about the next match in the list; what
+   is actually being played is decided at the console, so a fixture has to be
+   able to answer this for itself. */
+function sitOutOf(rec, m) {
+  const on = [m.h[0], m.h[1], m.a[0], m.a[1]];
+  return (rec.slots || []).filter(p => on.indexOf(p) < 0);
+}
+
 async function openPredWindow(docId, rec, nx) {
   const tid = rec.s ? rec.s * 1000 + (rec.n || rec.i) : (rec.n || rec.i);
   const ref = db.doc("predWindows/" + tid + "_" + nx.k);
@@ -461,15 +470,26 @@ exports.liveScore = onCall(async req => {
     }
     await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
     console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
+    /* Guessing follows what is being played, not the order of the list. The
+       window for the next fixture in order was opened when the previous
+       result was saved, which is right when they play in order and wrong the
+       moment they do not — start with match three and the invitation went to
+       whoever sits out match one. So the fixture that has actually kicked off
+       opens its own window here, for whoever is sitting this one out. */
+    const recNow = T.unpack(latest.data);
+    const sit = sitOutOf(recNow, hit);
+    const opened = await openPredWindow("t" + pick.t, recNow, { k: hit.i, sit: sit });
+
     /* The whistle has gone. Everyone gets told which match is being played —
        the two at the sticks know already, the other four do not, and a live
        score nobody was told about is a score nobody watches. */
     if (!(await quiet())) {
       const pr = (x, y) => T.P[x] + " ו" + T.P[y];
-      const body = "מחזור " + (hit.i + 1) + ", " + pr(hit.h[0], hit.h[1]) + " בבית עם " + hit.hc +
-                   " נגד " + pr(hit.a[0], hit.a[1]) + " בחוץ עם " + hit.ac;
+      let body = "מחזור " + (hit.i + 1) + ", " + pr(hit.h[0], hit.h[1]) + " בבית עם " + hit.hc +
+                 " נגד " + pr(hit.a[0], hit.a[1]) + " בחוץ עם " + hit.ac;
+      if (opened) body += T.predLine(sit);
       const r = await sendToAll("🔴 מתחיל עכשיו · 0 - 0", body);
-      console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r));
+      console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r), opened ? "(window opened)" : "");
     }
     return { live: true, h: doc.h, a: doc.a, k: hit.i, t: pick.t, opened: true };
   }
