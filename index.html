@@ -686,6 +686,34 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
 .livebar.goal .lv-score b{animation:goalpop .5s ease-out}
 @keyframes goalpop{0%{transform:scale(1)} 35%{transform:scale(1.22)} 100%{transform:scale(1)}}
 
+.watch{position:fixed; inset:0; z-index:120; background:var(--pitch);
+  display:grid; place-items:center; padding:18px}
+body.watching{overflow:hidden}
+.watch-x{position:absolute; top:12px; inset-inline-end:12px; width:40px; height:40px;
+  background:var(--panel2); border:1px solid var(--line2); color:var(--ink);
+  font-size:17px; cursor:pointer; z-index:2}
+.watch-body{width:100%; max-width:760px; display:flex; flex-direction:column; gap:22px; align-items:center}
+.w-top{display:flex; align-items:center; gap:8px; color:var(--ink2); font-size:14px; font-weight:700}
+.w-dot{width:9px; height:9px; border-radius:50%; background:#F04A5A; animation:lv-pulse 1.4s infinite}
+.w-min{background:var(--panel2); border:1px solid var(--line2); padding:2px 9px; margin-inline-start:6px;
+  font-variant-numeric:tabular-nums}
+.w-row{display:flex; align-items:center; justify-content:center; gap:14px; width:100%}
+.w-side{flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; min-width:0}
+.w-faces{display:flex}
+.w-face{width:58px; height:58px; border-radius:50%; overflow:hidden; border:3px solid var(--c);
+  background:var(--panel2); display:grid; place-items:center; font-weight:800; margin-inline-start:-14px}
+.w-face:first-child{margin-inline-start:0}
+.w-names{font-family:"Secular One",sans-serif; font-size:20px; text-align:center; line-height:1.25}
+.w-club{font-size:14px; color:var(--ink2)}
+.w-score b{font-family:"Secular One",sans-serif; font-size:76px; font-weight:400; line-height:1;
+  font-variant-numeric:tabular-nums}
+.w-foot{color:var(--muted); font-size:12.5px}
+@media (max-width:520px){
+  .w-score b{font-size:56px}
+  .w-face{width:46px; height:46px}
+  .w-names{font-size:16px}
+}
+
 .snd{display:flex; flex-direction:column; gap:6px}
 .snd-row{display:flex; align-items:center; gap:10px; background:var(--panel2);
   border:1px solid var(--line2); color:var(--ink); padding:10px 12px; font:inherit;
@@ -7307,6 +7335,7 @@ const Live = {
   },
   paint() {
     document.querySelectorAll(".livebar[data-t]").forEach(n => fillLive(n));
+    paintWatch();
     const host = document.getElementById("v-live");
     /* a match that went live while this screen was open needs its strip */
     if (host && !host.hidden && LIVE_PANE === "games" && Object.keys(this.map).length && !document.querySelector(".livebar")) refreshLive();
@@ -7331,6 +7360,76 @@ const Live = {
   }
 };
 setTimeout(() => Live.start(), 1200);
+
+/* ==========================================================================
+   The big screen
+
+   Four of the six are not playing, and until now their view of the match was
+   a strip among a list of fixtures. This is the match and nothing else: both
+   pairs, the score in figures you can read across a room, and the minute the
+   camera is reading off the television. Prop a phone against the bottle and
+   it is a scoreboard.
+   ========================================================================== */
+let WATCH = null;          // {t, k} while the big screen is up
+let WATCH_LOCK = null;     // the promise that keeps the screen awake
+
+function watchScreen(t, k) {
+  closeWatch();
+  WATCH = { t: t.i, k };
+  const pg = el("div", "watch");
+  pg.id = "watchScreen";
+
+  const out = el("button", "watch-x", "✕");
+  out.setAttribute("aria-label", "סגור");
+  out.onclick = () => closeWatch();
+  pg.appendChild(out);
+
+  const body = el("div", "watch-body");
+  pg.appendChild(body);
+  document.body.appendChild(pg);
+  document.body.classList.add("watching");
+  paintWatch();
+
+  /* a scoreboard that goes dark after thirty seconds is not a scoreboard */
+  try {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request("screen").then(l => { WATCH_LOCK = l; }).catch(() => {});
+    }
+  } catch (e) {}
+  return pg;
+}
+
+function closeWatch() {
+  const n = document.getElementById("watchScreen");
+  if (n) n.remove();
+  document.body.classList.remove("watching");
+  WATCH = null;
+  try { if (WATCH_LOCK) { WATCH_LOCK.release(); WATCH_LOCK = null; } } catch (e) {}
+}
+
+function paintWatch() {
+  if (!WATCH) return;
+  const host = document.querySelector("#watchScreen .watch-body");
+  const t = LIVE[WATCH.t];
+  if (!host || !t || !t.m[WATCH.k]) { closeWatch(); return; }
+  const m = t.m[WATCH.k], cur = Live.get(t, WATCH.k);
+  if (!cur) { closeWatch(); return; }
+
+  const side = (p1, p2, club) =>
+    '<div class="w-side"><div class="w-faces">' +
+      [p1, p2].map(w => '<i class="w-face" style="--c:' + PC(w) + '">' +
+        (photoOf(w) ? '<i class="pface pf' + w + '"></i>' : "<b>" + esc(P[w].slice(0, 1)) + "</b>") + "</i>").join("") +
+    '</div><div class="w-names">' + esc(P[p1]) + " ו" + esc(P[p2]) + "</div>" +
+    '<div class="w-club">' + esc(club) + "</div></div>";
+
+  host.innerHTML =
+    '<div class="w-top"><span class="w-dot"></span>חי · מחזור ' + (WATCH.k + 1) +
+      " · טורניר " + t.num + (cur.min != null ? '<span class="w-min">דקה ' + cur.min + "</span>" : "") + "</div>" +
+    '<div class="w-row">' + side(m[0], m[1], CLUBS[m[2]] || "") +
+      '<div class="w-score"><b class="ltr">' + cur.a + " - " + cur.h + "</b></div>" +
+      side(m[3], m[4], CLUBS[m[5]] || "") + "</div>" +
+    '<div class="w-foot">' + (cur.src === "cam" ? "🎥 מהמצלמה" : "מהאפליקציה") + "</div>";
+}
 
 /* the strip under an unplayed match: start it, tap goals, finish */
 function liveLine(t, k) {
@@ -7414,7 +7513,9 @@ function fillLive(n) {
      page beside the first fixture, which is where a goal is not happening */
   const toTable = el("button", "btn ghost sm", "📊 לטבלה");
   toTable.onclick = () => go("live:table");
-  row.append(gH, gA, undo, end, toTable);
+  const big = el("button", "btn ghost sm", "📺 מסך גדול");
+  big.onclick = () => watchScreen(t, k);
+  row.append(gH, gA, undo, end, toTable, big);
   n.append(head, score, row);
 }
 /* the minutes tick while a match is live */

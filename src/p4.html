@@ -2404,6 +2404,7 @@ const Live = {
   },
   paint() {
     document.querySelectorAll(".livebar[data-t]").forEach(n => fillLive(n));
+    paintWatch();
     const host = document.getElementById("v-live");
     /* a match that went live while this screen was open needs its strip */
     if (host && !host.hidden && LIVE_PANE === "games" && Object.keys(this.map).length && !document.querySelector(".livebar")) refreshLive();
@@ -2428,6 +2429,76 @@ const Live = {
   }
 };
 setTimeout(() => Live.start(), 1200);
+
+/* ==========================================================================
+   The big screen
+
+   Four of the six are not playing, and until now their view of the match was
+   a strip among a list of fixtures. This is the match and nothing else: both
+   pairs, the score in figures you can read across a room, and the minute the
+   camera is reading off the television. Prop a phone against the bottle and
+   it is a scoreboard.
+   ========================================================================== */
+let WATCH = null;          // {t, k} while the big screen is up
+let WATCH_LOCK = null;     // the promise that keeps the screen awake
+
+function watchScreen(t, k) {
+  closeWatch();
+  WATCH = { t: t.i, k };
+  const pg = el("div", "watch");
+  pg.id = "watchScreen";
+
+  const out = el("button", "watch-x", "✕");
+  out.setAttribute("aria-label", "סגור");
+  out.onclick = () => closeWatch();
+  pg.appendChild(out);
+
+  const body = el("div", "watch-body");
+  pg.appendChild(body);
+  document.body.appendChild(pg);
+  document.body.classList.add("watching");
+  paintWatch();
+
+  /* a scoreboard that goes dark after thirty seconds is not a scoreboard */
+  try {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request("screen").then(l => { WATCH_LOCK = l; }).catch(() => {});
+    }
+  } catch (e) {}
+  return pg;
+}
+
+function closeWatch() {
+  const n = document.getElementById("watchScreen");
+  if (n) n.remove();
+  document.body.classList.remove("watching");
+  WATCH = null;
+  try { if (WATCH_LOCK) { WATCH_LOCK.release(); WATCH_LOCK = null; } } catch (e) {}
+}
+
+function paintWatch() {
+  if (!WATCH) return;
+  const host = document.querySelector("#watchScreen .watch-body");
+  const t = LIVE[WATCH.t];
+  if (!host || !t || !t.m[WATCH.k]) { closeWatch(); return; }
+  const m = t.m[WATCH.k], cur = Live.get(t, WATCH.k);
+  if (!cur) { closeWatch(); return; }
+
+  const side = (p1, p2, club) =>
+    '<div class="w-side"><div class="w-faces">' +
+      [p1, p2].map(w => '<i class="w-face" style="--c:' + PC(w) + '">' +
+        (photoOf(w) ? '<i class="pface pf' + w + '"></i>' : "<b>" + esc(P[w].slice(0, 1)) + "</b>") + "</i>").join("") +
+    '</div><div class="w-names">' + esc(P[p1]) + " ו" + esc(P[p2]) + "</div>" +
+    '<div class="w-club">' + esc(club) + "</div></div>";
+
+  host.innerHTML =
+    '<div class="w-top"><span class="w-dot"></span>חי · מחזור ' + (WATCH.k + 1) +
+      " · טורניר " + t.num + (cur.min != null ? '<span class="w-min">דקה ' + cur.min + "</span>" : "") + "</div>" +
+    '<div class="w-row">' + side(m[0], m[1], CLUBS[m[2]] || "") +
+      '<div class="w-score"><b class="ltr">' + cur.a + " - " + cur.h + "</b></div>" +
+      side(m[3], m[4], CLUBS[m[5]] || "") + "</div>" +
+    '<div class="w-foot">' + (cur.src === "cam" ? "🎥 מהמצלמה" : "מהאפליקציה") + "</div>";
+}
 
 /* the strip under an unplayed match: start it, tap goals, finish */
 function liveLine(t, k) {
@@ -2511,7 +2582,9 @@ function fillLive(n) {
      page beside the first fixture, which is where a goal is not happening */
   const toTable = el("button", "btn ghost sm", "📊 לטבלה");
   toTable.onclick = () => go("live:table");
-  row.append(gH, gA, undo, end, toTable);
+  const big = el("button", "btn ghost sm", "📺 מסך גדול");
+  big.onclick = () => watchScreen(t, k);
+  row.append(gH, gA, undo, end, toTable, big);
   n.append(head, score, row);
 }
 /* the minutes tick while a match is live */

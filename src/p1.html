@@ -672,6 +672,34 @@ label.check input{accent-color:var(--gold); width:15px; height:15px}
 .livebar.goal .lv-score b{animation:goalpop .5s ease-out}
 @keyframes goalpop{0%{transform:scale(1)} 35%{transform:scale(1.22)} 100%{transform:scale(1)}}
 
+.watch{position:fixed; inset:0; z-index:120; background:var(--pitch);
+  display:grid; place-items:center; padding:18px}
+body.watching{overflow:hidden}
+.watch-x{position:absolute; top:12px; inset-inline-end:12px; width:40px; height:40px;
+  background:var(--panel2); border:1px solid var(--line2); color:var(--ink);
+  font-size:17px; cursor:pointer; z-index:2}
+.watch-body{width:100%; max-width:760px; display:flex; flex-direction:column; gap:22px; align-items:center}
+.w-top{display:flex; align-items:center; gap:8px; color:var(--ink2); font-size:14px; font-weight:700}
+.w-dot{width:9px; height:9px; border-radius:50%; background:#F04A5A; animation:lv-pulse 1.4s infinite}
+.w-min{background:var(--panel2); border:1px solid var(--line2); padding:2px 9px; margin-inline-start:6px;
+  font-variant-numeric:tabular-nums}
+.w-row{display:flex; align-items:center; justify-content:center; gap:14px; width:100%}
+.w-side{flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; min-width:0}
+.w-faces{display:flex}
+.w-face{width:58px; height:58px; border-radius:50%; overflow:hidden; border:3px solid var(--c);
+  background:var(--panel2); display:grid; place-items:center; font-weight:800; margin-inline-start:-14px}
+.w-face:first-child{margin-inline-start:0}
+.w-names{font-family:"Secular One",sans-serif; font-size:20px; text-align:center; line-height:1.25}
+.w-club{font-size:14px; color:var(--ink2)}
+.w-score b{font-family:"Secular One",sans-serif; font-size:76px; font-weight:400; line-height:1;
+  font-variant-numeric:tabular-nums}
+.w-foot{color:var(--muted); font-size:12.5px}
+@media (max-width:520px){
+  .w-score b{font-size:56px}
+  .w-face{width:46px; height:46px}
+  .w-names{font-size:16px}
+}
+
 .snd{display:flex; flex-direction:column; gap:6px}
 .snd-row{display:flex; align-items:center; gap:10px; background:var(--panel2);
   border:1px solid var(--line2); color:var(--ink); padding:10px 12px; font:inherit;
