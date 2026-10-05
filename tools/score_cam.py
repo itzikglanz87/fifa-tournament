@@ -282,13 +282,19 @@ CW = 56
 
 
 def crest_key(img):
-    """one crest, shrunk and levelled so two pictures of it can be compared"""
+    """One crest, shrunk and levelled so two pictures of it can be compared.
+
+    In colour, not in grey. These badges differ from one another mostly by
+    colour — PSG's navy against Bayern's red, Liverpool's red against Real's
+    white — and in grey they were being mistaken for each other. Shape alone
+    was naming the wrong club once in every six it named."""
     import cv2, numpy as np
-    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
-    g = cv2.resize(g, (CW, CW), interpolation=cv2.INTER_AREA).astype(np.float32)
-    g -= g.mean()
-    n = np.linalg.norm(g)
-    return g / n if n else g
+    c = img if img.ndim == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    c = cv2.resize(c, (CW, CW), interpolation=cv2.INTER_AREA).astype(np.float32)
+    v = c.reshape(-1)
+    v -= v.mean()
+    n = np.linalg.norm(v)
+    return v / n if n else v
 
 
 def imread_any(path):
@@ -324,7 +330,7 @@ def crest_templates():
     return out
 
 
-def read_crest(img, tpl, min_score=0.55, margin=0.06):
+def read_crest(img, tpl, min_score=0.62, margin=0.10):
     """which club's badge this is — only when one is clearly ahead"""
     if not tpl:
         return None
@@ -1202,18 +1208,12 @@ def run(args):
             region = cfg.get("region")
             if region:
                 crop_h = crop_a = cut(region)          # one area, read as a whole
+            # the clubs are read off the board that was found, below — the
+            # calibrated crest boxes belong to a camera position from before
+            # it was fixed to the wall, so whatever is at those coordinates
+            # now is not a crest, and a badge bank large enough to match
+            # something would name the wrong club and open the wrong fixture 
             codes = None
-            if cfg_boxes.get("home_crest") and cfg_boxes.get("away_crest"):
-                tpl = crest_templates()
-                ch = read_crest(cut(cfg_boxes["home_crest"]), tpl)
-                ca = read_crest(cut(cfg_boxes["away_crest"]), tpl)
-                if not (ch and ca) and cfg.get("clubs"):      # the other board style: letters
-                    known = cfg["clubs"]
-                    kh = read_code(cut(cfg_boxes["home_crest"]), known)
-                    ka = read_code(cut(cfg_boxes["away_crest"]), known)
-                    ch, ca = ch or (known.get(kh) if kh else None), ca or (known.get(ka) if ka else None)
-                if ch and ca and ch != ca:
-                    codes = {"h": ch, "a": ca}
             cycles += 1
             # Hunting for the board costs more than everything else here put
             # together, and the board does not move between one frame and the
