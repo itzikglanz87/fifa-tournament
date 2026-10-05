@@ -691,6 +691,47 @@ def read_code_plate(cell, known, min_score=0.40):
     return fit[0][1]
 
 
+def refine_plate(crop):
+    """The board's own rectangle inside a cut-out that holds more than the board.
+
+    Finding the board by brightness alone catches whatever else is bright and
+    beside it — above all the green FC badge, which sits flush against it, and
+    which a closing step happily bridges. Every crop taken from such a box is
+    then wrong at its edges, which is why letters were being clipped and
+    crests were coming out as crowd.
+
+    Brightness is not what separates them. The board is white: bright AND
+    almost colourless. The badge is bright and violently green, the crowd is
+    bright and every colour at once. So look for pixels that are both light
+    and unsaturated, and take the largest solid block of them. Returns a box
+    [x, y, w, h] within the cut-out, or None if nothing in it looks like a
+    board."""
+    import cv2, numpy as np
+    if crop is None or crop.size == 0 or min(crop.shape[:2]) < 20:
+        return None
+    c = crop if crop.ndim == 3 else cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR)
+    hsv = cv2.cvtColor(c, cv2.COLOR_BGR2HSV)
+    sat, val = hsv[:, :, 1], hsv[:, :, 2]
+    vt = max(110.0, float(np.percentile(val, 85)) * 0.78)
+    mask = ((val >= vt) & (sat <= 90)).astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 11), np.uint8))
+    n, lab, stats, _c = cv2.connectedComponentsWithStats(mask, 8)
+    if n <= 1:
+        return None
+    best = None
+    for i in range(1, n):
+        x, y, w, h, area = (stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP],
+                            stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT],
+                            stats[i, cv2.CC_STAT_AREA])
+        if w < 0.35 * crop.shape[1] or h < 0.35 * crop.shape[0]:
+            continue
+        if area < 0.5 * w * h:                  # a board is a solid block
+            continue
+        if best is None or area > best[0]:
+            best = (area, [int(x), int(y), int(w), int(h)])
+    return best[1] if best else None
+
+
 def plate_left_edge(crop):
     """Where the board itself starts inside the cut-out.
 
@@ -717,6 +758,83 @@ def plate_left_edge(crop):
     # wide, and a short bright patch is something else
     return best[1] if best[0] >= 0.45 * len(col) else 0
 
+
+def read_final_screen(frame):
+    """The MATCH RESULTS screen, which says the thing nothing else does.
+
+    At the final whistle FC puts the score up in the middle of the screen in
+    figures three times the size of anything on the scoreboard, with Home on
+    the left and Away on the right. It is the one place the final score is
+    stated plainly, it cannot be confused with the pause menu, and it settles
+    the goal scored on ninety minutes that the board never had time to show.
+    Returns (home, away) or None."""
+    H, W = frame.shape[:2]
+    # a generous band, so that re-aiming the camera does not lose the figures:
+    # they are found by being far taller than anything else in it
+    band = frame[int(H * 0.40):int(H * 0.98), int(W * 0.10):int(W * 0.97)]
+    if min(band.shape[:2]) < 60:
+        return None
+    marks = ink_marks(band, hmin=0.20, hmax=0.90, wmax=0.30)
+    if len(marks) < 2:
+        return None
+    tallest = max(m["h"] for m in marks)
+    big = [m for m in marks if m["h"] >= 0.70 * tallest]
+    # The club crests are exactly as large as the figures, so size alone will
+    # not separate them. A crest simply does not look like a digit: ask for a
+    # confident reading and the crests fall away on their own.
+    hits = []
+    for m in big:
+        val, sc = classify_shape(m["img"], min_score=0.85)
+        if val is not None:
+            hits.append((m, str(val)))
+    if not (2 <= len(hits) <= 4):
+        return None
+    ys = [m["y"] + m["h"] / 2.0 for m, _v in hits]
+    hs = [m["h"] for m, _v in hits]
+    if max(ys) - min(ys) > 0.3 * min(hs):        # the score sits on one line
+        return None
+    hits.sort(key=lambda t: t[0]["x"])
+    gaps = [(hits[i + 1][0]["x"] - (hits[i][0]["x"] + hits[i][0]["w"]), i) for i in range(len(hits) - 1)]
+    split = max(gaps)[1] + 1                      # the widest gap is the dash
+    left, right = hits[:split], hits[split:]
+    if not left or not right or len(left) > 2 or len(right) > 2:
+        return None
+    n1 = int("".join(v for _m, v in left))
+    n2 = int("".join(v for _m, v in right))
+    if n1 > 30 or n2 > 30:
+        return None
+    return n1, n2
+
+def read_clock(frame, plate):
+    """The match minute, from the strip just under the scoreboard.
+
+    FC counts to ninety however long the halves really are, so a clock reading
+    ninety is full time and nothing else is. That matters because the screen
+    you get at the final whistle is the same screen you get when somebody
+    pauses to argue, and only the clock tells the two apart. Returns the
+    minutes, or None."""
+    x, y, w, h = plate
+    H, W = frame.shape[:2]
+    cy = y + h                                  # the clock sits directly below
+    ch = int(h * 0.55)
+    cx, cw = x, int(w * 0.55)
+    if cy + ch > H or cx + cw > W or ch < 20:
+        return None
+    marks = ink_marks(frame[cy:cy + ch, cx:cx + cw], hmin=0.25, hmax=0.95, wmax=0.30)
+    if not (2 <= len(marks) <= 6):
+        return None
+    marks = sorted(marks, key=lambda m: m["x"])
+    digits = ""
+    for m in marks[:2]:                         # the minutes, left of the colon
+        val, score = classify_shape(m["img"], min_score=0.55)
+        if val is None:
+            return None
+        digits += str(val)
+    try:
+        n = int(digits)
+    except ValueError:
+        return None
+    return n if 0 <= n <= 90 else None
 
 def plate_parts(crop, score_x=None):
     """The scoreboard plate split into the four things it carries: a club code
@@ -1257,7 +1375,18 @@ def run(args):
             if plate:
                 # the board moves and changes size during a match, so where it
                 # is now beats where it was when the camera was calibrated
-                parts = plate_parts(cut(plate))
+                # Cut to the board itself before reading the clubs. The block
+                # that was found usually reaches past it onto the green badge
+                # flush against it, and cells measured from the wrong edges
+                # clipped the letters. Over the boards the reader had kept,
+                # this alone took naming both clubs from 17% to 25%.
+                pc = cut(plate)
+                inner = refine_plate(pc)
+                if inner:
+                    pc = pc[inner[1]:inner[1] + inner[3], inner[0]:inner[0] + inner[2]]
+                dbg3 = {}
+                sx3 = dbg3.get("score_x") if score_in_region(pc, debug=dbg3) else None
+                parts = plate_parts(pc, sx3)
                 if cfg.get("clubs") and not codes:
                     _t0 = time.time()
                     kh = read_code_plate(parts["code_h"], cfg["clubs"])
@@ -1295,6 +1424,10 @@ def run(args):
                         os.makedirs(folder, exist_ok=True)
                         tag = time.strftime("%H%M%S") + "_nocodes"
                         imwrite_any(os.path.join(folder, tag + "_plate.png"), cut(plate))
+                        # and the whole picture: a cut-out cannot show whether the board
+                        # was found in the right place, which is where most of these
+                        # failures turn out to live
+                        imwrite_any(os.path.join(folder, tag + "_whole.png"), frame)
                         print(now, "תוצאה נקראת אבל לא השמות — שמרתי תמונה ב־debug/" + tag)
                     # This is the board: a score came off it. A pale card on
                     # the main menu is bright and rectangular too, and while
