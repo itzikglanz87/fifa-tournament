@@ -510,7 +510,11 @@ def score_in_region(img, debug=None):
     # same board is three times smaller when the camera takes in the whole
     # television instead of one corner of it, and a doubling that was ample
     # there leaves the digits too coarse to tell apart here.
-    k = max(2.0, min(6.0, 1100.0 / max(40, g.shape[1])))
+    # Scale the cut-out TO a working width, in both directions: a small board
+    # is blown up, and a large one — which is what the camera gives now that it
+    # is close and fixed to the wall — is brought down instead of being doubled
+    # into something enormous to grind through.
+    k = max(0.8, min(6.0, 1100.0 / max(40, g.shape[1])))
     g = cv2.resize(g, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
     g = cv2.GaussianBlur(g, (3, 3), 0)
     H, W = g.shape
@@ -548,7 +552,7 @@ def score_in_region(img, debug=None):
     bot = sum(m["y"] + m["h"] / 2 for m in rows[1]) / len(rows[1])
     if bot - top < 0.22 * H:
         return None
-    out, shapes = [], []
+    out, shapes, groups = [], [], []
     for row in rows:
         right = max(m["x"] + m["w"] for m in row)
         group = sorted([m for m in row if m["x"] + m["w"] > right - 0.16 * W], key=lambda m: m["x"])
@@ -566,8 +570,13 @@ def score_in_region(img, debug=None):
             return None
         out.append(int(digits))
         shapes.append([m["img"] for m in group])
+        groups.append(group)
     if debug is not None:
         debug["marks"] = len(marks)
+        # where the figures start, back in the cut-out's own pixels: the club
+        # codes are the writing immediately to their left, whatever else the
+        # board happens to carry
+        debug["score_x"] = int(min(min(m["x"] for m in r) for r in groups) / k)
     return out[0], out[1], shapes[0], shapes[1]
 
 
@@ -586,7 +595,11 @@ def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
     # same board is three times smaller when the camera takes in the whole
     # television instead of one corner of it, and a doubling that was ample
     # there leaves the digits too coarse to tell apart here.
-    k = max(2.0, min(6.0, 1100.0 / max(40, g.shape[1])))
+    # Scale the cut-out TO a working width, in both directions: a small board
+    # is blown up, and a large one — which is what the camera gives now that it
+    # is close and fixed to the wall — is brought down instead of being doubled
+    # into something enormous to grind through.
+    k = max(0.8, min(6.0, 1100.0 / max(40, g.shape[1])))
     g = cv2.resize(g, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
     g = cv2.GaussianBlur(g, (3, 3), 0)
     H, W = g.shape
@@ -610,18 +623,32 @@ def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
 
 
 def read_code_plate(cell, known, min_score=0.40):
-    """The three letters at the left of a scoreboard row — BAY, BAR, LIV.
+    """The club's three letters, off a scoreboard row.
 
-    Same extraction as the digits, then each letter against the alphabet and
-    the whole thing snapped to one of the codes we know, so a single misread
-    letter still lands on the right club."""
+    What goes wrong is not the letters but the company they keep: the edge of
+    the plate, a corner of the crest or a strip of colour comes through the
+    same filter and lands beside them, so three letters arrive as four marks
+    and PSG reads as QPSG. Matching only equal lengths threw all of those
+    away — 7% of real boards were being named.
+
+    So the letters are not assumed to be exactly the marks found. Each code we
+    know is tried against every run of marks its own length, and the best
+    placement wins, which lets a stray mark at either end be ignored. The
+    winner still has to beat the runner-up by a margin, because BAR and BAY
+    differ by one letter and a guess between them opens the wrong match."""
     import cv2, numpy as np
     marks = ink_marks(cell, hmin=0.25, hmax=0.95, wmax=0.40)
-    if not (2 <= len(marks) <= 5):
+    if len(marks) < 2:
         return None
-    marks = sorted(marks, key=lambda m: m["x"])[:4]
+    # letters on a board are all one size; a stray is usually not
+    tall = max(m["h"] for m in marks)
+    marks = [m for m in marks if m["h"] >= 0.55 * tall]
+    if not (2 <= len(marks) <= 6):
+        return None
+    marks = sorted(marks, key=lambda m: m["x"])
+
     TPL = cached_letters()
-    seen, got = [], ""
+    seen = []
     for m in marks:
         b = cv2.resize(m["img"], (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
         b -= b.mean()
@@ -629,21 +656,27 @@ def read_code_plate(cell, known, min_score=0.40):
         if not n:
             return None
         b /= n
-        scores = {ch: max(float((b * t).sum()) for t in tl) for ch, tl in TPL.items()}
-        seen.append(scores)
-        ch = max(scores, key=scores.get)
-        got += ch if scores[ch] >= min_score else "?"
+        seen.append({ch: max(float((b * t).sum()) for t in tl) for ch, tl in TPL.items()})
+
     if not known:
-        return got
-    # Do not snap to the nearest spelling — BAR and BAY differ by one letter,
-    # and a letter read as neither would toss a coin between two clubs. Ask
-    # instead how well each code we know fits the letters actually on screen,
-    # and take the winner only if it beats the runner-up by a clear margin.
+        out = ""
+        for sc in seen:
+            ch = max(sc, key=sc.get)
+            out += ch if sc[ch] >= min_score else "?"
+        return out
+
     fit = []
     for code in known:
-        if len(code) != len(seen):
+        n = len(code)
+        if n > len(seen):
             continue
-        fit.append((sum(sc.get(ch, -1.0) for ch, sc in zip(code, seen)) / len(code), code))
+        best = None
+        for i in range(0, len(seen) - n + 1):
+            v = sum(seen[i + j].get(code[j], -1.0) for j in range(n)) / n
+            if best is None or v > best:
+                best = v
+        if best is not None:
+            fit.append((best, code))
     fit.sort(reverse=True)
     if not fit or fit[0][0] < min_score:
         return None
@@ -652,92 +685,58 @@ def read_code_plate(cell, known, min_score=0.40):
     return fit[0][1]
 
 
-def read_final_screen(frame):
-    """The MATCH RESULTS screen, which says the thing nothing else does.
+def plate_left_edge(crop):
+    """Where the board itself starts inside the cut-out.
 
-    At the final whistle FC puts the score up in the middle of the screen in
-    figures three times the size of anything on the scoreboard, with Home on
-    the left and Away on the right. It is the one place the final score is
-    stated plainly, it cannot be confused with the pause menu, and it settles
-    the goal scored on ninety minutes that the board never had time to show.
-    Returns (home, away) or None."""
-    H, W = frame.shape[:2]
-    # a generous band, so that re-aiming the camera does not lose the figures:
-    # they are found by being far taller than anything else in it
-    band = frame[int(H * 0.40):int(H * 0.98), int(W * 0.10):int(W * 0.97)]
-    if min(band.shape[:2]) < 60:
-        return None
-    marks = ink_marks(band, hmin=0.20, hmax=0.90, wmax=0.30)
-    if len(marks) < 2:
-        return None
-    tallest = max(m["h"] for m in marks)
-    big = [m for m in marks if m["h"] >= 0.70 * tallest]
-    # The club crests are exactly as large as the figures, so size alone will
-    # not separate them. A crest simply does not look like a digit: ask for a
-    # confident reading and the crests fall away on their own.
-    hits = []
-    for m in big:
-        val, sc = classify_shape(m["img"], min_score=0.85)
-        if val is not None:
-            hits.append((m, str(val)))
-    if not (2 <= len(hits) <= 4):
-        return None
-    ys = [m["y"] + m["h"] / 2.0 for m, _v in hits]
-    hs = [m["h"] for m, _v in hits]
-    if max(ys) - min(ys) > 0.3 * min(hs):        # the score sits on one line
-        return None
-    hits.sort(key=lambda t: t[0]["x"])
-    gaps = [(hits[i + 1][0]["x"] - (hits[i][0]["x"] + hits[i][0]["w"]), i) for i in range(len(hits) - 1)]
-    split = max(gaps)[1] + 1                      # the widest gap is the dash
-    left, right = hits[:split], hits[split:]
-    if not left or not right or len(left) > 2 or len(right) > 2:
-        return None
-    n1 = int("".join(v for _m, v in left))
-    n2 = int("".join(v for _m, v in right))
-    if n1 > 30 or n2 > 30:
-        return None
-    return n1, n2
+    The block that is found reaches past the board more often than not: the
+    green FC badge sits flush against it and the closing step bridges the two,
+    so the left part of the cut-out is badge, crowd or the end of an
+    advertising hoarding. The board is the long run of columns that are bright
+    all the way down, and the letters are inside that run — looking for them
+    anywhere else is what left six boards in ten unnamed."""
+    import cv2, numpy as np
+    g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
+    if g.shape[1] < 30:
+        return 0
+    col = np.median(g, axis=0).astype(np.float32)
+    thr = max(90.0, float(np.percentile(col, 80)) * 0.80)
+    on = col >= thr
+    best = (0, 0)                                  # (length, start)
+    run = 0
+    for i, v in enumerate(on):
+        run = run + 1 if v else 0
+        if run > best[0]:
+            best = (run, i - run + 1)
+    # only trust it when the bright run is most of the cut-out: a board is
+    # wide, and a short bright patch is something else
+    return best[1] if best[0] >= 0.45 * len(col) else 0
 
 
-def read_clock(frame, plate):
-    """The match minute, from the strip just under the scoreboard.
-
-    FC counts to ninety however long the halves really are, so a clock reading
-    ninety is full time and nothing else is. That matters because the screen
-    you get at the final whistle is the same screen you get when somebody
-    pauses to argue, and only the clock tells the two apart. Returns the
-    minutes, or None."""
-    x, y, w, h = plate
-    H, W = frame.shape[:2]
-    cy = y + h                                  # the clock sits directly below
-    ch = int(h * 0.55)
-    cx, cw = x, int(w * 0.55)
-    if cy + ch > H or cx + cw > W or ch < 20:
-        return None
-    marks = ink_marks(frame[cy:cy + ch, cx:cx + cw], hmin=0.25, hmax=0.95, wmax=0.30)
-    if not (2 <= len(marks) <= 6):
-        return None
-    marks = sorted(marks, key=lambda m: m["x"])
-    digits = ""
-    for m in marks[:2]:                         # the minutes, left of the colon
-        val, score = classify_shape(m["img"], min_score=0.55)
-        if val is None:
-            return None
-        digits += str(val)
-    try:
-        n = int(digits)
-    except ValueError:
-        return None
-    return n if 0 <= n <= 90 else None
-
-
-def plate_parts(crop):
+def plate_parts(crop, score_x=None):
     """The scoreboard plate split into the four things it carries: a club code
-       on the left of each row, and that row's score at the right end."""
+       on each row, and that row's score.
+
+    Where the code sits is not a fixed fraction of the plate. The ordinary
+    board puts it at the left with a crest beside it; the Spanish one puts a
+    league badge and the clock on the left and the codes in the middle. And
+    the cut-out itself shifts from frame to frame, which was enough on its own
+    to miss the letters in six boards out of ten. What holds everywhere is
+    that the code is the writing immediately to the left of the figures, so
+    the cells are measured from the figures when their position is known."""
     h, w = crop.shape[:2]
-    mid, code_x, score_x = h // 2, int(w * 0.50), int(w * 0.68)
-    return {"code_h": crop[0:mid, 0:code_x], "code_a": crop[mid:h, 0:code_x],
-            "cell_h": crop[0:mid, score_x:w], "cell_a": crop[mid:h, score_x:w]}
+    mid = h // 2
+    left = plate_left_edge(crop)
+    if score_x and 0.2 * w < score_x < 0.98 * w:
+        sx = int(score_x)
+        # everything between the board's own left edge and the figures: on the
+        # ordinary board a crest sits in there too, which the letter matching
+        # steps over, but the badge and the crowd outside the board do not
+        # belong in the picture at all
+        cx0, cx1 = left, max(left + 1, int(sx - w * 0.015))
+    else:
+        sx, cx0, cx1 = int(w * 0.68), left, max(left + 1, int(w * 0.50))
+    return {"code_h": crop[0:mid, cx0:cx1], "code_a": crop[mid:h, cx0:cx1],
+            "cell_h": crop[0:mid, sx:w], "cell_a": crop[mid:h, sx:w]}
 
 
 def clear_border(th):
