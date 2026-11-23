@@ -80,7 +80,15 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistration().then(reg => { if (reg) reg.update().catch(() => {}); });
   });
   addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").then(reg => {
+    /* updateViaCache "none": the worker script is fetched from the network
+       every time it is checked. GitHub lets a browser hold it for ten minutes,
+       and a cached answer means the check cannot see the new version at all. */
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+      /* and ask, on opening and at a quarter of an hour, rather than only when
+         coming back from a minute away: an installed app that the phone keeps
+         alive in the background never has either moment */
+      reg.update().catch(() => {});
+      setInterval(() => reg.update().catch(() => {}), 15 * 60e3);
       if (reg.waiting && navigator.serviceWorker.controller) waitingWorker = reg.waiting;
       reg.addEventListener("updatefound", () => {
         const w = reg.installing;

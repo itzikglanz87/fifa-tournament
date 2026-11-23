@@ -57,7 +57,7 @@ const Store = {
         const o = JSON.parse(raw);
         (o.tournaments || []).forEach(r => { if (r && r.i) LIVE[r.i] = hydrate(r); });
         if (o.pool && o.pool.length) CLUB_POOL = mergePool(o.pool);
-        if (o.photos) PHOTOMAP = Object.assign({}, o.photos);
+        if (o.photos) PHOTOMAP = Object.assign({}, PHOTOMAP_DEFAULT, o.photos);
         if (Array.isArray(o.seasons) && o.seasons.length) SEASONS = o.seasons.map(x => ({ id: x.id, name: x.name }));
       }
     } catch (e) {}
@@ -86,7 +86,7 @@ const Store = {
       if (cfg.exists) {
         const c = cfg.data();
         if (Array.isArray(c.pool) && c.pool.length) CLUB_POOL = mergePool(c.pool);
-        if (c.photos && typeof c.photos === "object") PHOTOMAP = Object.assign({}, c.photos);
+        if (c.photos && typeof c.photos === "object") PHOTOMAP = Object.assign({}, PHOTOMAP_DEFAULT, c.photos);
         if (Array.isArray(c.seasons) && c.seasons.length) SEASONS = c.seasons.map(x => ({ id: x.id, name: x.name }));
       }
     } catch (e) {

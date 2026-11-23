@@ -8,7 +8,7 @@
    background. Firestore and the fonts are left alone — Firestore has its own
    offline queue, and the CSS names system fonts as a fallback.
    ========================================================================= */
-const VERSION = "fifa-0c4ab25396";
+const VERSION = "fifa-e401f7a91f";
 const SHELL = [
   "./",
   "./index.html",
@@ -100,7 +100,9 @@ self.addEventListener("fetch", e => {
   if (req.mode === "navigate") {
     e.respondWith((async () => {
       try {
-        const fresh = await fetch(req);
+        /* revalidate: the browser may hold this page for ten minutes, and a
+           stale copy here is a published update nobody sees */
+        const fresh = await fetch(req, { cache: "no-cache" });
         const c = await caches.open(VERSION);
         c.put("./index.html", fresh.clone());
         return fresh;

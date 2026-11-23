@@ -160,7 +160,7 @@ const SEED = JSON.parse(document.getElementById("seed").textContent);
 const PHOTOS = JSON.parse(document.getElementById("faces").textContent);
 /* photo id -> player index. Seeded with the pairing the user gave for the six
    uploaded files; the store overrides it once anyone changes a face. */
-const PHOTOMAP_DEFAULT = { "1": 1, "2": 0, "3": 4, "4": 2, "5": 3, "6": 5 };
+const PHOTOMAP_DEFAULT = { "1": 1, "2": 0, "3": 4, "4": 2, "5": 3, "6": 5, "7": 6 };
 let PHOTOMAP = Object.assign({}, PHOTOMAP_DEFAULT);
 const photoOf = p => { const k = Object.keys(PHOTOMAP).find(k2 => PHOTOMAP[k2] === p); return k ? PHOTOS[k] : null; };
 const P = SEED.P, TPL = SEED.TPL, POOL0 = SEED.POOL, YEARS = SEED.Y;
