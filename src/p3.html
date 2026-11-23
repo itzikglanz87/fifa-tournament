@@ -2252,7 +2252,7 @@ function podiumScene(t) {
 
   if (!calm) {
     const conf = el("div", "confetti");
-    const cols = [0, 1, 2, 3, 4, 5].map(i => "var(--p" + i + ")").concat(["var(--gold)", "#FFFFFF"]);
+    const cols = [0, 1, 2, 3, 4, 5, 6].map(i => "var(--p" + i + ")").concat(["var(--gold)", "#FFFFFF"]);
     for (let i = 0; i < 44; i++) {
       const p = el("i");
       p.style.cssText = "left:" + (Math.random() * 100).toFixed(1) + "%;" +

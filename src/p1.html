@@ -14,6 +14,7 @@
   --gold:#F5C542; --gold2:#C9971F; --gold-dim:#3A2E12;
   --pos:#4ADE80; --neg:#F87171;
   --p0:#4B86FA; --p1:#689E2D; --p2:#169EAF; --p3:#CD711D; --p4:#AE61E9; --p5:#E54C7A;
+  --p6:#E0453C;
   --o1:#F0C55E; --o2:#CFA950; --o3:#AD8B42; --o4:#8A6E36; --o5:#65522B; --o6:#453A22;
   --o1t:#2A1F05; --o2t:#2A1F05; --o3t:#221A05; --o4t:#F2E7D2; --o5t:#F2E7D2; --o6t:#E6DCC8;
   --cut:10px;
@@ -42,7 +43,7 @@ button{cursor:pointer; border:0; background:none}
 /* ---------- broadcast rail ---------- */
 .rail{background:linear-gradient(180deg,#0C131B 0%,#0A1017 100%); border-bottom:1px solid var(--line)}
 .rail::before{content:""; display:block; height:2px;
-  background:linear-gradient(to left,var(--p0),var(--p1),var(--p2),var(--p3),var(--p4),var(--p5))}
+  background:linear-gradient(to left,var(--p0),var(--p1),var(--p2),var(--p3),var(--p4),var(--p5),var(--p6))}
 .rail-in{display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding-block:14px 13px; justify-content:space-between}
 .mark{display:flex; align-items:center; gap:11px}
 .mark .glyph{width:38px; height:38px; flex:none; display:grid; place-items:center;
@@ -1112,11 +1113,12 @@ main.wrap, .view{overflow-x:clip; max-width:100%}
   background:linear-gradient(135deg,var(--gold),var(--gold2)); clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%);
   box-shadow:0 0 30px rgba(245,197,66,.5)}
 .i-name{font-family:"Secular One","Heebo",sans-serif; font-size:42px; line-height:1; color:#fff; text-shadow:0 4px 24px rgba(0,0,0,.7)}
-.i-six{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; font-size:13px; font-weight:700; max-width:320px}
+.i-six{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; font-size:13px; font-weight:700; max-width:360px}
 .i-six span{color:var(--c); opacity:0; animation:i-in .3s ease forwards}
 .i-six span:nth-child(1){animation-delay:1.45s} .i-six span:nth-child(2){animation-delay:1.52s}
 .i-six span:nth-child(3){animation-delay:1.59s} .i-six span:nth-child(4){animation-delay:1.66s}
 .i-six span:nth-child(5){animation-delay:1.73s} .i-six span:nth-child(6){animation-delay:1.8s}
+.i-six span:nth-child(7){animation-delay:1.87s}
 @keyframes i-in{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
 /* motion kept to a minimum: just the name, briefly */
 @media (prefers-reduced-motion:reduce){
