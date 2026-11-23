@@ -97,39 +97,7 @@ async function sendToAll(title, body, onlyToken, url, tag) {
   return { sent, failed, phones: tokens.length };
 }
 
-/* A prediction window: the players sitting the match out, and 3 minutes
-   from the push (plus a few seconds for delivery). The database rules read
-   this document, so a late or wrong-player prediction is refused there, not
-   just hidden by the app. Opened once per match: a result cleared and typed
-   again does not reopen it. */
-/* Guessing used to close three minutes after the push, which asked people to
-   be holding their phone at that moment. It closes when the match reaches its
-   match before it is written down. The next one starts about three minutes
-   after that and runs about twelve, so six minutes leaves guessing open
-   through the wait and the opening exchanges, and shuts it long before a
-   result anybody has seen could be guessed. */
-const PRED_MS = 6 * 60e3;
-/* Who is sitting a given fixture out — the ones who may guess it. The
-   ordered version of this only knows about the next match in the list; what
-   is actually being played is decided at the console, so a fixture has to be
-   able to answer this for itself. */
-function sitOutOf(rec, m) {
-  const on = [m.h[0], m.h[1], m.a[0], m.a[1]];
-  return (rec.slots || []).filter(p => on.indexOf(p) < 0);
-}
 
-async function openPredWindow(docId, rec, nx) {
-  const tid = rec.s ? rec.s * 1000 + (rec.n || rec.i) : (rec.n || rec.i);
-  const ref = db.doc("predWindows/" + tid + "_" + nx.k);
-  const now = Date.now();
-  return db.runTransaction(async tx => {
-    const s = await tx.get(ref);
-    if (s.exists) return false;
-    tx.set(ref, { t: tid, k: nx.k, sit: nx.sit, open: new Date(now),
-                  close: new Date(now + PRED_MS), closeMs: now + PRED_MS });
-    return true;
-  });
-}
 
 /* ---------------------------------------------------------------- 1. auto */
 exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
@@ -145,13 +113,12 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
   if (!before) {
     await logRef.set({ progress: T.progressOf(after), at: new Date().toISOString() });
     /* a new tournament: its first match has no result before it to announce
-       it, so the opening itself does — and opens the first prediction window */
+       it, so the opening itself does */
     const first = T.nextLeagueMatch(after);
     if (first && first.k === 0) {
-      await openPredWindow(id, after, first);
       if (!silent) {
         const title = "🏆 טורניר " + (after.n || after.i) + " נפתח · " + (await seasonName(after.s));
-        const r = await sendToAll(title, T.nextEventText(after) + T.predLine(first.sit));
+        const r = await sendToAll(title, T.nextEventText(after));
         console.log("opening push", id, JSON.stringify(r));
       }
     }
@@ -210,9 +177,7 @@ exports.onResultSaved = onDocumentWritten("tournaments/{id}", async event => {
 
   let body = T.nextEventText(after);
   if (!body) return;
-  /* the next league match opens its prediction window with this push */
   const nx = T.nextLeagueMatch(after);
-  if (nx && await openPredWindow(id, after, nx)) body += T.predLine(nx.sit);
   if (silent) { console.log("test mode: push held", id, now, body); return; }
   const title = "טורניר " + (after.n || after.i) + " · " + (await seasonName(after.s));
   const r = await sendToAll(title, body);
@@ -309,8 +274,8 @@ function pairOfClub(der, club) {
 }
 
 /* Write a finished match into the tournament and close the live one.
-   Everything downstream — the next-match push, the prediction window, the
-   table — already happens when a tournament document changes, so this needs
+   Everything downstream — the next-match push and the table — already happens
+   when a tournament document changes, so this needs
    to do nothing more than put the score where the app would have put it. */
 async function finishMatch(ref, cur, exact) {
   const tref = db.doc("tournaments/t" + cur.t);
@@ -378,17 +343,6 @@ exports.liveScore = onCall(async req => {
     const tst = await db.doc("meta/test").get();
     return { t: all[0].id, keys: Object.keys(all[0].data), scores: rec.scores || null,
              rec: rec, tournaments: all.length, quiet: tst.exists && tst.data().on === true };
-  }
-  if (d.closePred) {                              // the match has reached minute 20
-    if (!docs.length) return { live: false };
-    const cur = docs[0].data() || {};
-    const ref = db.doc("predWindows/" + cur.t + "_" + cur.k);
-    const s2 = await ref.get();
-    if (!s2.exists) return { live: true, noWindow: true };
-    if ((s2.data().closeMs || 0) <= Date.now()) return { live: true, already: true };
-    await ref.set(Object.assign({}, s2.data(), { closeMs: Date.now(), close: new Date(), byClockAt: 20 }));
-    console.log("predictions closed on the clock", cur.t + "_" + cur.k);
-    return { live: true, closedPred: true, k: cur.k };
   }
   if (d.finish) {                                 // the match is over: write it down
     if (!docs.length) return { live: false };
@@ -471,15 +425,7 @@ exports.liveScore = onCall(async req => {
     }
     await db.doc("live/" + pick.t + "_" + hit.i).set(doc);
     console.log("cam opened live match", pick.t + "_" + hit.i, doc.h + "-" + doc.a);
-    /* Guessing follows what is being played, not the order of the list. The
-       window for the next fixture in order was opened when the previous
-       result was saved, which is right when they play in order and wrong the
-       moment they do not — start with match three and the invitation went to
-       whoever sits out match one. So the fixture that has actually kicked off
-       opens its own window here, for whoever is sitting this one out. */
-    const recNow = T.unpack(latest.data);
-    const sit = sitOutOf(recNow, hit);
-    const opened = await openPredWindow("t" + pick.t, recNow, { k: hit.i, sit: sit });
+        const recNow = T.unpack(latest.data);
 
     /* The whistle has gone. Everyone gets told which match is being played —
        the two at the sticks know already, the other four do not, and a live
@@ -488,7 +434,6 @@ exports.liveScore = onCall(async req => {
       const pr = (x, y) => T.P[x] + " ו" + T.P[y];
       let body = "מחזור " + (hit.i + 1) + ", " + pr(hit.h[0], hit.h[1]) + " בבית עם " + hit.hc +
                  " נגד " + pr(hit.a[0], hit.a[1]) + " בחוץ עם " + hit.ac;
-      if (opened) body += T.predLine(sit);
       /* and who is up after this one, so the next pair can get themselves
          ready rather than find out when the television changes */
       const nextUp = der.m.find(m => unplayed(m) && m.i !== hit.i);
@@ -498,7 +443,7 @@ exports.liveScore = onCall(async req => {
                 pr(nextUp.a[0], nextUp.a[1]) + " (" + nextUp.ac + ")";
       }
       const r = await sendToAll("🔴 מתחיל עכשיו · 0 - 0", body);
-      console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r), opened ? "(window opened)" : "");
+      console.log("kick-off push", pick.t + "_" + hit.i, JSON.stringify(r));
     }
     return { live: true, h: doc.h, a: doc.a, k: hit.i, t: pick.t, opened: true };
   }

@@ -94,9 +94,6 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
 
   await change("t1001", null, base);
   expect("opening a tournament announces the first match", sent.length === 1 && /נפתח/.test(sent[0].title), sent[0] && sent[0].title);
-  expect("…with the two who sit it out invited to predict", /🔮 .+ו.+ — נחשו עד דקה 20!/.test(sent[0].body), sent[0] && sent[0].body);
-  const w0 = store["predWindows/1001_0"];
-  expect("…and opens the first prediction window for them", !!w0 && w0.sit.length === 2 && w0.closeMs - Date.now() > 170e3);
   sent.length = 0;
 
   const r1 = withScores(base, [[0, [1, 0]]]);
@@ -120,12 +117,9 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
   const r2 = withScores(r1b, [[1, [2, 2]]]);
   await change("t1001", r1b, r2);
   expect("the next new result sends again", sent.length === 2, sent[1] && sent[1].body);
-  expect("…and opens the next prediction window", !!store["predWindows/1001_2"] && /נחשו עד דקה 20/.test(sent[1].body));
-  expect("the first result opened match 2's window once", !!store["predWindows/1001_1"]);
 
   await change("t1001", r2, null);
   expect("deleting the tournament clears its log", !("pushLog/t1001" in store));
-  Object.keys(store).filter(k => k.startsWith("predWindows/1001_")).forEach(k => delete store[k]);
   await change("t1001", null, base);
   await change("t1001", base, r1);
   expect("a recreated tournament with the same id is not muted", sent.length === 4, sent.length + " pushes");
@@ -273,7 +267,6 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     q1.scores[0] = [1, 0];
     await change("t3001", qBase, q1);
     expect("test mode holds every automatic push", sent.length === q0, (sent.length - q0) + " pushes escaped");
-    expect("…while the prediction window still opens", !!store["predWindows/1003_1"]);
     delete store["meta/test"];
     await change("t3001", q1, null);
   }
@@ -309,21 +302,12 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     delete store["live/4001_" + fx.i];
     store["tournaments/t4001"].scores[fx.i] = { __a: [null, null] };
     /* playing out of order: the fixture that kicks off opens its own window */
-    delete store["predWindows/1005_" + fx.i];   // uid = season*1000 + num
     const kickBefore = sent.length;
     const r = await call3({ key: "right-key", h: 1, a: 0, clubs: { h: fx.ac, a: fx.hc } });
     expect("the camera opens the fixture on screen by itself", r.opened === true && r.k === fx.i, JSON.stringify(r));
     expect("…and tells everyone the match has kicked off",
            sent.length > kickBefore && /מתחיל עכשיו/.test(sent[sent.length - 1].title || ""),
            JSON.stringify(sent[sent.length - 1] || null));
-    const wk = store["predWindows/1005_" + fx.i];
-    const playing = [fx.h[0], fx.h[1], fx.a[0], fx.a[1]];
-    expect("…and opens the guessing on the match being played, not the next in order",
-           !!wk && wk.k === fx.i && wk.sit.every(p => playing.indexOf(p) < 0) && wk.sit.length > 0,
-           JSON.stringify(wk));
-    expect("…with the invitation in that same push",
-           /נחשו עד דקה 20/.test(sent[sent.length - 1].body || ""),
-           JSON.stringify(sent[sent.length - 1].body));
     expect("…with the sides the right way round", store["live/4001_" + fx.i].h === 0 && store["live/4001_" + fx.i].a === 1,
            JSON.stringify(store["live/4001_" + fx.i]));
     delete store["live/4001_" + fx.i]; delete store["meta/live"]; delete store["tournaments/t4001"];
@@ -361,14 +345,6 @@ const expect = (label, cond, extra) => { console.log((cond ? "  ok   " : "  FAIL
     /* the match is over: the score goes into the tournament and the live one
        is closed, exactly as if the admin had pressed the button */
     /* the twentieth minute shuts the guessing */
-    store["predWindows/2001_" + fx.i] = { t: 2001, k: fx.i, sit: [1, 2], closeMs: Date.now() + 600000 };
-    const shut = await call2({ key: "right-key", h: 0, a: 0, closePred: true });
-    expect("the twentieth minute closes the guessing",
-           shut.closedPred === true && store["predWindows/2001_" + fx.i].closeMs <= Date.now(),
-           JSON.stringify(shut));
-    const again2 = await call2({ key: "right-key", h: 0, a: 0, closePred: true });
-    expect("…and saying so twice changes nothing", again2.already === true, JSON.stringify(again2));
-    delete store["predWindows/2001_" + fx.i];
 
     store["live/2001_" + fx.i].flip = true;          // the board had the sides reversed
     const scr = await call2({ key: "right-key", h: 7, a: 0, finish: true, exact: true });

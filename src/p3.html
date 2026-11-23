@@ -1336,12 +1336,6 @@ function viewLive(root) {
     root.appendChild(n);
   }
   if (pane === "games") root.appendChild(pollCard());
-  if (pane === "pred" && !draft) {
-    const cur = liveId != null ? LIVE[liveId] : null;
-    root.appendChild(predPanel(cur && !cur.done ? cur : (cur || null)));
-    return;
-  }
-
   /* several tournaments in this season: a compact picker, like a date strip */
   if (inScope.length > 1 && !draft) {
     const row = el("div", "picker");
