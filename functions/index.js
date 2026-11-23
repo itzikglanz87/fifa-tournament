@@ -104,10 +104,11 @@ async function sendToAll(title, body, onlyToken, url, tag) {
    again does not reopen it. */
 /* Guessing used to close three minutes after the push, which asked people to
    be holding their phone at that moment. It closes when the match reaches its
-   twentieth minute instead — the camera reads the clock and says so — which
-   is several real minutes, and early enough that the score is usually still
-   nothing much. This is only the fallback for when no camera is watching. */
-const PRED_MS = 25 * 60e3;
+   match before it is written down. The next one starts about three minutes
+   after that and runs about twelve, so six minutes leaves guessing open
+   through the wait and the opening exchanges, and shuts it long before a
+   result anybody has seen could be guessed. */
+const PRED_MS = 6 * 60e3;
 /* Who is sitting a given fixture out — the ones who may guess it. The
    ordered version of this only knows about the next match in the list; what
    is actually being played is decided at the console, so a fixture has to be
@@ -125,7 +126,7 @@ async function openPredWindow(docId, rec, nx) {
     const s = await tx.get(ref);
     if (s.exists) return false;
     tx.set(ref, { t: tid, k: nx.k, sit: nx.sit, open: new Date(now),
-                  close: new Date(now + PRED_MS), closeMs: now + PRED_MS, byClock: 20 });
+                  close: new Date(now + PRED_MS), closeMs: now + PRED_MS });
     return true;
   });
 }

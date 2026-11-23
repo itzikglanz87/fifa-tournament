@@ -304,7 +304,13 @@ function viewOverview(root) {
 
   const b0 = el("section", "block");
   const strip = el("div", "strip4");
-  [["טורנירים", nf(done.length), done.filter(t => t.size === 6).length + " בשישה · " + done.filter(t => t.size === 5).length + " בחמישה"],
+  /* one part per format that has actually been played, so a line that used to
+     read "0 בשבעה" the moment a seventh player joined says nothing at all
+     until there is a seven-player tournament to count */
+  [["טורנירים", nf(done.length),
+    [[7, "בשבעה"], [6, "בשישה"], [5, "בחמישה"]]
+      .map(([n, w]) => [done.filter(t => t.size === n).length, w])
+      .filter(([c]) => c > 0).map(([c, w]) => c + " " + w).join(" · ")],
    ["משחקים", nf(totMatches), "כולם 2 נגד 2"],
    ["שערים", nf(totGoals), f2(totGoals / totMatches) + " למשחק"],
    ["תיקו", nf(drawnMatches), Math.round(100 * drawnMatches / totMatches) + "% מהמשחקים"],
@@ -2374,7 +2380,6 @@ function openWrapped(p) {
    into the tournament the usual way and clears the live document.
    ========================================================================== */
 let TEST_MODE = false;          // pushes held while a trial tournament runs
-let TOURNAMENT_LIVE = null;     // the camera may open matches in this tournament
 const Live = {
   map: {}, stop: null, started: false, seen: false,
   key: (t, k) => t.i + "_" + k,
@@ -2498,7 +2503,7 @@ function paintWatch() {
       '<div class="w-score"><b class="ltr">' + cur.a + " - " + cur.h + "</b></div>" +
       side(m[3], m[4], CLUBS[m[5]] || "") + "</div>" +
     '<div class="w-foot">' + (WATCH.preview ? "👀 תצוגה מקדימה — ככה זה ייראה בזמן משחק"
-      : (cur.src === "cam" ? "🎥 מהמצלמה" : "מהאפליקציה")) + "</div>";
+      : "מהאפליקציה") + "</div>";
 }
 
 /* the strip under an unplayed match: start it, tap goals, finish */
@@ -2520,16 +2525,6 @@ function fillLive(n) {
     const next = t.m.findIndex(x => x[6] == null || x[7] == null);
     if (next !== k || Object.keys(Live.map).length) { n.hidden = true; return; }
     n.hidden = false;
-    if (TOURNAMENT_LIVE === t.i) {
-      n.appendChild(el("div", "live-auto", "🎥 טורניר חי — המצלמה תפתח את המחזור לפי הקבוצות שעל המסך"));
-      const man = el("button", "live-start", "פתח מחזור זה ידנית");
-      man.onclick = async () => {
-        man.disabled = true;
-        try { await Live.set(t, k, 0, 0); } catch (e) { flash("אין חיבור", true); man.disabled = false; }
-      };
-      n.appendChild(man);
-      return;
-    }
     const b = el("button", "live-start", "▶ התחל משחק חי");
     b.onclick = async () => {
       b.disabled = true;
@@ -2546,7 +2541,7 @@ function fillLive(n) {
      none */
   const head = el("div", "lv-head",
     '<span class="lv-dot"></span><b>חי</b><span class="mut">· ' +
-    (cur.src === "cam" ? "מהמצלמה" : cur.by >= 0 ? esc(P[cur.by]) : "מהאפליקציה") + "</span>");
+    (cur.by >= 0 ? esc(P[cur.by]) : "מהאפליקציה") + "</span>");
   const score = el("div", "lv-score",
     /* home is on the right in the app, so inside a left-to-right score the
        home goals must come last — the same order the rest of the app uses */
@@ -2614,7 +2609,6 @@ const Social = {
           db.collection("pollVotes").get(), db.doc("meta/poll").get(), db.collection("predWindows").get(),
           db.doc("meta/live").get()]);
         const lvd = lv.exists ? lv.data() : null;
-        TOURNAMENT_LIVE = !!(lvd && lvd.on === true) ? lvd.t : null;
         const pred = {}, react = {}, votes = {}, win = {};
         pw.docs.forEach(d => { const x = d.data(); win[x.t + "_" + x.k] = { sit: x.sit || [], closeMs: Number(x.closeMs) || 0 }; });
         p.docs.forEach(d => { const x = d.data(); (pred[x.t + "_" + x.k] = pred[x.t + "_" + x.k] || {})[x.who] = { h: x.h, a: x.a }; });
@@ -3095,8 +3089,8 @@ function predPanel(t) {
   if (t) box.appendChild(predBoard(t));
   box.appendChild(el("section", "block pn-rules",
     '<div class="bhead"><h2>החוקים</h2></div>' +
-    "<div>🔮 מנחשים רק שני השחקנים שלא משחקים במשחק.</div>" +
-    "<div>⏳ פתוח מרגע הפוש ועד שהמשחק מגיע לדקה 20 — המצלמה קוראת את השעון מהמסך.</div>" +
+    "<div>🔮 מנחשים רק השחקנים שלא משחקים במשחק.</div>" +
+    "<div>⏳ פתוח מרגע הפוש ולשש דקות — כלומר ההמתנה למשחק ועוד כמה דקות ממנו.</div>" +
     "<div>🎯 תוצאה מדויקת — 3 נקודות · ✓ המנצח הנכון או תיקו — נקודה · אחרת 0.</div>" +
     "<div>🙈 הניחוש של השני נחשף רק כשהזמן נגמר.</div>"));
   if (!Social.loaded) Social.load();
@@ -3468,39 +3462,6 @@ function mePanel() {
   return sec;
 }
 
-/* under ניהול, admin only: mark the whole tournament live, so the camera may
-   open and switch matches by itself — no button per match */
-function liveTournamentPanel(open) {
-  const sec = el("section", "block");
-  sec.innerHTML = '<div class="bhead"><h2>🎥 טורניר חי</h2><span class="note">' +
-    "כשזה דולק, המצלמה פותחת בעצמה את המשחק לפי הקבוצות שעל המסך — בלי ללחוץ 'התחל משחק חי' בכל מחזור.</span></div>";
-  const state = el("div", "notice");
-  const toggle = el("button", "btn sm", "…");
-  const paint = cur => {
-    const on = !!(cur && cur.on && (!open || cur.t === open.i));
-    state.className = "notice" + (on ? "" : " warn");
-    state.innerHTML = on ? "<b>הטורניר חי</b> — המצלמה תעדכן את המחזור שמשוחק"
-                         : "<b>כבוי</b> — צריך ללחוץ 'התחל משחק חי' לכל מחזור";
-    toggle.textContent = on ? "⏹ כבה טורניר חי" : "🎥 הדלק טורניר חי";
-    toggle.onclick = async () => {
-      if (!open) { flash("אין טורניר פתוח", true); return; }
-      toggle.disabled = true;
-      const next = { on: !on, t: open.i, at: new Date().toISOString() };
-      try { await Social.set("meta", "live", next); paint(next); }
-      catch (e) { flash("לא נשמר — אין חיבור", true); }
-      toggle.disabled = false;
-    };
-  };
-  (async () => {
-    try {
-      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
-      const doc = db ? await db.doc("meta/live").get() : null;
-      paint(doc && doc.exists ? doc.data() : null);
-    } catch (e) { paint(null); }
-  })();
-  sec.append(state, toggle);
-  return sec;
-}
 
 /* under ניהול, admin only: silence the automatic pushes for a trial run */
 function testModePanel() {
@@ -3534,46 +3495,6 @@ function testModePanel() {
   return sec;
 }
 
-/* under ניהול, admin only: the computer that reads the television */
-function cameraPanel() {
-  const sec = el("section", "block");
-  sec.innerHTML = '<div class="bhead"><h2>📷 קריאה מהמצלמה</h2><span class="note">' +
-    "המחשב קורא את לוח התוצאות מהטלוויזיה וממלא את המשחק החי. כאן מדליקים ומכבים אותו, וגם רואים אם הוא מחובר.</span></div>";
-  const state = el("div", "notice");
-  state.textContent = "בודק…";
-  const row = el("div", "chips");
-  const toggle = el("button", "btn sm", "…");
-  row.appendChild(toggle);
-  sec.append(state, row);
-
-  const paint = cam => {
-    const on = !cam || cam.on !== false;
-    const seen = cam && cam.seen ? Date.now() - Date.parse(cam.seen) : null;
-    const alive = seen != null && seen < 90e3;
-    state.className = "notice" + (alive ? "" : " warn");
-    state.innerHTML = "<b>" + (on ? "הקריאה מופעלת" : "הקריאה כבויה") + "</b> · " +
-      (seen == null ? "המחשב עוד לא דיווח" :
-       alive ? "המחשב מחובר · נראה לפני " + Math.round(seen / 1000) + " שניות" :
-       "המחשב לא מגיב · נראה לאחרונה לפני " + Math.round(seen / 60000) + " דקות");
-    toggle.textContent = on ? "🔴 כבה את הקריאה" : "🟢 הפעל את הקריאה";
-    toggle.onclick = async () => {
-      toggle.disabled = true;
-      try {
-        await Social.set("meta", "camera", Object.assign({}, cam || {}, { on: !on }));
-        paint(Object.assign({}, cam || {}, { on: !on }));
-      } catch (e) { flash("לא נשמר — אין חיבור", true); }
-      toggle.disabled = false;
-    };
-  };
-  (async () => {
-    try {
-      const db = Store.db || (window.APP_DB && await window.APP_DB.open());
-      const doc = db ? await db.doc("meta/camera").get() : null;
-      paint(doc && doc.exists ? doc.data() : null);
-    } catch (e) { state.textContent = "לא הצלחתי לקרוא את המצב"; }
-  })();
-  return sec;
-}
 
 /* under ניהול, for the admin: the log */
 function activityPanel() {
@@ -3785,7 +3706,7 @@ function watchViewFromHash() {
   try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
   const t = Object.values(LIVE).sort((x, y) => y.i - x.i)[0] || TSS[TSS.length - 1];
   if (!t || !t.m[0]) { flash("אין טורניר להציג עליו", true); return true; }
-  watchScreen(t, 0, { h: 2, a: 1, min: 67, src: "cam" });
+  watchScreen(t, 0, { h: 2, a: 1, min: 67 });
   return true;
 }
 addEventListener("hashchange", () => { watchViewFromHash(); });
@@ -3845,8 +3766,8 @@ function finalViewFromHash() {
     host.appendChild(row);
     host.appendChild(el("div", "mut",
       decided
-        ? "ככה ייראה המסך אחרי שהמצלמה מזהה את השער הראשון ומכריזה על האלופים."
-        : "השוויון המצרפי פתוח. במשחק אמיתי המצלמה תראה את השער הראשון ותכריע לבד — הכפתורים כאן הם הדרך הידנית."));
+        ? "ככה ייראה המסך אחרי שהשער הראשון נרשם והאלופים הוכרזו."
+        : "השוויון המצרפי פתוח — מי שמבקיע ראשון לוקח את הטורניר. הכפתורים כאן מכריזים על הזוכה."));
     host.querySelectorAll(".chips button").forEach(n => { n.disabled = false; });
   };
   draw();

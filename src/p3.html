@@ -1,4 +1,19 @@
 
+/* The club list that was saved, plus any club since added to the app.
+
+   The saved list used to replace the built-in one outright, which meant a club
+   added in the code could never appear: the phones had six clubs written down
+   from the last time anything was saved, and a seventh player had no seventh
+   club to be given. The saved order is what the app shows, so it is kept, and
+   anything new goes on the end. */
+function mergePool(saved) {
+  const out = (saved || []).slice();
+  (typeof POOL0 !== "undefined" ? POOL0 : []).forEach(c => {
+    if (out.indexOf(c) < 0) out.push(c);
+  });
+  return out;
+}
+
 /* ==========================================================================
    Storage — the artifact's shared store, with a per-browser fallback
    ========================================================================== */
@@ -41,7 +56,7 @@ const Store = {
       if (raw) {
         const o = JSON.parse(raw);
         (o.tournaments || []).forEach(r => { if (r && r.i) LIVE[r.i] = hydrate(r); });
-        if (o.pool && o.pool.length) CLUB_POOL = o.pool;
+        if (o.pool && o.pool.length) CLUB_POOL = mergePool(o.pool);
         if (o.photos) PHOTOMAP = Object.assign({}, o.photos);
         if (Array.isArray(o.seasons) && o.seasons.length) SEASONS = o.seasons.map(x => ({ id: x.id, name: x.name }));
       }
@@ -70,7 +85,7 @@ const Store = {
       const cfg = await this.db.doc("meta/config").get();
       if (cfg.exists) {
         const c = cfg.data();
-        if (Array.isArray(c.pool) && c.pool.length) CLUB_POOL = c.pool.slice();
+        if (Array.isArray(c.pool) && c.pool.length) CLUB_POOL = mergePool(c.pool);
         if (c.photos && typeof c.photos === "object") PHOTOMAP = Object.assign({}, c.photos);
         if (Array.isArray(c.seasons) && c.seasons.length) SEASONS = c.seasons.map(x => ({ id: x.id, name: x.name }));
       }
@@ -1391,8 +1406,8 @@ function managePanel(open, inScope) {
     return d;
   };
   const admin = adminKey();
-  [fold("בזמן טורניר", "מצלמה, טורניר חי, מצב בדיקה",
-        admin ? [liveTournamentPanel(open), cameraPanel(), testModePanel()] : [], true),
+  [fold("בזמן טורניר", "מצב בדיקה",
+        admin ? [testModePanel()] : [], true),
    fold("הודעות לחברים", "פוש וסקר ימים",
         [pushPanel(), admin ? pollAdmin() : null], false),
    fold("הטורניר הפתוח", "הרכב, קבוצות, שמירה ומחיקה",
@@ -1443,7 +1458,7 @@ function draftPanel() {
   const fmt = el("div", "chips");
   fmt.style.alignItems = "center";
   fmt.appendChild(el("span", "lbl", "פורמט"));
-  [6, 5].forEach(n => {
+  [7, 6, 5].forEach(n => {
     const c = el("button", "chip", n + " שחקנים");
     c.setAttribute("aria-pressed", String(draft.size === n));
     c.onclick = () => {

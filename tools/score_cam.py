@@ -583,10 +583,22 @@ def score_in_region(img, debug=None):
         # codes are the writing immediately to their left, whatever else the
         # board happens to carry
         debug["score_x"] = int(min(min(m["x"] for m in r) for r in groups) / k)
+        # and where they sit vertically. The block that is found reaches well
+        # above the board — the crowd behind it is bright and nearly colourless
+        # too, so neither brightness nor saturation ends it — and splitting
+        # that block down the middle put the home club's letters outside its
+        # own cell. The figures cannot be anywhere but on the board, so they
+        # are what the rows are measured from.
+        t0 = min(m["y"] for m in groups[0]) / k
+        t1 = max(m["y"] + m["h"] for m in groups[0]) / k
+        b0 = min(m["y"] for m in groups[1]) / k
+        b1 = max(m["y"] + m["h"] for m in groups[1]) / k
+        pad = 0.45 * (t1 - t0)
+        debug["rows"] = (int(max(0, t0 - pad)), int((t1 + b0) / 2), int(b1 + pad))
     return out[0], out[1], shapes[0], shapes[1]
 
 
-def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
+def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22, wh_max=1.4):
     """Every mark on a cut-out of the board, with the ink white.
 
     Whichever way round the board is drawn, one of the two polarities leaves
@@ -619,13 +631,452 @@ def ink_marks(img, hmin=0.10, hmax=0.55, wmax=0.22):
             x, y, w, h = cv2.boundingRect(c)
             if not (hmin * H < h < hmax * H):
                 continue
-            if not (0.01 * W < w < wmax * W) or w > 1.4 * h:
+            if not (0.01 * W < w < wmax * W) or w > wh_max * h:
                 continue
             marks.append({"x": x, "y": y, "w": w, "h": h, "img": th[y:y + h, x:x + w]})
     inside = lambda m, o: (m["x"] >= o["x"] and m["y"] >= o["y"] and
                            m["x"] + m["w"] <= o["x"] + o["w"] and
                            m["y"] + m["h"] <= o["y"] + o["h"] and m is not o)
     return [m for m in marks if not any(inside(m, o) for o in marks)]
+
+
+def split_merged(marks):
+    """Cut apart letters that arrived stuck together.
+
+    Letters set tight come through as one mark — RMA on the Spanish board
+    gave MA as a single shape half the cell wide, and the English clock gave
+    "33:44" as two marks instead of four — and a shape that wide is thrown out
+    before it can be read, so the club went unnamed.
+
+    What tells a run of letters from one wide letter is not how wide it is.
+    The same letter is squat at this distance and narrow at that one: R
+    measured 139 wide by 129 tall on the ordinary board and 250 by 430 on the
+    Spanish one, so no ratio separates them. What does separate them is that
+    between two letters the ink stops, and inside a letter it never does. So
+    the cut is made only where the ink actually runs out — and nowhere else.
+    """
+    import numpy as np
+    out = []
+    for m in marks or []:
+        out.extend(_split_at_gaps(m, 0))
+    return out
+
+
+def _split_at_gaps(m, depth):
+    import numpy as np
+    if depth >= 2 or m["w"] < 0.55 * m["h"] or m["w"] < 12:
+        return [m]
+    ink = (m["img"] > 0).sum(axis=0).astype(np.float32)
+    if ink.size < 12 or ink.mean() <= 0:
+        return [m]
+    lo, hi = int(m["w"] * 0.22), int(m["w"] * 0.78)
+    if hi - lo < 3:
+        return [m]
+    j = lo + int(np.argmin(ink[lo:hi]))
+    # empty against both what the mark carries on average and what it carries
+    # at its fullest: the middle column of an L is thin but not empty, and
+    # judging it against the average alone would have cut it in two
+    if not (ink[j] <= 0.22 * ink.mean() and ink[j] <= 0.25 * ink.max()):
+        return [m]
+    if j < 0.18 * m["h"] or m["w"] - j < 0.18 * m["h"]:
+        return [m]
+    a = {"x": m["x"], "y": m["y"], "w": j, "h": m["h"], "img": m["img"][:, :j]}
+    b = {"x": m["x"] + j, "y": m["y"], "w": m["w"] - j, "h": m["h"],
+         "img": m["img"][:, j:]}
+    return _split_at_gaps(a, depth + 1) + _split_at_gaps(b, depth + 1)
+
+
+def minutes_from_cell(cell, invert=False, min_score=0.55):
+    """The minutes off a clock cell reading MM:SS.
+
+    The two figures left of the colon are the minutes. The colon's own dots
+    come through as marks too, but they are a fraction of the height of a
+    figure, so the tallest mark sets the size and anything well short of it is
+    not a digit."""
+    import cv2, numpy as np
+    if cell is None or getattr(cell, "size", 0) == 0 or min(cell.shape[:2]) < 14:
+        return None
+    g = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY) if cell.ndim == 3 else cell
+    if invert:
+        g = 255 - g
+    g = cv2.copyMakeBorder(g, 10, 10, 10, 10, cv2.BORDER_CONSTANT,
+                           value=int(np.median(g[:, :3])))
+    im = cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
+    ms = ink_marks(im, hmin=0.25, hmax=0.95, wmax=0.60)
+    if not ms:
+        return None
+    # the middle height is what a figure is, not the tallest thing found: the
+    # edge of the clock strip comes through as a mark twice their height, and
+    # measuring against that left the figures themselves out
+    med_h = float(np.median([m["h"] for m in ms]))
+    ms = [m for m in ms if 0.62 * med_h <= m["h"] <= 1.55 * med_h]
+    # the two figures of the minute are set tight and arrive as one mark on
+    # the English tab, where "33:44" gave two marks rather than four
+    ms = sorted(split_merged(ms), key=lambda m: m["x"])[:2]
+    if len(ms) < 2:
+        return None
+    out = ""
+    for m in ms:
+        v, _sc = classify_shape(m["img"], min_score=min_score)
+        if v is None:
+            return None
+        out += str(v)
+    try:
+        n = int(out)
+    except ValueError:
+        return None
+    return n if 0 <= n <= 90 else None
+
+
+# --- the Spanish league board ---------------------------------------------
+# Laid out quite unlike the ordinary one: a red league badge top left with the
+# clock under it, then a dark column holding the two club codes in white, then
+# a white column holding the two figures in black. Every few seconds the code
+# column turns over to the clubs' crests and back. Only Barcelona and Real ever
+# appear on it here, so the letters are matched against those two alone.
+ES_PAIR = ("BAR", "RMA")
+
+
+def find_laliga_badge(frame):
+    """The red league badge: a big saturated-red square, found on a small copy
+    and then measured full size, because sweeping every pixel of a 4K frame for
+    it on every pass costs more than the rest of the reading put together."""
+    import cv2, numpy as np
+    h, w = frame.shape[:2]
+    k = 4 if w >= 2400 else 2
+    small = cv2.resize(frame, (w // k, h // k), interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    H, Sa, V = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    red = ((((H <= 10) | (H >= 168)) & (Sa >= 90) & (V >= 110)).astype(np.uint8)) * 255
+    red = cv2.morphologyEx(red, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    n, _l, st, _c = cv2.connectedComponentsWithStats(red, 8)
+    best = None
+    for i in range(1, n):
+        x, y, bw, bh, a = (st[i, 0], st[i, 1], st[i, 2], st[i, 3], st[i, 4])
+        if bw * k < 120 or bh * k < 100 or a < 0.62 * bw * bh:
+            continue
+        if not (0.95 < bw / float(bh) < 2.1):
+            continue
+        if best is None or a > best[0]:
+            best = (a, [int(x) * k, int(y) * k, int(bw) * k, int(bh) * k])
+    return best[1] if best else None
+
+
+def laliga_parts(frame, badge):
+    """The board's cells, measured out from the badge.
+
+    The two columns right of the badge are told apart by what they are made of
+    rather than by where they fall: the codes sit on black, the figures on
+    white, so walking right from the badge gives first a dark run and then a
+    bright one, whatever size the board is on screen."""
+    import cv2, numpy as np
+    bx, by, bw, bh = badge
+    h, w = frame.shape[:2]
+    y0, y1 = by, min(h, by + 2 * bh)
+    x0, x1 = bx + bw, min(w, bx + int(bw * 3.0))
+    if x1 - x0 < bw * 0.6 or y1 - y0 < bh:
+        return None                       # the board runs off the picture
+    g = cv2.cvtColor(frame[y0 + int(bh * 0.15):y1 - int(bh * 0.15), x0:x1], cv2.COLOR_BGR2GRAY)
+    if g.size == 0:
+        return None
+    # how much of each column is dark or light, not its middle value: a column
+    # down through the stem of a 1 has a dark stripe across it, and the middle
+    # value there ended the white block halfway along, leaving both figures
+    # unread
+    dark = (g < 110).mean(axis=0) >= 0.50
+    bright = (g > 150).mean(axis=0) >= 0.50
+    gap = max(3, int(bw * 0.10))
+
+    def walk(flag, start):
+        i, miss = start, 0
+        while i < len(flag) - 1:
+            if flag[i + 1]:
+                miss = 0
+            else:
+                miss += 1
+                if miss > gap:
+                    break
+            i += 1
+        return i - miss
+
+    i = 0
+    while i < len(dark) and not dark[i]:
+        i += 1
+    j = walk(dark, i) + 1
+    while j < len(bright) and not bright[j]:
+        j += 1
+    k = walk(bright, j) + 1
+    if j - i < bw * 0.25 or k - j < bw * 0.25:
+        return None
+    cod, fig = (x0 + i, x0 + j), (x0 + j, x0 + k)
+    # The figures sit on white with grass above and crowd below, so that
+    # column's top and bottom can simply be measured. The codes cannot: the
+    # block is black and so is everything around it. But the board is one flat
+    # panel, so the slope from the badge's top edge to the figures' says where
+    # the code block starts and ends — which matters, because the camera sees
+    # the board at an angle and a split line taken from the badge alone cut the
+    # away row in half.
+    gg = cv2.cvtColor(frame[max(0, by - bh):min(h, by + 3 * bh), fig[0]:fig[1]], cv2.COLOR_BGR2GRAY)
+    if gg.size == 0:
+        return None
+    on = np.median(gg, axis=1) > 150
+    top = max(0, by - bh)
+    c = min(max((by + bh) - top, 0), len(on) - 1)
+    u = d = int(c)
+    while u > 0 and on[u - 1]:
+        u -= 1
+    while d < len(on) - 1 and on[d + 1]:
+        d += 1
+    fy0, fy1 = top + u, top + d
+    if fy1 - fy0 < bh:
+        return None
+    slope = (fy0 - by) / float(max(1.0, (fig[0] + fig[1]) / 2.0 - (bx + bw / 2.0)))
+    shift = int(slope * ((cod[0] + cod[1]) / 2.0 - (fig[0] + fig[1]) / 2.0))
+    return {"code": cod, "fig": fig, "code_y": (fy0 + shift, fy1 + shift),
+            "fig_y": (fy0, fy1)}
+
+
+def laliga_cell(frame, p, side, which):
+    import cv2
+    t, bm = p[which + "_y"]
+    mid = (t + bm) // 2
+    y0, y1 = (t, mid) if side == "h" else (mid, bm)
+    a, b = p[which]
+    pad = int((y1 - y0) * 0.07)
+    y0, y1 = y0 + pad, y1 - pad
+    if y1 - y0 < 12 or b - a < 12:
+        return None
+    if which == "code":
+        # trim to the black block itself for this row: the column's edges carry
+        # thin coloured strips that the board draws between its panels, and one
+        # of them read as an L and carried LIV past the real RMA beside it
+        g = cv2.cvtColor(frame[y0:y1, a:b], cv2.COLOR_BGR2GRAY)
+        on = (g < 110).mean(axis=0) >= 0.55
+        c = len(on) // 2
+        u = d = c
+        while u > 0 and on[u - 1]:
+            u -= 1
+        while d < len(on) - 1 and on[d + 1]:
+            d += 1
+        if d - u > 0.4 * (b - a):
+            a, b = a + u, a + d
+    return frame[y0:y1, a:b]
+
+
+def read_laliga(frame, clubs, want_codes=True):
+    """Both figures and both clubs off the Spanish board, or None."""
+    import cv2
+    badge = find_laliga_badge(frame)
+    if not badge:
+        return None
+    p = laliga_parts(frame, badge)
+    if not p:
+        return None
+    out = {}
+    pair = dict((k, v) for k, v in (clubs or {}).items() if k in ES_PAIR)
+    for side in ("h", "a"):
+        c = laliga_cell(frame, p, side, "code") if want_codes else None
+        out["code_" + side] = None
+        if c is not None and pair:
+            g = 255 - cv2.cvtColor(c, cv2.COLOR_BGR2GRAY)
+            g = cv2.copyMakeBorder(g, 14, 14, 14, 14, cv2.BORDER_CONSTANT, value=255)
+            out["code_" + side] = read_code_plate(cv2.cvtColor(g, cv2.COLOR_GRAY2BGR), pair)
+        d = laliga_cell(frame, p, side, "fig")
+        got = ""
+        if d is not None:
+            for m in sorted(ink_marks(d, hmin=0.25, hmax=0.95, wmax=0.60), key=lambda m: m["x"]):
+                got += (classify_shape(m["img"], min_score=0.5)[0] or "?")
+        out[side] = int(got) if got.isdigit() and len(got) <= 2 else None
+    # only two clubs ever appear on this board, so one side names the other
+    if out["code_h"] in ES_PAIR and out["code_a"] not in ES_PAIR:
+        out["code_a"] = ES_PAIR[1 - ES_PAIR.index(out["code_h"])]
+    elif out["code_a"] in ES_PAIR and out["code_h"] not in ES_PAIR:
+        out["code_h"] = ES_PAIR[1 - ES_PAIR.index(out["code_a"])]
+    if out["h"] is None or out["a"] is None:
+        return None
+    # the clock is the white block under the badge, reading MM:SS in black
+    bx, by, bw, bh = badge
+    hh = frame.shape[0]
+    out["min"] = minutes_from_cell(frame[min(hh, by + bh):min(hh, by + 2 * bh), bx:bx + bw])
+    out["badge"] = badge
+    return out
+
+
+# --- the English league strip ---------------------------------------------
+# One long strip across the middle of the upper screen: the home code on a
+# claret block, the home figure, the league's lion, the away figure, the away
+# code on a white block, and the clock on a purple tab underneath. No crests,
+# and the left side is always home.
+#
+# The lion is the anchor. It has to be, because the advertising hoarding behind
+# the strip is the same claret at the same height, so neither colour nor
+# thickness tells the two apart — but the lion is the one strong purple thing
+# on the screen, and everything on the strip keeps its distance from it.
+PL_TILT = [None, 0.0]                    # when it was measured, and to what
+
+
+def find_pl_lion(frame):
+    """The league's lion: found on a small copy, measured full size."""
+    import cv2, numpy as np
+    h, w = frame.shape[:2]
+    k = 4 if w >= 2400 else 2
+    small = cv2.resize(frame[0:int(h * 0.62), :], (w // k, int(h * 0.62) // k),
+                       interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    H, Sa, V = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    m = ((H >= 130) & (H <= 155) & (Sa >= 120) & (V >= 80)).astype(np.uint8) * 255
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    n, _l, st, _c = cv2.connectedComponentsWithStats(m, 8)
+    best = None
+    for i in range(1, n):
+        x, y, bw, bh, a = (st[i, 0], st[i, 1], st[i, 2], st[i, 3], st[i, 4])
+        if a * k * k < 6000 or bh * k < 70 or not (0.55 < bw / float(bh) < 1.8):
+            continue
+        if best is None or a > best[0]:
+            best = (a, [int(x) * k, int(y) * k, int(bw) * k, int(bh) * k])
+    if not best:
+        return None
+    # Measure it again full size. Every cell on the strip is laid out in lion
+    # widths, so a box a quarter-scale mask rounded off by a few pixels moves
+    # the figures out of their cells.
+    x, y, bw, bh = best[1]
+    px, py = bw // 2, bh // 2
+    ax, ay = max(0, x - px), max(0, y - py)
+    win = frame[ay:y + bh + py, ax:x + bw + px]
+    if win.size == 0:
+        return best[1]
+    hsv = cv2.cvtColor(win, cv2.COLOR_BGR2HSV)
+    H, Sa, V = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    m2 = ((H >= 130) & (H <= 155) & (Sa >= 120) & (V >= 80)).astype(np.uint8) * 255
+    n2, lab2, st2, _c2 = cv2.connectedComponentsWithStats(m2, 8)
+    # the blob the small mask was pointing at, not the biggest one in the
+    # window: the clock tab under the strip is purple too and larger
+    cxw, cyw = (x - ax) + bw // 2, (y - ay) + bh // 2
+    big = int(lab2[min(max(cyw, 0), lab2.shape[0] - 1), min(max(cxw, 0), lab2.shape[1] - 1)])
+    if big <= 0:
+        return best[1]
+    return [int(st2[big, 0]) + ax, int(st2[big, 1]) + ay,
+            int(st2[big, 2]), int(st2[big, 3])]
+
+
+def pl_solid(img):
+    """Strip pixels: anything bright or strongly coloured that is not grass."""
+    import cv2
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    H, Sa, V = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    green = (H >= 35) & (H <= 85) & (Sa >= 60)
+    return (~green) & ((V >= 140) | ((Sa >= 70) & (V >= 85)))
+
+
+def pl_band(frame, lion, tilt=None):
+    """The strip, levelled, cut to five lion-widths either side of the lion.
+
+    The camera sees the board at a slight angle, which has to come out before
+    the cells can be measured: tilted, the far end of the strip leaves the row
+    the near end sits in. The angle is found by turning the picture until the
+    strip's rows come out full, and then remembered, because neither the camera
+    nor the television moves."""
+    import cv2, numpy as np
+    lx, ly, lw, lh = lion
+    cx, cy = lx + lw // 2, ly + lh // 2
+    hw, hh, pad = int(lw * 4.5), int(lh * 1.6), 300
+    h, w = frame.shape[:2]
+    x0, y0 = max(0, cx - hw - pad), max(0, cy - hh - pad)
+    sub = frame[y0:min(h, cy + hh + pad), x0:min(w, cx + hw + pad)]
+    if sub.size == 0:
+        return None
+    c2 = (cx - x0, cy - y0)
+    if tilt is None:
+        # Try the angles on a quarter-size copy. Turning the full picture
+        # nineteen times costs the best part of a second, and a tenth of the
+        # pixels decide the angle just as well.
+        q = 4
+        sm = cv2.resize(sub, (sub.shape[1] // q, sub.shape[0] // q), interpolation=cv2.INTER_AREA)
+        cs = (c2[0] // q, c2[1] // q)
+        bw2, bh2 = hw // q, hh // q
+        best_ang, best_sc = 0.0, -1
+        for ang in np.arange(-9, 9.01, 0.5):
+            M = cv2.getRotationMatrix2D(cs, float(ang), 1.0)
+            r = cv2.warpAffine(sm, M, (sm.shape[1], sm.shape[0]))
+            win = r[max(0, cs[1] - bh2):cs[1] + bh2, max(0, cs[0] - bw2):cs[0] + bw2]
+            if win.size == 0:
+                continue
+            sc = int((pl_solid(win).mean(axis=1) >= 0.985).sum())
+            if sc > best_sc:
+                best_ang, best_sc = float(ang), sc
+        tilt = best_ang
+    M = cv2.getRotationMatrix2D(c2, float(tilt), 1.0)
+    flat = cv2.warpAffine(sub, M, (sub.shape[1], sub.shape[0]))
+    H2, W2 = flat.shape[:2]
+    a, b = max(0, c2[1] - int(lh * 0.44)), min(H2, c2[1] + int(lh * 0.44))
+    u, v = max(0, c2[0] - int(lw * 5.2)), min(W2, c2[0] + int(lw * 5.2))
+    if b - a < 20 or v - u < lw * 8:
+        return None
+    # The clock tab hangs under the middle of the strip; it is the one thing on
+    # this board that says how far the match has got. Start a little below the
+    # strip: the lion hangs over the top of the tab, and its tail came through
+    # as a mark taller than the figures.
+    t0, t1 = min(H2, b + int(lh * 0.17)), min(H2, b + int(lh * 0.80))
+    tu, tv = max(0, c2[0] - int(lw * 1.3)), min(W2, c2[0] + int(lw * 1.3))
+    tab = flat[t0:t1, tu:tv] if (t1 - t0 > 12 and tv - tu > 24) else None
+    return {"band": flat[a:b, u:v], "angle": float(tilt), "lw": lw, "tab": tab}
+
+
+def read_premier(frame, clubs, want_codes=True):
+    """Both figures and both clubs off the English strip, or None."""
+    import cv2, numpy as np
+    lion = find_pl_lion(frame)
+    if not lion:
+        return None
+    tilt = PL_TILT[1] if (PL_TILT[0] and time.time() - PL_TILT[0] < 60) else None
+    got = pl_band(frame, lion, tilt)
+    if not got:
+        return None
+    band, lw = got["band"], got["lw"]
+    H, W = band.shape[:2]
+    c = W // 2
+
+    def cell(a, b, inv):
+        x0, x1 = int(c + a * lw), int(c + b * lw)
+        im = band[:, max(0, x0):min(W, x1)]
+        if im.size == 0 or im.shape[1] < 20:
+            return None
+        g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+        if inv:
+            g = 255 - g
+        g = cv2.copyMakeBorder(g, 12, 12, 12, 12, cv2.BORDER_CONSTANT,
+                               value=int(np.median(g[:, :3])))
+        return cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
+
+    def figure(im):
+        if im is None:
+            return None
+        # the figures on this strip are drawn wide and stand nearly the full
+        # height of their cell, so the usual width limit threw them out
+        ms = ink_marks(im, hmin=0.25, hmax=0.95, wmax=0.80)
+        if not ms:
+            return None
+        tall = max(m["h"] for m in ms)
+        ms = [m for m in ms if m["h"] >= 0.55 * tall]
+        out = ""
+        for m in sorted(ms, key=lambda m: m["x"]):
+            out += (classify_shape(m["img"], min_score=0.5)[0] or "?")
+        return int(out) if out.isdigit() and len(out) <= 2 else None
+
+    # The letters are white on claret on the home side and black on white on
+    # the away side, so the home cells are turned round and the away code is
+    # not. The offsets are in lion widths, measured off the strip itself.
+    kh = read_code_plate(cell(-4.8, -2.6, True), clubs) if (clubs and want_codes) else None
+    ka = read_code_plate(cell(2.4, 4.9, False), clubs) if (clubs and want_codes) else None
+    h = figure(cell(-1.8, -0.70, True))
+    a = figure(cell(0.45, 1.50, True))
+    if h is None or a is None:
+        return None
+    PL_TILT[0], PL_TILT[1] = time.time(), got["angle"]
+    tab = got.get("tab")
+    mins = minutes_from_cell(tab, invert=True) if tab is not None else None
+    return {"h": h, "a": a, "code_h": kh, "code_a": ka, "lion": lion,
+            "badge": lion, "min": mins}
 
 
 def read_code_plate(cell, known, min_score=0.40):
@@ -643,17 +1094,59 @@ def read_code_plate(cell, known, min_score=0.40):
     winner still has to beat the runner-up by a margin, because BAR and BAY
     differ by one letter and a guess between them opens the wrong match."""
     import cv2, numpy as np
-    marks = ink_marks(cell, hmin=0.25, hmax=0.95, wmax=0.40)
-    if len(marks) < 2:
-        return None
-    # letters on a board are all one size; a stray is usually not
-    tall = max(m["h"] for m in marks)
-    marks = [m for m in marks if m["h"] >= 0.55 * tall]
+    # Give the cut-out a margin of its own background first. Everything
+    # touching the edge is flooded away before the marks are taken — that is
+    # what leaves the letters standing alone — so a letter that happens to
+    # reach the edge goes with it. Cut tight to the board, which is what makes
+    # the letters findable at all, they reach the edge constantly: RMA came
+    # through as one stray mark and the club went unnamed.
+    if cell is not None and getattr(cell, "size", 0) and min(cell.shape[:2]) >= 12:
+        import cv2 as _cv, numpy as _np
+        _b = int(_np.median(_np.concatenate([cell[0, :], cell[-1, :]]).reshape(-1, cell.shape[2])[:, 0]))             if cell.ndim == 3 else int(_np.median(cell[0, :]))
+        _m = max(4, int(0.10 * cell.shape[0]))
+        cell = _cv.copyMakeBorder(cell, _m, _m, _m, _m, _cv.BORDER_CONSTANT,
+                                  value=(_b, _b, _b) if cell.ndim == 3 else _b)
+
+    def gather(wmax, wh_max):
+        ms = ink_marks(cell, hmin=0.25, hmax=0.95, wmax=wmax, wh_max=wh_max)
+        if not ms:
+            return []
+        # Letters on a board are all one size, so the middle height is what a
+        # letter is — not the tallest thing found. The board draws a coloured
+        # strip down its left edge that stands half as tall again as the
+        # writing, and measuring against that kept the strip and threw the
+        # letters out.
+        import numpy as _np
+        med_h = float(_np.median([m["h"] for m in ms]))
+        ms = [m for m in ms if 0.62 * med_h <= m["h"] <= 1.55 * med_h]
+        # the board draws hairline strips of colour between its panels, which
+        # come through as marks as tall as the letters but a twentieth as wide.
+        # No letter is that thin, and one of them read as an L and carried LIV
+        # past the real RMA beside it.
+        ms = [m for m in ms if m["w"] >= 0.18 * m["h"]]
+        return split_merged(ms)
+
+    # The ordinary board sets its letters apart and reads best from a tight
+    # width limit: letting wide shapes in gives the coloured bands down the
+    # plate to the splitter, which turns each into three false letters and
+    # buries the real ones. So widen only when the tight pass found too few —
+    # which is the case on the Spanish board, where the letters touch.
+    marks = gather(0.40, 1.4)
+    if len(marks) < 3:
+        wide = gather(0.78, 3.6)
+        if len(wide) > len(marks):
+            marks = wide
     if not (2 <= len(marks) <= 6):
         return None
     marks = sorted(marks, key=lambda m: m["x"])
 
     TPL = cached_letters()
+    if known:
+        # score only the letters the known codes are actually spelt with. The
+        # alphabet is twenty-six and the clubs between them use a third of it,
+        # and this runs on every frame until the pair is named.
+        want = set("".join(known))
+        TPL = dict((ch, tl) for ch, tl in TPL.items() if ch in want)
     seen = []
     for m in marks:
         b = cv2.resize(m["img"], (DW, DH), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -805,7 +1298,7 @@ def read_final_screen(frame):
         return None
     return n1, n2
 
-def read_clock(frame, plate):
+def read_clock(frame, plate, prev=None):
     """The match minute, from the strip just under the scoreboard.
 
     FC counts to ninety however long the halves really are, so a clock reading
@@ -822,21 +1315,52 @@ def read_clock(frame, plate):
         return None
     marks = ink_marks(frame[cy:cy + ch, cx:cx + cw], hmin=0.25, hmax=0.95, wmax=0.30)
     if not (2 <= len(marks) <= 6):
-        return None
+        marks = []
     marks = sorted(marks, key=lambda m: m["x"])
     digits = ""
     for m in marks[:2]:                         # the minutes, left of the colon
         val, score = classify_shape(m["img"], min_score=0.55)
         if val is None:
-            return None
+            digits = ""
+            break
         digits += str(val)
     try:
         n = int(digits)
     except ValueError:
+        n = None
+    if n is not None and prev is not None and not (prev - 2 <= n <= prev + 15):
+        n = None                     # a clock does not jump about; that is a misread
+    if n is None or not (0 <= n <= 90):
+        # Fall back on reading the strip whole. The figures sit hard against
+        # the top of it, and everything touching the edge of a cut-out is
+        # flooded away before the marks are taken, so they went with it — which
+        # is why a match could run to its end with the clock last seen at the
+        # seventy-eighth minute.
+        import cv2, numpy as np
+        band = frame[max(0, cy - int(h * 0.05)):min(H, cy + ch), cx:cx + cw]
+        if band.size and min(band.shape[:2]) >= 14:
+            g = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+            v = int(np.percentile(g, 20))
+            band = cv2.copyMakeBorder(band, 14, 14, 14, 14, cv2.BORDER_CONSTANT,
+                                      value=(v, v, v))
+            n = minutes_from_cell(band)
+            if n is not None and (prev is None or prev - 2 <= n <= prev + 15):
+                return n
+            if prev is not None:
+                # Ask again, less sure of itself. An eight on this board is as
+                # likely to be read as a three or a six, which is why the clock
+                # stopped at seventy-seven in one match and seventy-eight in
+                # another and never reached the ninety that ends them. A doubtful
+                # figure is safe to take once it has to agree with the minute
+                # before it: a clock that cannot run backwards and cannot jump a
+                # quarter of an hour cannot invent an ending.
+                n = minutes_from_cell(band, min_score=0.36)
+                if n is not None and prev - 2 <= n <= prev + 15:
+                    return n
         return None
-    return n if 0 <= n <= 90 else None
+    return n
 
-def plate_parts(crop, score_x=None):
+def plate_parts(crop, score_x=None, rows=None):
     """The scoreboard plate split into the four things it carries: a club code
        on each row, and that row's score.
 
@@ -848,7 +1372,9 @@ def plate_parts(crop, score_x=None):
     that the code is the writing immediately to the left of the figures, so
     the cells are measured from the figures when their position is known."""
     h, w = crop.shape[:2]
-    mid = h // 2
+    top, mid, bot = 0, h // 2, h
+    if rows and 0 <= rows[0] < rows[1] < rows[2] <= h and rows[2] - rows[0] > 20:
+        top, mid, bot = rows
     left = plate_left_edge(crop)
     if score_x and 0.2 * w < score_x < 0.98 * w:
         sx = int(score_x)
@@ -859,8 +1385,8 @@ def plate_parts(crop, score_x=None):
         cx0, cx1 = left, max(left + 1, int(sx - w * 0.015))
     else:
         sx, cx0, cx1 = int(w * 0.68), left, max(left + 1, int(w * 0.50))
-    return {"code_h": crop[0:mid, cx0:cx1], "code_a": crop[mid:h, cx0:cx1],
-            "cell_h": crop[0:mid, sx:w], "cell_a": crop[mid:h, sx:w]}
+    return {"code_h": crop[top:mid, cx0:cx1], "code_a": crop[mid:bot, cx0:cx1],
+            "cell_h": crop[top:mid, sx:w], "cell_a": crop[mid:bot, sx:w]}
 
 
 def clear_border(th):
@@ -1253,9 +1779,12 @@ def run(args):
     last_read = 0                            # when the digits were last legible
     open_try = 0
     code_run = None                          # the same club pair, seen how often
+    es_run = None                            # the same, off the Spanish board
     full_time, clock_seen = None, None        # when the clock first showed ninety
+    clock_at = 0                             # when that minute was read
     pred_closed = False                       # told the server the guessing is over
     late, late_first = False, None            # has this match reached its closing stretch
+    opened_at = None                         # when this match was opened
     ninety = 0                                # how often it has said so
     final_seen, final_try = None, 0           # the MATCH RESULTS screen, read twice
     goals = {"h": 0, "a": 0}
@@ -1295,6 +1824,15 @@ def run(args):
                             st2 = st
                             last_sent = (st2.get("h") or 0, st2.get("a") or 0) if st2.get("live") else None
                             goals["h"], goals["a"] = last_sent
+                            # Start the clock on it as well. A match left open
+                            # in the app while the reader was restarted had
+                            # nothing to measure its silence against — the
+                            # closing rule needs a moment to count from — so it
+                            # stayed open for fifty minutes with the television
+                            # showing a menu, and the result was never written.
+                            if last_sent and opened_at is None:
+                                opened_at = time.time()
+                                last_seen_plate = time.time()
                             print(time.strftime("%H:%M:%S"), "מתחיל מ־", last_sent[0], "-", last_sent[1])
                         except Exception:
                             pass
@@ -1386,7 +1924,7 @@ def run(args):
                     pc = pc[inner[1]:inner[1] + inner[3], inner[0]:inner[0] + inner[2]]
                 dbg3 = {}
                 sx3 = dbg3.get("score_x") if score_in_region(pc, debug=dbg3) else None
-                parts = plate_parts(pc, sx3)
+                parts = plate_parts(pc, sx3, dbg3.get("rows"))
                 if cfg.get("clubs") and not codes:
                     _t0 = time.time()
                     kh = read_code_plate(parts["code_h"], cfg["clubs"])
@@ -1403,6 +1941,31 @@ def run(args):
                             code_run = ((kh, ka), 1)
                         if code_run[1] >= 3:
                             codes = {"h": cfg["clubs"][kh], "a": cfg["clubs"][ka]}
+            # The Spanish board is laid out quite differently — a red league
+            # badge with the clock under it, the codes in white on black, the
+            # figures in black on white — and the ordinary finder reads nothing
+            # off it. Looking for the badge costs eight milliseconds and comes
+            # back empty on every other board, so it is simply tried on each
+            # pass and the ordinary reading left alone unless it answers.
+            es = read_laliga(frame, cfg.get("clubs"), not codes) if cfg.get("clubs") else None
+            if es is None and cfg.get("clubs"):
+                # and the English strip, which is a different shape again: one
+                # long band with the league's lion in the middle of it
+                es = read_premier(frame, cfg.get("clubs"), not codes)
+                if es and "badge" not in es:
+                    es["badge"] = es["lion"]
+            if es:
+                last_seen_plate = time.time()
+                if not plate:
+                    plate = es["badge"]          # something to open the match on
+                if es["code_h"] and es["code_a"] and es["code_h"] != es["code_a"]:
+                    pair = (es["code_h"], es["code_a"])
+                    # count readings that worked, not frames: the code column
+                    # turns over to the clubs' crests every few seconds, and
+                    # three frames running is a thing this board never gives
+                    es_run = (pair, es_run[1] + 1) if es_run and es_run[0] == pair else (pair, 1)
+                    if es_run[1] >= 2 and not codes:
+                        codes = {"h": cfg["clubs"][pair[0]], "a": cfg["clubs"][pair[1]]}
             dh, da = {}, {}
             if region or plate:
                 # the board drifts a little between styles and camera nudges, so
@@ -1467,6 +2030,15 @@ def run(args):
                         break
                 h, a = (got[0], got[1]) if got else (None, None)
                 dh["score"] = da["score"] = 0.9 if got else 0
+                if es and not got:
+                    h, a = es["h"], es["a"]
+                    dh["score"] = da["score"] = 0.9
+                # Nobody wins thirty-nil. A caption or a stray pair of digits
+                # read off the screen between matches gave "30 - 0" once, and
+                # had a match been open it would have gone in as the score.
+                if (h is not None and not (0 <= h <= 15)) or (a is not None and not (0 <= a <= 15)):
+                    h = a = None
+                    dh["score"] = da["score"] = 0
             else:
                 h = read_number(crop_h, debug=dh)
                 a = read_number(crop_a, debug=da)
@@ -1516,6 +2088,7 @@ def run(args):
                             cell_ref, cell_pending = {}, {}
                             pred_closed = False
                             late, late_first = False, None
+                            opened_at = time.time()
                             print(now, "נפתח משחק חי:", codes["h"], "נגד", codes["a"], "· 0 - 0")
                         elif r.get("golden") == "pending":
                             # the final is level and being played out: no fixture
@@ -1530,10 +2103,16 @@ def run(args):
                             print(now, "אין מחזור פתוח עם", codes["h"], "נגד", codes["a"])
                     except Exception as e:
                         print(now, "פתיחה נכשלה:", e)
-            if plate and got and not args.no_clock:
-                mins = read_clock(frame, plate)
+            if plate and (got or es) and not args.no_clock:
+                # the Spanish board keeps its clock under the league badge and
+                # the English one on a tab below the strip, so each reader
+                # hands back its own minute; only the ordinary board has it in
+                # the strip under the plate
+                mins = (es or {}).get("min")
+                if mins is None:
+                    mins = read_clock(frame, plate, clock_seen)
                 if mins is not None:
-                    clock_seen = mins
+                    clock_seen, clock_at = mins, time.time()
                     # A match that has been late once is late from then on.
                     # The last reading is no guide: the clock gave 89 and then
                     # 28 while the game was ending, and both were the same
@@ -1597,7 +2176,7 @@ def run(args):
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate, code_run = None, None, None
                 full_time, final_seen, clock_seen, ninety = None, None, None, 0
-                late, late_first = False, None
+                late, late_first, opened_at = False, None, None
                 time.sleep(args.interval)
                 continue
 
@@ -1628,16 +2207,48 @@ def run(args):
                     time.sleep(args.interval)
                     continue
 
-            # How long to wait for a board before deciding the match is over
-            # depends on how far the match had got. At ninety it is the final
-            # whistle and twenty seconds is plenty; late in the second half,
-            # half a minute; otherwise this could be a pause to argue, and four
-            # minutes is the careful answer.
+            # How long to wait for a board before deciding the match is over.
+            # At ninety it is the final whistle and twenty seconds is plenty;
+            # late in the second half, half a minute; otherwise seventy, which
+            # is the heart of the matter: the next match starts about three
+            # minutes after the last one ends, so a minute and ten with nothing
+            # readable on the screen is the gap between matches and not a pause
+            # to argue, which lasts seconds, nor a replay, which lasts less.
+            #
+            # It used to wait four minutes AND require the clock to have been
+            # read — and the clock could not be read on any board but the
+            # ordinary one, so no match ever closed and a whole tournament went
+            # unrecorded. Now the clock only shortens the wait; it is not what
+            # permits the match to end.
             gone = (time.time() - last_seen_plate) if last_seen_plate else 0
-            patience = 20 if full_time else (35 if late else 240)
-            if (not plate and last_seen_plate and gone > patience and not args.test
-                    and (full_time or late)):
-                print(now, "המשחק נגמר (דקה " + str(clock_seen) + ", הלוח נעלם) — מסיים ושומר")
+            patience = 20 if full_time else (35 if late else 150)
+            # A board that cannot be read is not the same as a board that is
+            # not there, and this reader fails to read one for a minute at a
+            # time in the ordinary course of a match. Seventy seconds of that
+            # closed a match at its tenth minute and wrote the score down. So
+            # the quick answer is only allowed once the match is known to be
+            # near its end; without that it is two and a half minutes, which
+            # is still inside the three between one match and the next.
+            old_enough = opened_at is not None and time.time() - opened_at > 120
+            # and whatever the board is doing, a clock that said the tenth
+            # minute a moment ago says the match is not over
+            # "early" has to mean early. A match whose last readable minute
+            # was the seventy-eighth is two minutes from its end, and holding
+            # it open for four more on that basis left a finished match
+            # unsaved. Below the sixtieth, and read in the last three minutes.
+            early = (clock_seen is not None and clock_seen < 60
+                     and time.time() - clock_at < 180)
+            # What ends a match is that nothing has been read off it for a
+            # long while — not that no bright block can be seen. On the screen
+            # that follows a match the finder goes on returning a block of some
+            # kind, and requiring none to be found meant the condition was
+            # never once true: a finished match sat open until somebody noticed.
+            # last_seen_plate is the last time a score actually came off the
+            # board, which is the thing that matters.
+            if (last_seen_plate and gone > patience and not args.test
+                    and last_sent and not early and (full_time or late or old_enough)):
+                print(now, "המשחק נגמר (דקה " + str(clock_seen) + ", אין קריאה " +
+                      str(int(gone)) + " שניות) — מסיים ושומר")
                 try:
                     r = send(key, 0, 0, args.dry_run, None, finish=True)
                     if r.get("saved"):
@@ -1649,30 +2260,7 @@ def run(args):
                 goals["h"], goals["a"] = 0, 0
                 cell_ref, cell_pending, last_plate = {}, {}, None
                 last_sent, last_seen_plate, code_run, full_time = None, None, None, None
-            # The four-minute rule only applies to a match we watched get
-            # somewhere. Without that, a board missing because the reader was
-            # restarted, or because nobody had started playing yet, was enough
-            # to write down a result for a match still in progress — which is
-            # exactly what it did to Liverpool against Bayern.
-            elif last_seen_plate and gone > 240 and late:
-                # Four minutes with no board. A pause to argue about a penalty
-                # does not last that long, so the match is over: write the score
-                # into the tournament and be ready for the next one. Four
-                # minutes rather than one, because writing a result down is not
-                # something to be hasty about.
-                print(now, "הלוח נעלם ארבע דקות — מסיים את המשחק ושומר")
-                if not args.test:
-                    try:
-                        r = send(key, 0, 0, args.dry_run, None, finish=True)
-                        if r.get("saved"):
-                            print(now, "התוצאה נשמרה בטורניר:", r.get("h"), "-", r.get("a"))
-                        elif r.get("why"):
-                            print(now, "לא נשמר:", r.get("why"))
-                    except Exception as e:
-                        print(now, "סיום נכשל:", e)
-                goals["h"], goals["a"] = 0, 0
-                cell_ref, cell_pending, last_plate = {}, {}, None
-                last_sent, last_seen_plate, code_run = None, None, None
+                late, late_first, opened_at = False, None, None
 
             # --- a match restarted --------------------------------------
             # Players do start a match over. The board goes back to nil-nil
@@ -1977,6 +2565,13 @@ def run(args):
                             else:
                                 last_sent = (r.get("h", h), r.get("a", a))
                                 goals["h"], goals["a"] = last_sent
+                            if r.get("updated") and opened_at is None:
+                                # the reader was started while a match was
+                                # already under way; from the app's answer we
+                                # know one is open, and the clock on it has to
+                                # start somewhere or the match could never be
+                                # closed by its board going
+                                opened_at = time.time()
                             print(now, "נשלח", h, "-", a, r.get("updated") and "- נרשם" or "- נדחה")
                     except Exception as e:
                         print(now, "שליחה נכשלה:", e)
